@@ -599,6 +599,7 @@ export default function StudioSitePreview({
           <Navbar
             previewMode
             navOverride={config.nav}
+            pageLinksOverride={config.pages}
             onLoginClick={() => {}}
             onRegisterClick={() => {}}
           />

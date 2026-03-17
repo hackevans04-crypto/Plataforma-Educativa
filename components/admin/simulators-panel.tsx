@@ -1159,14 +1159,7 @@ function PanelPreguntas({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: Si
     const arrayBuffer = await file.arrayBuffer()
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf")
     const pdfjsAny = pdfjs as any
-    try {
-      pdfjsAny.GlobalWorkerOptions.workerSrc = new URL(
-        "pdfjs-dist/build/pdf.worker.min.js",
-        import.meta.url
-      ).toString()
-    } catch {
-      pdfjsAny.disableWorker = true
-    }
+    pdfjsAny.disableWorker = true
     const doc = await pdfjsAny.getDocument({ data: arrayBuffer }).promise
     let text = ""
     for (let i = 1; i <= doc.numPages; i += 1) {

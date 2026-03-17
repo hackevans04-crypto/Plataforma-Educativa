@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
@@ -79,7 +79,7 @@ const getIsNew = (id: string) => {
   return days <= 14
 }
 
-export default function SimuladoresPage() {
+function SimuladoresPageContent() {
   const searchParams = useSearchParams()
   const [searchTerm, setSearchTerm] = useState("")
   const [activeCategory, setActiveCategory] = useState("all")
@@ -313,5 +313,13 @@ export default function SimuladoresPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function SimuladoresPage() {
+  return (
+    <Suspense fallback={null}>
+      <SimuladoresPageContent />
+    </Suspense>
   )
 }

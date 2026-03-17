@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -18,6 +18,7 @@ interface NavbarProps {
   onNavigate?: (section: string) => void
   previewMode?: boolean
   navOverride?: CMSConfig["nav"]
+  pageLinksOverride?: CMSConfig["pages"]
 }
 
 export default function Navbar({
@@ -26,6 +27,7 @@ export default function Navbar({
   onNavigate,
   previewMode = false,
   navOverride,
+  pageLinksOverride,
 }: NavbarProps) {
   const router = useRouter()
   const { user, isAuthenticated, logout } = useAuth()
@@ -34,7 +36,45 @@ export default function Navbar({
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const { config } = useCMS()
   const navConfig = navOverride ?? config.nav
-  const LINKS = navConfig.items
+  const pageLinks = pageLinksOverride ?? config.pages
+  const LINKS = useMemo(() => {
+    const pageRouteMap = new Map(
+      (pageLinks ?? []).map((page) => [
+        `/${page.slug}`,
+        page,
+      ])
+    )
+    const merged: CMSConfig["nav"]["items"] = []
+
+    for (const item of navConfig.items) {
+      const linkedPage = pageRouteMap.get(item.href)
+      if (linkedPage) {
+        if (linkedPage.showInNav === false) continue
+        merged.push({
+          ...item,
+          label: linkedPage.navLabel?.trim() || linkedPage.title || item.label,
+        })
+        continue
+      }
+
+      merged.push(item)
+    }
+
+    for (const page of pageLinks ?? []) {
+      if (page.showInNav === false) continue
+
+      const href = `/${page.slug}`
+      if (merged.some((item) => item.href === href)) continue
+
+      merged.push({
+        id: `page-${page.slug}`,
+        label: page.navLabel?.trim() || page.title,
+        href,
+      })
+    }
+
+    return merged
+  }, [navConfig.items, pageLinks])
   const showAuthenticatedUser = !previewMode && isAuthenticated && user
 
   useEffect(() => {

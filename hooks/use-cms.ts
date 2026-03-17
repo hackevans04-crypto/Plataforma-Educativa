@@ -164,6 +164,8 @@ export interface CMSPage {
   slug: string
   title: string
   builtin?: boolean
+  showInNav?: boolean
+  navLabel?: string
   sections: CMSSection[]
 }
 
@@ -274,6 +276,8 @@ export const DEFAULT_CMS: CMSConfig = {
       slug: "docentes-ec",
       title: "Docentes EC",
       builtin: true,
+      showInNav: true,
+      navLabel: "Docentes EC",
       sections: [
         {
           id: "dec-hero",
@@ -305,6 +309,8 @@ export const DEFAULT_CMS: CMSConfig = {
       slug: "ia",
       title: "IA",
       builtin: true,
+      showInNav: true,
+      navLabel: "IA",
       sections: [
         {
           id: "ia-hero",
@@ -353,6 +359,8 @@ export const DEFAULT_CMS: CMSConfig = {
       slug: "simulador",
       title: "Simulador",
       builtin: true,
+      showInNav: true,
+      navLabel: "Simulador",
       sections: [
         {
           id: "sim-hero",
@@ -412,12 +420,33 @@ export const DEFAULT_CMS: CMSConfig = {
 
 const CMS_KEY = "he_cms_config"
 
+function normalizeCMSPage(page: Partial<CMSPage> | undefined): CMSPage | null {
+  if (!page?.slug) return null
+
+  const defaultPage = DEFAULT_CMS.pages.find((entry) => entry.slug === page.slug)
+  const title = page.title ?? defaultPage?.title ?? "Nueva pagina"
+
+  return {
+    slug: page.slug,
+    title,
+    builtin: page.builtin ?? defaultPage?.builtin ?? false,
+    showInNav: page.showInNav ?? defaultPage?.showInNav ?? true,
+    navLabel: page.navLabel ?? defaultPage?.navLabel ?? title,
+    sections: page.sections ?? defaultPage?.sections ?? [],
+  }
+}
+
 export function getCMSConfig(): CMSConfig {
   if (typeof window === "undefined") return DEFAULT_CMS
   try {
     const raw = localStorage.getItem(CMS_KEY)
     if (!raw) return DEFAULT_CMS
     const p = JSON.parse(raw)
+    const normalizedPages = Array.isArray(p.pages)
+      ? p.pages
+          .map((page: Partial<CMSPage>) => normalizeCMSPage(page))
+          .filter((page: CMSPage | null): page is CMSPage => Boolean(page))
+      : DEFAULT_CMS.pages
     return {
       nav:          { ...DEFAULT_CMS.nav,          ...(p.nav          ?? {}) },
       sections:     p.sections ?? DEFAULT_CMS.sections,
@@ -425,7 +454,7 @@ export function getCMSConfig(): CMSConfig {
       benefits:     { ...DEFAULT_CMS.benefits,     ...(p.benefits     ?? {}) },
       testimonials: { ...DEFAULT_CMS.testimonials, ...(p.testimonials ?? {}) },
       general:      { ...DEFAULT_CMS.general,      ...(p.general      ?? {}) },
-      pages:        p.pages ?? DEFAULT_CMS.pages,
+      pages:        normalizedPages,
       popups:       p.popups ?? DEFAULT_CMS.popups,
     }
   } catch {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
@@ -39,7 +39,7 @@ const getTotalMinutes = (sim: SimuladorBuilder) => {
   return `${totalMinutes} min`
 }
 
-export default function EvaluacionesPage() {
+function EvaluacionesPageContent() {
   const searchParams = useSearchParams()
   const [searchTerm, setSearchTerm] = useState("")
   const [filter, setFilter] = useState<"all" | "available" | "completed">("all")
@@ -252,5 +252,13 @@ export default function EvaluacionesPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function EvaluacionesPage() {
+  return (
+    <Suspense fallback={null}>
+      <EvaluacionesPageContent />
+    </Suspense>
   )
 }
