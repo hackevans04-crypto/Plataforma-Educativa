@@ -571,9 +571,9 @@ function StatsEditor({ data, onChange }: { data: Record<string, any>; onChange: 
 
 function CustomCodeEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
-  const iframeRef = React.useRef<HTMLIFrameElement>(null)
-  const [selectedEl, setSelectedEl] = React.useState<EditorElementInfo | null>(null)
-  const [previewMode, setPreviewMode] = React.useState<"edit" | "code">("edit")
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const [selectedEl, setSelectedEl] = useState<EditorElementInfo | null>(null)
+  const [previewMode, setPreviewMode] = useState<"edit" | "code">("edit")
 
   const hasHtml = !!(data.html || "").trim()
 
