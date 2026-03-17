@@ -571,9 +571,23 @@ function StatsEditor({ data, onChange }: { data: Record<string, any>; onChange: 
 
 function CustomCodeEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-  const [selectedEl, setSelectedEl] = useState<EditorElementInfo | null>(null)
-  const [previewMode, setPreviewMode] = useState<"edit" | "code">("edit")
+  const iframeRef   = useRef<HTMLIFrameElement>(null)
+  const [selectedEl, setSelectedEl]     = useState<EditorElementInfo | null>(null)
+  const [isEditing, setIsEditing]       = useState(false)
+  const [previewMode, setPreviewMode]   = useState<"edit" | "code">("edit")
+
+  // Listen for messages from the iframe runtime
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const d = e.data
+      if (!d || typeof d !== "object") return
+      if (d.__editor_select)      { setSelectedEl(d.info as EditorElementInfo); setIsEditing(false) }
+      if (d.__editor_editing)     { setIsEditing(true) }
+      if (d.__editor_text_change) { setIsEditing(false) }
+    }
+    window.addEventListener("message", onMsg)
+    return () => window.removeEventListener("message", onMsg)
+  }, [])
 
   const hasHtml = !!(data.html || "").trim()
 
@@ -604,15 +618,17 @@ function CustomCodeEditor({ data, onChange }: { data: Record<string, any>; onCha
               {/* Live iframe preview */}
               <div className="rounded-xl border border-white/8 overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-white/3 border-b border-white/5">
-                  <span className="w-2 h-2 rounded-full bg-primary/60" />
-                  <span className="text-[10px] text-white/35 flex-1">Haz clic en cualquier elemento para editarlo</span>
+                  <span className={cn("w-2 h-2 rounded-full", isEditing ? "bg-emerald-400 animate-pulse" : "bg-primary/60")} />
+                  <span className="text-[10px] text-white/35 flex-1">
+                    {isEditing ? "Editando inline — Esc para salir" : "Clic = seleccionar · Doble clic = editar texto · Arrastrar = mover"}
+                  </span>
                 </div>
                 <div className="max-h-72 overflow-hidden">
                   <CustomCodeSection
                     data={data}
                     editMode={true}
                     iframeRef={iframeRef}
-                    onElementSelect={(info) => setSelectedEl(info)}
+                    onElementSelect={(info) => { setSelectedEl(info); setIsEditing(false) }}
                   />
                 </div>
               </div>
@@ -621,8 +637,9 @@ function CustomCodeEditor({ data, onChange }: { data: Record<string, any>; onCha
               <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
                 <HtmlElementInspector
                   element={selectedEl}
+                  isEditing={isEditing}
                   iframeRef={iframeRef}
-                  onClose={() => setSelectedEl(null)}
+                  onClose={() => { setSelectedEl(null); setIsEditing(false) }}
                 />
               </div>
             </div>
@@ -1604,8 +1621,8 @@ const SM: Record<CMSSectionType, { label: string; icon: React.ElementType; color
   hero:         { label: "Hero Principal",     icon: Sparkles,      color: "text-primary bg-primary/10",        deletable: true, desc: "Hero principal del sitio" },
   benefits:     { label: "Beneficios",         icon: Zap,           color: "text-amber-400 bg-amber-400/10",   deletable: true, desc: "Bloque de beneficios destacados" },
   testimonials: { label: "Testimonios",        icon: Star,          color: "text-blue-400 bg-blue-400/10",     deletable: true, desc: "Opiniones y prueba social" },
-  pricing:      { label: "Precios",            icon: Tag,           color: "text-emerald-400 bg-emerald-400/10", deletable: true, desc: "Planes y precios" },
-  contact:      { label: "Contacto",           icon: Globe,         color: "text-violet-400 bg-violet-400/10", deletable: true, desc: "Contacto o soporte" },
+  pricing:      { label: "Precios",            icon: Tag,           color: "text-emerald-400 bg-emerald-400/10", deletable: true, desc: "Plantilla de planes y precios" },
+  contact:      { label: "Contacto",           icon: Globe,         color: "text-violet-400 bg-violet-400/10", deletable: true, desc: "Plantilla de contacto o soporte" },
   cta:          { label: "CTA Banner",         icon: Zap,           color: "text-orange-400 bg-orange-400/10",  deletable: true, desc: "Llamada a la accion" },
   imageText:    { label: "Imagen + Texto",     icon: ImageIcon,     color: "text-cyan-400 bg-cyan-400/10",      deletable: true, desc: "Imagen con texto y bullets" },
   video:        { label: "Video",              icon: Video,         color: "text-pink-400 bg-pink-400/10",      deletable: true, desc: "YouTube o Vimeo embed" },
@@ -1620,10 +1637,14 @@ const SM: Record<CMSSectionType, { label: string; icon: React.ElementType; color
   coursesFeed:  { label: "Cursos",             icon: GraduationCap, color: "text-indigo-400 bg-indigo-400/10",  deletable: true, desc: "Bloque conectado al catalogo de cursos" },
   evaluationsFeed:{ label: "Evaluaciones",     icon: ClipboardCheck,color: "text-amber-400 bg-amber-400/10",    deletable: true, desc: "Bloque conectado a evaluaciones activas" },
   formBuilder:  { label: "Formulario",         icon: FileText,      color: "text-emerald-400 bg-emerald-400/10",deletable: true, desc: "Formulario configurable desde el editor" },
+  richText:     { label: "Contenido libre",    icon: TextCursorInput,color: "text-violet-400 bg-violet-400/10",  deletable: true, desc: "Texto, listas y botones en un bloque flexible" },
+  logoStrip:    { label: "Logos / marcas",     icon: BadgePlus,     color: "text-cyan-400 bg-cyan-400/10",      deletable: true, desc: "Franja de logos, partners o herramientas" },
+  spacer:       { label: "Espaciador",         icon: Minus,         color: "text-white/70 bg-white/5",           deletable: true, desc: "Bloque vacio para separar secciones" },
+  embed:        { label: "Embed universal",    icon: Code2,         color: "text-fuchsia-400 bg-fuchsia-400/10", deletable: true, desc: "Mapas, calendarios, widgets o embeds" },
 }
 
-const ADDABLE: CMSSectionType[] = ["hero", "pageHero", "featureCards", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "customCode"]
-const ADDABLE_PAGE: CMSSectionType[] = ["pageHero", "featureCards", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "customCode"]
+const ADDABLE: CMSSectionType[] = ["hero", "pageHero", "richText", "featureCards", "logoStrip", "spacer", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "embed", "customCode"]
+const ADDABLE_PAGE: CMSSectionType[] = ["pageHero", "richText", "featureCards", "logoStrip", "spacer", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "embed", "customCode"]
 
 const DEFAULTS: Record<string, Record<string, any>> = {
   cta:        { titulo: "Comienza hoy", descripcion: "Unete a miles de docentes.", ctaPrimario: "Crear cuenta gratis", ctaPrimarioHref: "/registro", ctaSecundario: "Ver planes", ctaSecundarioHref: "#precios", primaryAction: { type: "page", href: "/registro" }, secondaryAction: { type: "section", sectionId: "pricing" } },
@@ -1634,6 +1655,10 @@ const DEFAULTS: Record<string, Record<string, any>> = {
   stats:      { titulo: "", items: [{ id: "s1", numero: "15,000+", label: "Docentes activos", icono: "ðŸ‘¨â€ðŸ«" }, { id: "s2", numero: "98%", label: "Aprobacion", icono: "ðŸ†" }] },
   faq:        { titulo: "Preguntas frecuentes", descripcion: "Todo lo que necesitas saber.", items: [{ id: "f1", pregunta: "Â¿Como funciona?", respuesta: "Hack Evans es la plataforma de preparacion docente #1 en Ecuador." }] },
   customCode:   { nota: "", html: "" },
+  richText:   { eyebrow: "Contenido flexible", titulo: "Construye cualquier seccion", descripcion: "Usa este bloque para titulares, descripcion, listas, llamados a la accion y contenido editorial sin tocar codigo.", body: "", bullets: ["Punto clave", "Resultado esperado"], alignment: "left", maxWidth: "lg", primaryLabel: "Accion principal", primaryHref: "/registro", secondaryLabel: "Accion secundaria", secondaryHref: "/simulador", primaryAction: { type: "page", href: "/registro" }, secondaryAction: { type: "page", href: "/simulador" } },
+  logoStrip:  { eyebrow: "Confianza", titulo: "Marcas, aliados o herramientas", descripcion: "Muestra clientes, partners, instituciones o tecnologias usadas en tu flujo.", columns: 4, items: [{ id: `lg_${Date.now()}_1`, label: "Logo 1", subLabel: "Partner", imageUrl: "", href: "" }, { id: `lg_${Date.now()}_2`, label: "Logo 2", subLabel: "Cliente", imageUrl: "", href: "" }, { id: `lg_${Date.now()}_3`, label: "Logo 3", subLabel: "Institucion", imageUrl: "", href: "" }, { id: `lg_${Date.now()}_4`, label: "Logo 4", subLabel: "Herramienta", imageUrl: "", href: "" }] },
+  spacer:     { height: 96 },
+  embed:      { titulo: "Embed universal", descripcion: "Inserta mapas, calendarios, formularios, dashboards o cualquier widget embebible.", mode: "url", url: "", html: "", height: 460 },
   pageHero:     { badge: "PAGINA", badgeEmoji: "â­", accentColor: "#E8392A", layout: "center", titulo: "Titulo de la pagina", subtitulo: "", descripcion: "Descripcion de la pagina.", features: [], ctaPrimario: "Comenzar Ahora", ctaSecundario: "Saber mas", primaryAction: { type: "page", href: "/registro" }, secondaryAction: { type: "page", href: "/simulador" }, rightPanel: "none", stats: [], statsTitle: "" },
   featureCards: { titulo: "", descripcion: "", columns: 3, items: [{ id: `fc_${Date.now()}`, emoji: "â­", title: "Nueva tarjeta", description: "Descripcion de la tarjeta.", accentColor: "#E8392A" }] },
   simulatorsFeed: { badge: "Simuladores", titulo: "Simuladores destacados", descripcion: "Conecta este bloque a simuladores publicados desde el admin.", ctaLabel: "Ver simuladores", ctaHref: "/dashboard/simuladores", ctaAction: { type: "page", href: "/dashboard/simuladores" } },
