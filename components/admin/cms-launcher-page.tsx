@@ -17,7 +17,7 @@ function StatCard({ value, label, accent }: { value: string; label: string; acce
 }
 
 export default function AdminCMSLauncherPage() {
-  const { config } = useCMS()
+  const { config } = useCMS("draft")
 
   const stats = useMemo(() => {
     const pageBlocks = (config.pages ?? []).reduce((acc, page) => acc + (page.sections?.length ?? 0), 0)

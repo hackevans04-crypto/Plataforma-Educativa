@@ -418,7 +418,21 @@ export const DEFAULT_CMS: CMSConfig = {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const CMS_KEY = "he_cms_config"
+export type CMSSource = "draft" | "published"
+
+const CMS_DRAFT_KEY = "he_cms_config_draft"
+const CMS_PUBLISHED_KEY = "he_cms_config_published"
+const CMS_LEGACY_KEY = "he_cms_config"
+const CMS_DRAFT_EVENT = "cms-draft-config-updated"
+const CMS_PUBLISHED_EVENT = "cms-published-config-updated"
+
+function getCMSStorageKey(source: CMSSource) {
+  return source === "draft" ? CMS_DRAFT_KEY : CMS_PUBLISHED_KEY
+}
+
+function getCMSEventName(source: CMSSource) {
+  return source === "draft" ? CMS_DRAFT_EVENT : CMS_PUBLISHED_EVENT
+}
 
 function normalizeCMSPage(page: Partial<CMSPage> | undefined): CMSPage | null {
   if (!page?.slug) return null
@@ -436,10 +450,19 @@ function normalizeCMSPage(page: Partial<CMSPage> | undefined): CMSPage | null {
   }
 }
 
-export function getCMSConfig(): CMSConfig {
+export function getCMSConfig(source: CMSSource = "published"): CMSConfig {
   if (typeof window === "undefined") return DEFAULT_CMS
   try {
-    const raw = localStorage.getItem(CMS_KEY)
+    const legacyRaw = localStorage.getItem(CMS_LEGACY_KEY)
+    const draftRaw = localStorage.getItem(CMS_DRAFT_KEY) ?? legacyRaw
+    const publishedRaw = localStorage.getItem(CMS_PUBLISHED_KEY) ?? draftRaw
+
+    if (legacyRaw) {
+      if (!localStorage.getItem(CMS_DRAFT_KEY)) localStorage.setItem(CMS_DRAFT_KEY, legacyRaw)
+      if (!localStorage.getItem(CMS_PUBLISHED_KEY)) localStorage.setItem(CMS_PUBLISHED_KEY, publishedRaw ?? legacyRaw)
+    }
+
+    const raw = source === "draft" ? draftRaw : publishedRaw
     if (!raw) return DEFAULT_CMS
     const p = JSON.parse(raw)
     const normalizedPages = Array.isArray(p.pages)
@@ -462,40 +485,51 @@ export function getCMSConfig(): CMSConfig {
   }
 }
 
-export function saveCMSConfig(config: CMSConfig): void {
+export function saveCMSConfig(config: CMSConfig, source: CMSSource = "draft"): void {
   if (typeof window === "undefined") return
-  localStorage.setItem(CMS_KEY, JSON.stringify(config))
-  window.dispatchEvent(new CustomEvent("cms-config-updated"))
+  const payload = JSON.stringify(config)
+  localStorage.setItem(getCMSStorageKey(source), payload)
+  window.dispatchEvent(new CustomEvent(getCMSEventName(source)))
+}
+
+export function publishCMSConfig(config: CMSConfig): void {
+  if (typeof window === "undefined") return
+  const payload = JSON.stringify(config)
+  localStorage.setItem(CMS_DRAFT_KEY, payload)
+  localStorage.setItem(CMS_PUBLISHED_KEY, payload)
+  window.dispatchEvent(new CustomEvent(CMS_DRAFT_EVENT))
+  window.dispatchEvent(new CustomEvent(CMS_PUBLISHED_EVENT))
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useCMS() {
+export function useCMS(source: CMSSource = "published") {
   const [config, setConfig] = useState<CMSConfig>(DEFAULT_CMS)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const syncConfig = () => {
-      setConfig(getCMSConfig())
+      setConfig(getCMSConfig(source))
       setIsLoading(false)
     }
 
     syncConfig()
 
     const handleStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === CMS_KEY) {
+      const validKeys = [getCMSStorageKey(source), CMS_LEGACY_KEY]
+      if (!event.key || validKeys.includes(event.key)) {
         syncConfig()
       }
     }
 
     window.addEventListener("storage", handleStorage)
-    window.addEventListener("cms-config-updated", syncConfig)
+    window.addEventListener(getCMSEventName(source), syncConfig)
 
     return () => {
       window.removeEventListener("storage", handleStorage)
-      window.removeEventListener("cms-config-updated", syncConfig)
+      window.removeEventListener(getCMSEventName(source), syncConfig)
     }
-  }, [])
+  }, [source])
 
   return { config, isLoading }
 }

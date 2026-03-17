@@ -5352,7 +5352,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-3 py-3 text-xs leading-5 text-white/50">
           Los formularios son opcionales. Puedes usarlos como bloque en la pagina o dentro de un popup, segun el flujo que necesites.
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <button type="button" onClick={() => addPopup("form")} className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-semibold text-white transition-all hover:bg-primary/90">
             <Plus className="h-4 w-4" />
             Popup form

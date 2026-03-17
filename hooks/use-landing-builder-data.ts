@@ -238,6 +238,9 @@ export function shouldRenderSectionForAudience(section: CMSSection, isAuthentica
 }
 
 export function shouldHideSectionWhenEmpty(section: CMSSection) {
+  if (section.type === "simulatorsFeed" || section.type === "coursesFeed" || section.type === "evaluationsFeed") {
+    return false
+  }
   return section.settings?.visibility?.hideIfEmpty === true
 }
 
@@ -247,19 +250,19 @@ export function getDefaultSectionSettings(
   if (type === "simulatorsFeed") {
     return {
       source: { mode: "auto", limit: 3, order: "latest", display: "grid", columns: 3, showMeta: true, showButton: true, showBadge: true },
-      visibility: { audience: "all", device: "all", hideIfEmpty: true },
+      visibility: { audience: "all", device: "all", hideIfEmpty: false },
     }
   }
   if (type === "coursesFeed") {
     return {
       source: { mode: "auto", limit: 4, order: "latest", display: "grid", columns: 4, showMeta: true, showButton: true, showBadge: true },
-      visibility: { audience: "all", device: "all", hideIfEmpty: true },
+      visibility: { audience: "all", device: "all", hideIfEmpty: false },
     }
   }
   if (type === "evaluationsFeed") {
     return {
       source: { mode: "auto", limit: 3, order: "latest", display: "grid", columns: 3, showMeta: true, showButton: true, showBadge: true },
-      visibility: { audience: "all", device: "all", hideIfEmpty: true },
+      visibility: { audience: "all", device: "all", hideIfEmpty: false },
     }
   }
   return undefined
