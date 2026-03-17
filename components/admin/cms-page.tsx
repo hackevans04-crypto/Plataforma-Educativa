@@ -806,80 +806,12 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
         <StrList items={features} onChange={v => s({ features: v })} placeholder="ej. Simuladores actualizados" />
       </Card>
 
-      <Card title="Boton primario">
-        <F label="Texto del boton"><input className={iCls} value={data.ctaPrimario || ""} onChange={e => s({ ctaPrimario: e.target.value })} placeholder="Comenzar Ahora" /></F>
-        <F label="Tipo de accion">
-          <select className={iCls} value={data.primaryAction?.type || "page"} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), type: e.target.value } })}>
-            <option value="page">Pagina interna</option>
-            <option value="external">Link externo</option>
-            <option value="section">Seccion en la pagina</option>
-            <option value="popup">Abrir popup</option>
-            <option value="simulator">Ir a simulador</option>
-            <option value="none">Sin accion</option>
-          </select>
-        </F>
-        {(!data.primaryAction?.type || data.primaryAction?.type === "page" || data.primaryAction?.type === "external") && (
-          <F label="URL / Ruta" helper={data.primaryAction?.type === "external" ? "URL completa: https://..." : "Ruta interna: /registro"}>
-            <input className={iCls} value={data.primaryAction?.href || data.ctaHref || ""} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), type: data.primaryAction?.type || "page", href: e.target.value }, ctaHref: e.target.value })} placeholder="/registro" />
-          </F>
-        )}
-        {data.primaryAction?.type === "section" && (
-          <F label="ID de la seccion destino" helper="El id del bloque al que debe hacer scroll">
-            <input className={iCls} value={data.primaryAction?.sectionId || ""} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), sectionId: e.target.value } })} placeholder="ej. pricing" />
-          </F>
-        )}
-        {data.primaryAction?.type === "simulator" && (
-          <F label="Ruta del simulador">
-            <input className={iCls} value={data.primaryAction?.href || ""} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), href: e.target.value } })} placeholder="/simulador/mi-simulador" />
-          </F>
-        )}
-        {data.primaryAction?.type === "popup" && (
-          <F label="ID del popup">
-            <input className={iCls} value={data.primaryAction?.popupId || ""} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), popupId: e.target.value } })} placeholder="ej. registro-popup" />
-          </F>
-        )}
-        <label className="flex items-center gap-2 mt-1 cursor-pointer">
-          <input type="checkbox" className="rounded" checked={!!data.primaryAction?.openInNewTab} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), openInNewTab: e.target.checked } })} />
-          <span className="text-xs text-muted-foreground">Abrir en nueva pestana</span>
-        </label>
-      </Card>
-
-      <Card title="Boton secundario">
-        <F label="Texto del boton"><input className={iCls} value={data.ctaSecundario || ""} onChange={e => s({ ctaSecundario: e.target.value })} placeholder="Saber mas" /></F>
-        <F label="Tipo de accion">
-          <select className={iCls} value={data.secondaryAction?.type || "page"} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), type: e.target.value } })}>
-            <option value="page">Pagina interna</option>
-            <option value="external">Link externo</option>
-            <option value="section">Seccion en la pagina</option>
-            <option value="popup">Abrir popup</option>
-            <option value="simulator">Ir a simulador</option>
-            <option value="none">Sin accion</option>
-          </select>
-        </F>
-        {(!data.secondaryAction?.type || data.secondaryAction?.type === "page" || data.secondaryAction?.type === "external") && (
-          <F label="URL / Ruta" helper={data.secondaryAction?.type === "external" ? "URL completa: https://..." : "Ruta interna: /#precios"}>
-            <input className={iCls} value={data.secondaryAction?.href || data.ctaSecHref || ""} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), type: data.secondaryAction?.type || "page", href: e.target.value }, ctaSecHref: e.target.value })} placeholder="/#precios" />
-          </F>
-        )}
-        {data.secondaryAction?.type === "section" && (
-          <F label="ID de la seccion destino" helper="El id del bloque al que debe hacer scroll">
-            <input className={iCls} value={data.secondaryAction?.sectionId || ""} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), sectionId: e.target.value } })} placeholder="ej. pricing" />
-          </F>
-        )}
-        {data.secondaryAction?.type === "simulator" && (
-          <F label="Ruta del simulador">
-            <input className={iCls} value={data.secondaryAction?.href || ""} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), href: e.target.value } })} placeholder="/simulador/mi-simulador" />
-          </F>
-        )}
-        {data.secondaryAction?.type === "popup" && (
-          <F label="ID del popup">
-            <input className={iCls} value={data.secondaryAction?.popupId || ""} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), popupId: e.target.value } })} placeholder="ej. registro-popup" />
-          </F>
-        )}
-        <label className="flex items-center gap-2 mt-1 cursor-pointer">
-          <input type="checkbox" className="rounded" checked={!!data.secondaryAction?.openInNewTab} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), openInNewTab: e.target.checked } })} />
-          <span className="text-xs text-muted-foreground">Abrir en nueva pestana</span>
-        </label>
+      <Card title="Botones CTA">
+        <div className="grid grid-cols-2 gap-3">
+          <F label="Texto boton primario"><input className={iCls} value={data.ctaPrimario || ""} onChange={e => s({ ctaPrimario: e.target.value })} placeholder="Comenzar Ahora" /></F>
+          <F label="Texto boton secundario"><input className={iCls} value={data.ctaSecundario || ""} onChange={e => s({ ctaSecundario: e.target.value })} placeholder="Saber mas" /></F>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">Configura el flujo y redirección de cada botón en la sección <span className="font-semibold text-primary">⚡ Acciones</span> del panel derecho.</p>
       </Card>
 
       <Card title="Layout">
@@ -6113,6 +6045,45 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 onChange={updateSelectedSectionData}
                 onUpdateSettings={updateSelectedSectionSettings}
               />
+            )}
+            {(selectedSection.type === "pageHero" || selectedSection.type === "cta") && (
+              <>
+                <div className="flex items-center gap-2 px-1 pt-2">
+                  <div className="h-px flex-1 bg-white/8" />
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary/70">⚡ Flujo de botones</span>
+                  <div className="h-px flex-1 bg-white/8" />
+                </div>
+                <ActionConfigEditor
+                  title="Boton primario"
+                  action={selectedSection.data?.primaryAction}
+                  onChange={(action) => updateSelectedSectionAction("primaryAction", action)}
+                  sections={currentSections}
+                  pages={pages}
+                  popups={config.popups}
+                  simulators={simulatorActionOptions}
+                  onCreateFormPopup={createConnectedFormPopup}
+                  onEditFormPopup={openPopupFormEditor}
+                  onCreateFormSection={createConnectedFormSection}
+                  onEditFormSection={openSectionFormEditor}
+                  onUpdatePopup={updatePopup}
+                  onSyncFlow={syncConnectedFlow}
+                />
+                <ActionConfigEditor
+                  title="Boton secundario"
+                  action={selectedSection.data?.secondaryAction}
+                  onChange={(action) => updateSelectedSectionAction("secondaryAction", action)}
+                  sections={currentSections}
+                  pages={pages}
+                  popups={config.popups}
+                  simulators={simulatorActionOptions}
+                  onCreateFormPopup={createConnectedFormPopup}
+                  onEditFormPopup={openPopupFormEditor}
+                  onCreateFormSection={createConnectedFormSection}
+                  onEditFormSection={openSectionFormEditor}
+                  onUpdatePopup={updatePopup}
+                  onSyncFlow={syncConnectedFlow}
+                />
+              </>
             )}
           </div>
         ) : inspectorTab === "style" ? (
