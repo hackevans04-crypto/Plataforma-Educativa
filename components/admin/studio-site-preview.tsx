@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { MouseEvent, ReactNode } from "react"
-import { ArrowDown, ArrowUp, Award, BadgePlus, BookOpen, Copy, Code2, Eye, EyeOff, FileImage, FileText, GalleryVertical, GripVertical, HelpCircle, Layers, LayoutTemplate, MessageSquare, Pencil, PlayCircle, Plus, Sparkles, Star, Target, TextCursorInput, Trash2, Video } from "lucide-react"
+import { ArrowDown, ArrowUp, Award, BadgePlus, BookOpen, Copy, Code2, Eye, EyeOff, FileImage, FileText, GalleryVertical, GripVertical, HelpCircle, Layers, LayoutTemplate, MessageSquare, Minus, Pencil, PlayCircle, Plus, Sparkles, Star, Target, TextCursorInput, Trash2, Video } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { CMSActionConfig, CMSConfig, CMSSection, CMSSectionType } from "@/hooks/use-cms"
 import Navbar from "@/components/navbar"
@@ -28,6 +28,10 @@ import { resolveLandingBuilderItems, useLandingBuilderData } from "@/hooks/use-l
 import FormBuilderSection from "@/components/landing/form-builder-section"
 import LandingPopupHost from "@/components/landing/landing-popup-host"
 import { getLandingSectionDomId } from "@/hooks/use-landing-actions"
+import RichTextSection from "@/components/landing/rich-text-section"
+import LogoStripSection from "@/components/landing/logo-strip-section"
+import SpacerSection from "@/components/landing/spacer-section"
+import EmbedSection from "@/components/landing/embed-section"
 
 const BG_CLASSES: Record<string, string> = {
   transparent: "",
@@ -63,6 +67,10 @@ const SECTION_META: Record<CMSSectionType, { label: string; icon: ReactNode }> =
   coursesFeed: { label: "Cursos", icon: <BookOpen className="h-3.5 w-3.5" /> },
   evaluationsFeed: { label: "Evaluaciones", icon: <Award className="h-3.5 w-3.5" /> },
   formBuilder: { label: "Formulario", icon: <FileText className="h-3.5 w-3.5" /> },
+  richText: { label: "Contenido libre", icon: <TextCursorInput className="h-3.5 w-3.5" /> },
+  logoStrip: { label: "Logos", icon: <BadgePlus className="h-3.5 w-3.5" /> },
+  spacer: { label: "Espaciador", icon: <Minus className="h-3.5 w-3.5" /> },
+  embed: { label: "Embed", icon: <Code2 className="h-3.5 w-3.5" /> },
 }
 
 function getSimulatorSubmitAction(action: CMSActionConfig): CMSActionConfig {
@@ -361,6 +369,44 @@ function renderSectionContent(
               ),
             })
           }
+        />
+      )
+    case "richText":
+      return (
+        <RichTextSection
+          data={section.data}
+          editMode={selected}
+          onActivate={() => onSelect?.(section.id)}
+          onFieldChange={(field, value) => onInlineUpdate?.(section.id, { [field]: value })}
+          onPrimaryAction={() => onAction?.(section.data?.primaryAction, section.data?.primaryHref)}
+          onSecondaryAction={() => onAction?.(section.data?.secondaryAction, section.data?.secondaryHref)}
+        />
+      )
+    case "logoStrip":
+      return (
+        <LogoStripSection
+          data={section.data}
+          editMode={selected}
+          onActivate={() => onSelect?.(section.id)}
+          onFieldChange={(field, value) => onInlineUpdate?.(section.id, { [field]: value })}
+          onItemChange={(index, patch) =>
+            onInlineUpdate?.(section.id, {
+              items: ((section.data.items as Array<Record<string, any>>) ?? []).map((item, itemIndex) =>
+                itemIndex === index ? { ...item, ...patch } : item
+              ),
+            })
+          }
+        />
+      )
+    case "spacer":
+      return <SpacerSection data={section.data} />
+    case "embed":
+      return (
+        <EmbedSection
+          data={section.data}
+          editMode={selected}
+          onActivate={() => onSelect?.(section.id)}
+          onFieldChange={(field, value) => onInlineUpdate?.(section.id, { [field]: value })}
         />
       )
     case "formBuilder":
