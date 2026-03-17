@@ -863,142 +863,8 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
   )
 }
 
-// --- HTML Importer ---
+import { HtmlImporter } from "@/components/admin/html-importer"
 
-function detectHtmlContent(html: string) {
-  const lower = html.toLowerCase()
-  const screenCount = (html.match(/class=”[^”]*screen[^”]*”/g) || []).length
-  const stepCount   = (html.match(/class=”[^”]*step[^”]*”/g)   || []).length
-  const hasTimer    = lower.includes(“timer”) || lower.includes(“countdown”) || lower.includes(“tiempo”)
-  const hasScore    = lower.includes(“score”) || lower.includes(“resultado”) || lower.includes(“puntaje”) || lower.includes(“aprobado”)
-  const hasForm     = (html.match(/<form/gi) || []).length > 0 || (html.match(/<input/gi) || []).length > 2
-  const hasCards    = (html.match(/class=”[^”]*card[^”]*”/g) || []).length > 2
-  const scriptCount = (html.match(/<script/gi) || []).length
-  const styleCount  = (html.match(/<style/gi) || []).length
-  const titleMatch  = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
-  const title       = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, “”).trim().slice(0, 60) : “Sin titulo”
-  const hasSteps    = screenCount > 1 || stepCount > 1
-  let label = “Contenido libre”
-  let emoji = “📄”
-  if (hasSteps && (hasScore || hasTimer)) { label = “Simulador / Quiz”; emoji = “🎯” }
-  else if (hasSteps)                      { label = “Flujo multi-paso”; emoji = “📋” }
-  else if (hasForm)                       { label = “Formulario”;       emoji = “📝” }
-  else if (hasCards)                      { label = “Landing / Tarjetas”; emoji = “🎨” }
-  return { label, emoji, title, hasForm, hasSteps, hasTimer, hasScore, scriptCount, styleCount }
-}
-
-function scopeHtmlForSandbox(rawHtml: string, scopeId: string): string {
-  const styleBlocks  = [...rawHtml.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(m => m[1]).join(“\n”)
-  const bodyMatch    = rawHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
-  const bodyContent  = bodyMatch ? bodyMatch[1] : rawHtml.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, “”).replace(/<script[^>]*>[\s\S]*?<\/script>/gi, “”)
-  const scriptBlocks = [...rawHtml.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]).join(“\n”)
-  const scopedCss    = styleBlocks.split(“}”).map(rule => {
-    if (!rule.trim()) return “”
-    return rule.replace(/([^{,]+)(,?)(?=[^{]*\{)/g, (_: string, sel: string, comma: string) => {
-      const t = sel.trim()
-      if (!t || t.startsWith(“@”) || t.startsWith(“:root”)) return sel
-      return `#${scopeId} ${t}${comma}`
-    }) + “}”
-  }).join(“\n”)
-  return `<style>\n#${scopeId}{all:initial;display:block;font-family:inherit;color:inherit;}\n${scopedCss}\n</style>\n<div id=”${scopeId}”>${bodyContent}</div>\n<script>(function(){\n${scriptBlocks}\n})();<\/script>`
-}
-
-function HtmlImporter({ onCreateSection }: { onCreateSection: (type: CMSSectionType, data: Record<string, any>) => void }) {
-  const [mode, setMode]             = React.useState(“idle”)
-  const [detection, setDetection]   = React.useState<Record<string, any> | null>(null)
-  const [rawHtml, setRawHtml]       = React.useState(“”)
-  const [fileName, setFileName]     = React.useState(“”)
-  const [importMode, setImportMode] = React.useState(“sandbox”)
-  const fileRef = React.useRef<HTMLInputElement>(null)
-
-  const handleFile = (file: File) => {
-    if (!file) return
-    setFileName(file.name)
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const html = (e.target?.result ?? “”) as string
-      setRawHtml(html)
-      setDetection(detectHtmlContent(html))
-      setMode(“detected”)
-    }
-    reader.readAsText(file)
-  }
-
-  const handleConfirm = () => {
-    if (!detection || !rawHtml) return
-    const scopeId   = `hi_${Date.now()}`
-    const finalHtml = importMode === “sandbox” ? scopeHtmlForSandbox(rawHtml, scopeId) : rawHtml
-    onCreateSection(“customCode”, { html: finalHtml, nota: `Importado: ${fileName} - ${detection.label}` })
-    setMode(“done”)
-    setTimeout(() => { setMode(“idle”); setDetection(null); setRawHtml(“”); setFileName(“”) }, 2500)
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    if (file) handleFile(file)
-  }
-
-  if (mode === “done”) return (
-    <div className=”rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5 text-center”>
-      <div className=”text-3xl mb-2”>&#x2705;</div>
-      <div className=”text-sm font-semibold text-emerald-400”>Bloque creado correctamente</div>
-      <div className=”text-xs text-white/45 mt-1”>{fileName}</div>
-    </div>
-  )
-
-  if (mode === “detected” && detection) return (
-    <div className=”space-y-3”>
-      <div className=”rounded-2xl border border-primary/25 bg-primary/[0.06] p-4”>
-        <div className=”flex items-center gap-3 mb-3”>
-          <span className=”text-2xl”>{detection.emoji}</span>
-          <div>
-            <div className=”text-sm font-semibold text-white truncate max-w-[180px]”>{detection.title}</div>
-            <div className=”text-xs text-primary font-semibold”>{detection.label}</div>
-          </div>
-        </div>
-        <div className=”flex flex-wrap gap-1.5”>
-          {detection.hasSteps    && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>Multi-paso</span>}
-          {detection.hasTimer    && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>Temporizador</span>}
-          {detection.hasScore    && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>Resultados</span>}
-          {detection.hasForm     && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>Formulario</span>}
-          {detection.scriptCount > 0 && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>{detection.scriptCount} scripts</span>}
-          {detection.styleCount  > 0 && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>{detection.styleCount} estilos</span>}
-        </div>
-      </div>
-      <div className=”space-y-2”>
-        <div className=”text-[10px] font-bold uppercase tracking-[0.18em] text-white/35”>Modo de importacion</div>
-        {[
-          { val: “sandbox”, lbl: “Sandbox aislado”,  desc: “CSS y JS protegidos en contenedor unico. Recomendado para simuladores.” },
-          { val: “adapt”,   lbl: “Codigo directo”,   desc: “Inserta el HTML sin aislamiento. Para archivos ya optimizados.” },
-        ].map(({ val, lbl, desc }) => (
-          <button key={val} onClick={() => setImportMode(val)} className={cn(“w-full text-left rounded-xl border p-3 transition-all”, importMode === val ? “border-primary bg-primary/10” : “border-white/8 hover:border-white/18”)}>
-            <div className={cn(“text-sm font-medium”, importMode === val ? “text-primary” : “text-white”)}>{lbl}</div>
-            <div className=”text-[11px] text-white/40 mt-0.5 leading-4”>{desc}</div>
-          </button>
-        ))}
-      </div>
-      <div className=”flex gap-2 pt-1”>
-        <Btn variant=”ghost” onClick={() => setMode(“idle”)} className=”flex-1”>Cancelar</Btn>
-        <button onClick={handleConfirm} className=”flex-1 inline-flex items-center justify-center gap-1.5 h-10 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-all”>
-          <Plus className=”w-3.5 h-3.5” />Crear bloque
-        </button>
-      </div>
-    </div>
-  )
-
-  return (
-    <div onDrop={handleDrop} onDragOver={(e) => e.preventDefault()} onClick={() => fileRef.current?.click()}
-      className=”rounded-2xl border-2 border-dashed border-white/10 hover:border-primary/40 transition-all p-6 text-center cursor-pointer group”>
-      <input ref={fileRef} type=”file” accept=”.html,text/html” className=”hidden” onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
-      <div className=”text-4xl mb-2 group-hover:scale-110 transition-transform select-none”>&#x1F4C2;</div>
-      <div className=”text-sm font-semibold text-white mb-1”>Importar HTML</div>
-      <div className=”text-[11px] text-white/40 leading-4”>Clic o arrastra un archivo .html aqui</div>
-    </div>
-  )
-}
-
-// --- FeatureCards Editor ---
 
 function FeatureCardsEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
@@ -1701,7 +1567,7 @@ const SM: Record<CMSSectionType, { label: string; icon: React.ElementType; color
   stats:        { label: "Estadisticas",       icon: BarChart3,     color: "text-rose-400 bg-rose-400/10",      deletable: true, desc: "Numeros y metricas" },
   customCode:   { label: "Codigo HTML",        icon: Code2,         color: "text-green-400 bg-green-400/10",    deletable: true, desc: "HTML / iframes / widgets" },
   pageHero:     { label: "Hero de Pagina",     icon: Sparkles,      color: "text-primary bg-primary/10",        deletable: true, desc: "Hero con badge, titulo, CTA" },
-  featureCards: { label: "Tarjetas Features",  icon: LayoutTemplate,color: "text-sky-400 bg-sky-400/10",        deletable: true, desc: "Grid de tarjetas con emoji" },
+  featureCards: { label: "Tarjetas",           icon: LayoutTemplate,color: "text-sky-400 bg-sky-400/10",        deletable: true, desc: "Grid universal de tarjetas editables" },
   simulatorsFeed:{ label: "Simuladores",       icon: Target,        color: "text-primary bg-primary/10",        deletable: true, desc: "Bloque conectado a simuladores publicados" },
   coursesFeed:  { label: "Cursos",             icon: GraduationCap, color: "text-indigo-400 bg-indigo-400/10",  deletable: true, desc: "Bloque conectado al catalogo de cursos" },
   evaluationsFeed:{ label: "Evaluaciones",     icon: ClipboardCheck,color: "text-amber-400 bg-amber-400/10",    deletable: true, desc: "Bloque conectado a evaluaciones activas" },
@@ -5401,7 +5267,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         </div>
         <div className="border-b border-white/8 px-4 py-3">
           <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/5 px-3 py-3 text-xs leading-5 text-white/55">
-            1. Elige un bloque. 2. Inserta en el canvas con el boton `+`. 3. Edita directo sobre la pagina.
+            Usa este panel como biblioteca universal: tarjetas, videos, FAQs, formularios, simuladores, cursos, evaluaciones, galerias y bloques HTML.
           </div>
           <div className="mt-3">
             <input
@@ -5483,6 +5349,9 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">{config.popups.length}</span>
       </div>
       <div className="border-b border-white/8 p-4">
+        <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-3 py-3 text-xs leading-5 text-white/50">
+          Los formularios son opcionales. Puedes usarlos como bloque en la pagina o dentro de un popup, segun el flujo que necesites.
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" onClick={() => addPopup("form")} className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-semibold text-white transition-all hover:bg-primary/90">
             <Plus className="h-4 w-4" />
@@ -5668,7 +5537,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">{studioSimulatorItems.length}</span>
       </div>
       <div className="border-b border-white/8 p-4">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-3 py-3 text-xs leading-5 text-white/50">
+          Los simuladores, evaluaciones y cursos son opcionales. Solo agrega estos bloques si quieres conectarlos a la pagina actual.
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
           <button type="button" onClick={() => addSection("simulatorsFeed")} className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-semibold text-white transition-all hover:bg-primary/90">
             <Plus className="h-4 w-4" />
             Bloque sim
@@ -5677,9 +5549,77 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             <Plus className="h-4 w-4" />
             Bloque eval
           </button>
+          <button type="button" onClick={() => addSection("coursesFeed")} className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] text-sm font-semibold text-white/75 transition-all hover:border-primary/35 hover:text-white">
+            <Plus className="h-4 w-4" />
+            Bloque curso
+          </button>
         </div>
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto p-4">
+        <div>
+          <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Bloques en esta pagina</div>
+          <div className="space-y-2">
+            {currentSections.filter((section) => ["simulatorsFeed", "coursesFeed", "evaluationsFeed"].includes(section.type)).length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45">
+                Esta pagina aun no tiene bloques conectados. Agrega uno arriba si quieres mostrar simuladores, cursos o evaluaciones.
+              </div>
+            ) : (
+              currentSections
+                .filter((section) => ["simulatorsFeed", "coursesFeed", "evaluationsFeed"].includes(section.type))
+                .map((section) => {
+                  const meta = SM[section.type]
+                  const Icon = meta?.icon ?? Target
+                  return (
+                    <div
+                      key={section.id}
+                      className={cn(
+                        "rounded-2xl border px-3 py-3 transition-all",
+                        selectedSectionId === section.id
+                          ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]"
+                          : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]"
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSimulatorInspectorTarget("feed")
+                            setSelectedPopupId("")
+                            setSelectedSectionId(section.id)
+                            setLeftTab("simulators")
+                            setInspectorTab("content")
+                            setRightPanelCollapsed(false)
+                          }}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl border border-white/8 bg-[#0b1017]", meta?.color ?? "text-white/40")}>
+                              <Icon className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-white">{section.data?.titulo || meta?.label || "Bloque"}</div>
+                              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">{meta?.label || section.type}</div>
+                            </div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteSection(section.id)}
+                          className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-red-400/35 hover:text-red-400"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })
+            )}
+          </div>
+        </div>
+
+        <div className="pt-1">
+          <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Contenido reutilizable</div>
+        </div>
         {studioSimulatorItems.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45">Publica simuladores o evaluaciones para conectarlos desde el Studio.</div>
         ) : (
