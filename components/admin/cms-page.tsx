@@ -13,7 +13,7 @@ import {
 import { cn } from "@/lib/utils"
 import {
   type CMSActionConfig, type CMSConfig, type CMSFormFieldConfig, type CMSPage, type CMSPopup, type CMSSection, type CMSSectionSettings, type CMSSectionStyle, type CMSSectionType,
-  DEFAULT_CMS, getCMSConfig, saveCMSConfig,
+  DEFAULT_CMS, getCMSConfig, publishCMSConfig, saveCMSConfig,
 } from "@/hooks/use-cms"
 import StudioSitePreview from "@/components/admin/studio-site-preview"
 import {
@@ -863,22 +863,9 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
   )
 }
 
-// ─── HTML Importer ────────────────────────────────────────────────────────────
+// --- HTML Importer ---
 
-interface HtmlDetection {
-  kind: “simulator” | “multistep” | “form” | “landing” | “content”
-  label: string
-  emoji: string
-  title: string
-  hasForm: boolean
-  hasSteps: boolean
-  hasTimer: boolean
-  hasScore: boolean
-  scriptCount: number
-  styleCount: number
-}
-
-function detectHtmlContent(html: string): HtmlDetection {
+function detectHtmlContent(html: string) {
   const lower = html.toLowerCase()
   const screenCount = (html.match(/class=”[^”]*screen[^”]*”/g) || []).length
   const stepCount   = (html.match(/class=”[^”]*step[^”]*”/g)   || []).length
@@ -891,16 +878,13 @@ function detectHtmlContent(html: string): HtmlDetection {
   const titleMatch  = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
   const title       = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, “”).trim().slice(0, 60) : “Sin titulo”
   const hasSteps    = screenCount > 1 || stepCount > 1
-
-  let kind: HtmlDetection[“kind”] = “content”
   let label = “Contenido libre”
   let emoji = “📄”
-  if (hasSteps && (hasScore || hasTimer)) { kind = “simulator”; label = “Simulador / Quiz”; emoji = “🎯” }
-  else if (hasSteps)                      { kind = “multistep”; label = “Flujo multi-paso”; emoji = “📋” }
-  else if (hasForm)                       { kind = “form”;      label = “Formulario”;       emoji = “📝” }
-  else if (hasCards)                      { kind = “landing”;   label = “Landing / Tarjetas”; emoji = “🎨” }
-
-  return { kind, label, emoji, title, hasForm, hasSteps, hasTimer, hasScore, scriptCount, styleCount }
+  if (hasSteps && (hasScore || hasTimer)) { label = “Simulador / Quiz”; emoji = “🎯” }
+  else if (hasSteps)                      { label = “Flujo multi-paso”; emoji = “📋” }
+  else if (hasForm)                       { label = “Formulario”;       emoji = “📝” }
+  else if (hasCards)                      { label = “Landing / Tarjetas”; emoji = “🎨” }
+  return { label, emoji, title, hasForm, hasSteps, hasTimer, hasScore, scriptCount, styleCount }
 }
 
 function scopeHtmlForSandbox(rawHtml: string, scopeId: string): string {
@@ -910,21 +894,21 @@ function scopeHtmlForSandbox(rawHtml: string, scopeId: string): string {
   const scriptBlocks = [...rawHtml.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]).join(“\n”)
   const scopedCss    = styleBlocks.split(“}”).map(rule => {
     if (!rule.trim()) return “”
-    return rule.replace(/([^{,]+)(,?)(?=[^{]*\{)/g, (_, sel, comma) => {
+    return rule.replace(/([^{,]+)(,?)(?=[^{]*\{)/g, (_: string, sel: string, comma: string) => {
       const t = sel.trim()
       if (!t || t.startsWith(“@”) || t.startsWith(“:root”)) return sel
       return `#${scopeId} ${t}${comma}`
     }) + “}”
   }).join(“\n”)
-  return `<style>\n#${scopeId}{all:initial;display:block;font-family:inherit;color:inherit;}\n${scopedCss}\n</style>\n<div id=”${scopeId}”>${bodyContent}</div>\n<script>(function(){\n${scriptBlocks}\n})();</script>`
+  return `<style>\n#${scopeId}{all:initial;display:block;font-family:inherit;color:inherit;}\n${scopedCss}\n</style>\n<div id=”${scopeId}”>${bodyContent}</div>\n<script>(function(){\n${scriptBlocks}\n})();<\/script>`
 }
 
 function HtmlImporter({ onCreateSection }: { onCreateSection: (type: CMSSectionType, data: Record<string, any>) => void }) {
-  const [mode, setMode]           = React.useState<”idle” | “detected” | “done”>(“idle”)
-  const [detection, setDetection] = React.useState<HtmlDetection | null>(null)
-  const [rawHtml, setRawHtml]     = React.useState(“”)
-  const [fileName, setFileName]   = React.useState(“”)
-  const [importMode, setImportMode] = React.useState<”sandbox” | “adapt”>(“sandbox”)
+  const [mode, setMode]             = React.useState(“idle”)
+  const [detection, setDetection]   = React.useState<Record<string, any> | null>(null)
+  const [rawHtml, setRawHtml]       = React.useState(“”)
+  const [fileName, setFileName]     = React.useState(“”)
+  const [importMode, setImportMode] = React.useState(“sandbox”)
   const fileRef = React.useRef<HTMLInputElement>(null)
 
   const handleFile = (file: File) => {
@@ -932,7 +916,7 @@ function HtmlImporter({ onCreateSection }: { onCreateSection: (type: CMSSectionT
     setFileName(file.name)
     const reader = new FileReader()
     reader.onload = (e) => {
-      const html = e.target?.result as string
+      const html = (e.target?.result ?? “”) as string
       setRawHtml(html)
       setDetection(detectHtmlContent(html))
       setMode(“detected”)
@@ -944,8 +928,7 @@ function HtmlImporter({ onCreateSection }: { onCreateSection: (type: CMSSectionT
     if (!detection || !rawHtml) return
     const scopeId   = `hi_${Date.now()}`
     const finalHtml = importMode === “sandbox” ? scopeHtmlForSandbox(rawHtml, scopeId) : rawHtml
-    const nota      = `Importado: ${fileName} · ${detection.label}`
-    onCreateSection(“customCode”, { html: finalHtml, nota })
+    onCreateSection(“customCode”, { html: finalHtml, nota: `Importado: ${fileName} - ${detection.label}` })
     setMode(“done”)
     setTimeout(() => { setMode(“idle”); setDetection(null); setRawHtml(“”); setFileName(“”) }, 2500)
   }
@@ -958,7 +941,7 @@ function HtmlImporter({ onCreateSection }: { onCreateSection: (type: CMSSectionT
 
   if (mode === “done”) return (
     <div className=”rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-5 text-center”>
-      <div className=”text-3xl mb-2”>✅</div>
+      <div className=”text-3xl mb-2”>&#x2705;</div>
       <div className=”text-sm font-semibold text-emerald-400”>Bloque creado correctamente</div>
       <div className=”text-xs text-white/45 mt-1”>{fileName}</div>
     </div>
@@ -975,28 +958,26 @@ function HtmlImporter({ onCreateSection }: { onCreateSection: (type: CMSSectionT
           </div>
         </div>
         <div className=”flex flex-wrap gap-1.5”>
-          {detection.hasSteps    && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>🔁 Multi-paso</span>}
-          {detection.hasTimer    && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>⏱ Temporizador</span>}
-          {detection.hasScore    && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>🏆 Resultados</span>}
-          {detection.hasForm     && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>📝 Formulario</span>}
-          {detection.scriptCount > 0 && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>⚙️ {detection.scriptCount} scripts</span>}
-          {detection.styleCount  > 0 && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>🎨 {detection.styleCount} estilos</span>}
+          {detection.hasSteps    && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>Multi-paso</span>}
+          {detection.hasTimer    && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>Temporizador</span>}
+          {detection.hasScore    && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>Resultados</span>}
+          {detection.hasForm     && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>Formulario</span>}
+          {detection.scriptCount > 0 && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>{detection.scriptCount} scripts</span>}
+          {detection.styleCount  > 0 && <span className=”rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-white/60”>{detection.styleCount} estilos</span>}
         </div>
       </div>
-
       <div className=”space-y-2”>
         <div className=”text-[10px] font-bold uppercase tracking-[0.18em] text-white/35”>Modo de importacion</div>
-        {([
-          [“sandbox”, “Sandbox aislado”, “CSS y JS del archivo dentro de un contenedor protegido. Recomendado para simuladores.”],
-          [“adapt”,   “Codigo directo”,  “Inserta el HTML tal cual. Para archivos ya optimizados o iframes.”],
-        ] as const).map(([val, lbl, desc]) => (
+        {[
+          { val: “sandbox”, lbl: “Sandbox aislado”,  desc: “CSS y JS protegidos en contenedor unico. Recomendado para simuladores.” },
+          { val: “adapt”,   lbl: “Codigo directo”,   desc: “Inserta el HTML sin aislamiento. Para archivos ya optimizados.” },
+        ].map(({ val, lbl, desc }) => (
           <button key={val} onClick={() => setImportMode(val)} className={cn(“w-full text-left rounded-xl border p-3 transition-all”, importMode === val ? “border-primary bg-primary/10” : “border-white/8 hover:border-white/18”)}>
             <div className={cn(“text-sm font-medium”, importMode === val ? “text-primary” : “text-white”)}>{lbl}</div>
             <div className=”text-[11px] text-white/40 mt-0.5 leading-4”>{desc}</div>
           </button>
         ))}
       </div>
-
       <div className=”flex gap-2 pt-1”>
         <Btn variant=”ghost” onClick={() => setMode(“idle”)} className=”flex-1”>Cancelar</Btn>
         <button onClick={handleConfirm} className=”flex-1 inline-flex items-center justify-center gap-1.5 h-10 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-all”>
@@ -1007,21 +988,17 @@ function HtmlImporter({ onCreateSection }: { onCreateSection: (type: CMSSectionT
   )
 
   return (
-    <div
-      onDrop={handleDrop}
-      onDragOver={(e) => e.preventDefault()}
-      onClick={() => fileRef.current?.click()}
-      className=”rounded-2xl border-2 border-dashed border-white/10 hover:border-primary/40 transition-all p-6 text-center cursor-pointer group”
-    >
+    <div onDrop={handleDrop} onDragOver={(e) => e.preventDefault()} onClick={() => fileRef.current?.click()}
+      className=”rounded-2xl border-2 border-dashed border-white/10 hover:border-primary/40 transition-all p-6 text-center cursor-pointer group”>
       <input ref={fileRef} type=”file” accept=”.html,text/html” className=”hidden” onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
-      <div className=”text-4xl mb-2 group-hover:scale-110 transition-transform select-none”>📂</div>
+      <div className=”text-4xl mb-2 group-hover:scale-110 transition-transform select-none”>&#x1F4C2;</div>
       <div className=”text-sm font-semibold text-white mb-1”>Importar HTML</div>
-      <div className=”text-[11px] text-white/40 leading-4”>Haz clic o arrastra un archivo .html<br/>Simuladores · Formularios · Landings</div>
+      <div className=”text-[11px] text-white/40 leading-4”>Clic o arrastra un archivo .html aqui</div>
     </div>
   )
 }
 
-// ─── FeatureCards Editor ──────────────────────────────────────────────────────
+// --- FeatureCards Editor ---
 
 function FeatureCardsEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
@@ -4324,14 +4301,14 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const handleSave = () => {
     setIsAutosaving(false)
-    saveCMSConfig(config)
+    saveCMSConfig(config, "draft")
     setSaved(true)
     setChanged(false)
     setTimeout(() => setSaved(false), 2500)
   }
 
   const handlePublish = () => {
-    saveCMSConfig(config)
+    publishCMSConfig(config)
     setSaved(true)
     setChanged(false)
     setPublished(true)
@@ -4403,7 +4380,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
     setIsAutosaving(true)
     const timer = window.setTimeout(() => {
-      saveCMSConfig(config)
+      saveCMSConfig(config, "draft")
       setIsAutosaving(false)
       setSaved(true)
       setChanged(false)
@@ -6786,7 +6763,7 @@ function DashboardLayout({ config, onChange }: { config: CMSConfig; onChange: CM
   const handleChange = (next: CMSConfig) => { onChange(next); setChanged(true) }
 
   const handleSave = () => {
-    saveCMSConfig(config)
+    saveCMSConfig(config, "draft")
     setSaved(true); setChanged(false)
     setTimeout(() => setSaved(false), 2500)
   }
@@ -6861,7 +6838,7 @@ function DashboardLayout({ config, onChange }: { config: CMSConfig; onChange: CM
 export default function AdminCMSPage({ studioMode = false }: { studioMode?: boolean }) {
   const [config, setConfig] = useState<CMSConfig | null>(null)
 
-  useEffect(() => { setConfig(getCMSConfig()) }, [])
+  useEffect(() => { setConfig(getCMSConfig("draft")) }, [])
 
   const handleChange: CMSChangeHandler = (next) => {
     setConfig((current) => {
@@ -6882,4 +6859,3 @@ export default function AdminCMSPage({ studioMode = false }: { studioMode?: bool
 
   return <DashboardLayout config={config} onChange={handleChange} />
 }
-
