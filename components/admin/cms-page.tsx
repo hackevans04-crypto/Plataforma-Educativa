@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
-  AlertCircle, ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronUp,
+  AlertCircle, ArrowDown, ArrowLeft, ArrowUp, BadgePlus, Check, ChevronDown, ChevronUp,
   ClipboardCheck, Code2, ExternalLink, Eye, EyeOff, FileImage, FileText, Globe, GraduationCap, ImageIcon,
   LayoutTemplate, Layers, Link2, MessageSquare, Minus, Pencil, Play, Plus,
-  RefreshCw, Save, Settings, Sparkles, Star, Tag, Trash2, Type,
+  RefreshCw, Save, Settings, Sparkles, Star, Tag, TextCursorInput, Trash2, Type,
   Video, X, Zap, BarChart3, AlignCenter, AlignLeft, AlignRight, Target, ChevronLeft, ChevronRight,
   Monitor, Smartphone, Copy, Tablet, Undo2, Redo2,
 } from "lucide-react"
@@ -675,6 +675,201 @@ function CustomCodeEditor({ data, onChange }: { data: Record<string, any>; onCha
   )
 }
 
+function RichTextEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
+  const s = (patch: Record<string, any>) => onChange({ ...data, ...patch })
+  const bullets = (data.bullets || []) as string[]
+
+  return (
+    <div className="p-5 space-y-5">
+      <Card title="Encabezado">
+        <F label="Eyebrow / etiqueta"><input className={iCls} value={data.eyebrow || ""} onChange={e => s({ eyebrow: e.target.value })} placeholder="Contenido flexible" /></F>
+        <F label="Titulo"><textarea className={tCls} rows={2} value={data.titulo || ""} onChange={e => s({ titulo: e.target.value })} placeholder="Construye cualquier seccion" /></F>
+        <F label="Descripcion"><textarea className={tCls} rows={3} value={data.descripcion || ""} onChange={e => s({ descripcion: e.target.value })} placeholder="Describe la propuesta principal del bloque." /></F>
+        <F label="Texto extendido" helper="Opcional. Util para parrafos editoriales o explicativos."><textarea className={tCls} rows={4} value={data.body || ""} onChange={e => s({ body: e.target.value })} placeholder="Amplia el mensaje con mas contexto, bullets o storytelling." /></F>
+      </Card>
+
+      <Card title="Contenido adicional">
+        <F label="Lista de puntos">
+          <StrList items={bullets} onChange={(next) => s({ bullets: next })} placeholder="Punto clave" />
+        </F>
+        <div className="grid grid-cols-2 gap-3">
+          <F label="Alineacion">
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                ["left", "Izquierda"],
+                ["center", "Centro"],
+                ["right", "Derecha"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => s({ alignment: key })}
+                  className={cn(
+                    "h-10 rounded-xl border text-xs font-medium transition-all",
+                    (data.alignment || "left") === key ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/40"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </F>
+          <F label="Ancho del bloque">
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                ["md", "Compacto"],
+                ["lg", "Normal"],
+                ["xl", "Ancho"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => s({ maxWidth: key })}
+                  className={cn(
+                    "h-10 rounded-xl border text-xs font-medium transition-all",
+                    (data.maxWidth || "lg") === key ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/40"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </F>
+        </div>
+      </Card>
+
+      <Card title="Botones">
+        <div className="grid grid-cols-2 gap-3">
+          <F label="Boton principal"><input className={iCls} value={data.primaryLabel || ""} onChange={e => s({ primaryLabel: e.target.value })} placeholder="Accion principal" /></F>
+          <F label="Boton secundario"><input className={iCls} value={data.secondaryLabel || ""} onChange={e => s({ secondaryLabel: e.target.value })} placeholder="Accion secundaria" /></F>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <F label="Fallback principal"><input className={iCls} value={data.primaryHref || ""} onChange={e => s({ primaryHref: e.target.value })} placeholder="/registro o #seccion" /></F>
+          <F label="Fallback secundario"><input className={iCls} value={data.secondaryHref || ""} onChange={e => s({ secondaryHref: e.target.value })} placeholder="/simulador o https://..." /></F>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+function LogoStripEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
+  const s = (patch: Record<string, any>) => onChange({ ...data, ...patch })
+  const items = (data.items || []) as Array<{ id: string; label: string; subLabel?: string; imageUrl?: string; href?: string }>
+
+  return (
+    <div className="p-5 space-y-5">
+      <Card title="Encabezado">
+        <F label="Eyebrow"><input className={iCls} value={data.eyebrow || ""} onChange={e => s({ eyebrow: e.target.value })} placeholder="Confianza" /></F>
+        <F label="Titulo"><input className={iCls} value={data.titulo || ""} onChange={e => s({ titulo: e.target.value })} placeholder="Marcas, aliados o herramientas" /></F>
+        <F label="Descripcion"><textarea className={tCls} rows={3} value={data.descripcion || ""} onChange={e => s({ descripcion: e.target.value })} placeholder="Explica que representan estos logos o marcas." /></F>
+        <F label="Columnas">
+          <input className={iCls} type="number" min={2} max={6} value={data.columns || 4} onChange={e => s({ columns: Math.min(6, Math.max(2, Number(e.target.value) || 4)) })} />
+        </F>
+      </Card>
+
+      <Card
+        title={`Elementos (${items.length})`}
+        action={
+          <Btn size="sm" variant="ghost" onClick={() => s({ items: [...items, { id: `logo_${Date.now()}`, label: `Logo ${items.length + 1}`, subLabel: "", imageUrl: "", href: "" }] })}>
+            <Plus className="w-3.5 h-3.5" />Agregar
+          </Btn>
+        }
+      >
+        {items.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Aun no hay logos o marcas cargadas.</p> : null}
+        <div className="space-y-4">
+          {items.map((item, index) => (
+            <div key={item.id} className="rounded-2xl border border-border bg-secondary/10 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">{item.label || `Logo ${index + 1}`}</div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Elemento visual</div>
+                </div>
+                <button onClick={() => s({ items: items.filter((entry) => entry.id !== item.id) })} className="flex h-8 w-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-all hover:border-red-400/35 hover:text-red-400">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <F label="Nombre"><input className={iCls} value={item.label || ""} onChange={e => s({ items: items.map((entry) => entry.id === item.id ? { ...entry, label: e.target.value } : entry) })} placeholder="Logo 1" /></F>
+                <F label="Subtexto"><input className={iCls} value={item.subLabel || ""} onChange={e => s({ items: items.map((entry) => entry.id === item.id ? { ...entry, subLabel: e.target.value } : entry) })} placeholder="Partner / cliente / tecnologia" /></F>
+              </div>
+              <F label="Imagen">
+                <UploadImg value={item.imageUrl || ""} onChange={(value) => s({ items: items.map((entry) => entry.id === item.id ? { ...entry, imageUrl: value } : entry) })} />
+              </F>
+              <F label="Link opcional"><input className={iCls} value={item.href || ""} onChange={e => s({ items: items.map((entry) => entry.id === item.id ? { ...entry, href: e.target.value } : entry) })} placeholder="https://..." /></F>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+function SpacerEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
+  const s = (patch: Record<string, any>) => onChange({ ...data, ...patch })
+  const height = Math.min(Math.max(Number(data.height || 96), 24), 320)
+
+  return (
+    <div className="p-5 space-y-5">
+      <Card title="Espaciador">
+        <F label="Altura" helper="Util para separar secciones y dar aire al layout.">
+          <input className={iCls} type="range" min={24} max={320} step={4} value={height} onChange={e => s({ height: Number(e.target.value) })} />
+        </F>
+        <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-6 text-center">
+          <div className="text-2xl font-semibold text-white">{height}px</div>
+          <div className="mt-1 text-xs uppercase tracking-[0.22em] text-white/40">Separacion vertical</div>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+function EmbedEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
+  const s = (patch: Record<string, any>) => onChange({ ...data, ...patch })
+  const mode = data.mode || "url"
+
+  return (
+    <div className="p-5 space-y-5">
+      <Card title="Encabezado">
+        <F label="Titulo"><input className={iCls} value={data.titulo || ""} onChange={e => s({ titulo: e.target.value })} placeholder="Embed universal" /></F>
+        <F label="Descripcion"><textarea className={tCls} rows={3} value={data.descripcion || ""} onChange={e => s({ descripcion: e.target.value })} placeholder="Mapas, calendarios, dashboards, formularios o widgets." /></F>
+      </Card>
+
+      <Card title="Fuente">
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            ["url", "URL / iframe src"],
+            ["html", "HTML embebido"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => s({ mode: key })}
+              className={cn(
+                "h-10 rounded-xl border text-xs font-medium transition-all",
+                mode === key ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/40"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {mode === "html" ? (
+          <F label="HTML" helper="Pega el iframe o el embed completo.">
+            <textarea className={cn(codeCls, "min-h-[220px]")} value={data.html || ""} onChange={e => s({ html: e.target.value })} placeholder={'<iframe src=\"https://...\" width=\"100%\" height=\"480\"></iframe>'} />
+          </F>
+        ) : (
+          <F label="URL" helper="Pega un enlace embebible: maps, calendar, loom, canva, figma, etc.">
+            <input className={iCls} value={data.url || ""} onChange={e => s({ url: e.target.value })} placeholder="https://..." />
+          </F>
+        )}
+        <F label="Altura del viewport">
+          <input className={iCls} type="number" min={220} max={900} value={data.height || 460} onChange={e => s({ height: Number(e.target.value) || 460 })} />
+        </F>
+      </Card>
+    </div>
+  )
+}
+
 function FormBuilderEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (patch: Record<string, any>) => onChange({ ...data, ...patch })
   const fields = (data.fields || []) as Array<{
@@ -1304,7 +1499,7 @@ function SectionMiniPreview({ section }: { section: CMSSection }) {
         <div className={`p-3 ${data.layout === "split" ? "grid grid-cols-[1.2fr_0.8fr] gap-2" : "space-y-1.5 text-center"}`}>
           <div className="space-y-1.5">
             <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border" style={{ backgroundColor: `${accent}18`, borderColor: `${accent}35` }}>
-              <span className="text-[9px]">{data.badgeEmoji || "â­"}</span>
+              <div className="h-2 w-2 rounded-full" style={{ backgroundColor: accent }} />
               {bar("28px","h-1","bg-foreground/30")}
             </div>
             {data.titulo && <div className="text-[9px] font-bold text-foreground/70 leading-tight truncate">{data.titulo}</div>}
@@ -1324,14 +1519,14 @@ function SectionMiniPreview({ section }: { section: CMSSection }) {
     }
     case "featureCards": {
       const cols = Math.min(data.columns || 3, 3)
-      const items = (data.items || [{emoji:"â­"},{emoji:"âœ¨"},{emoji:"ðŸŽ¯"}]).slice(0, cols)
+      const items = (data.items || [{ title: "Tarjeta 1" }, { title: "Tarjeta 2" }, { title: "Tarjeta 3" }]).slice(0, cols)
       return (
         <div className="p-3">
           {data.titulo && <div className="text-[9px] text-center text-foreground/60 font-semibold mb-2 truncate">{data.titulo}</div>}
           <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
             {items.map((item: any, i: number) => (
               <div key={i} className="rounded border border-border/60 bg-secondary/10 p-1.5 space-y-1">
-                <div className="text-xs">{item.emoji || "â­"}</div>
+                <div className="h-5 w-5 rounded-lg bg-primary/15" />
                 {bar("90%","h-1.5","bg-foreground/35")}
                 {bar("70%","h-1","bg-foreground/15")}
               </div>
@@ -1340,6 +1535,61 @@ function SectionMiniPreview({ section }: { section: CMSSection }) {
         </div>
       )
     }
+    case "richText":
+      return (
+        <div className="p-3 space-y-2">
+          {data.eyebrow ? <div className="inline-flex rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-[8px] font-bold uppercase tracking-[0.2em] text-primary">{data.eyebrow}</div> : null}
+          {bar("68%","h-2.5","bg-foreground/60")}
+          {bar("88%","h-1","bg-foreground/15")}
+          {bar("76%","h-1","bg-foreground/15")}
+          <div className="space-y-1 pt-1">
+            {((data.bullets as string[]) || ["Punto 1", "Punto 2"]).slice(0, 2).map((_: string, index: number) => (
+              <div key={index} className="flex items-center gap-1.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                {bar("68%","h-1","bg-foreground/18")}
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-1.5 pt-1">
+            <div className="h-4 w-14 rounded bg-primary/55" />
+            <div className="h-4 w-12 rounded border border-border bg-secondary/40" />
+          </div>
+        </div>
+      )
+    case "logoStrip": {
+      const items = (data.items || [{ label: "Logo" }, { label: "Brand" }, { label: "Tool" }, { label: "Partner" }]).slice(0, 4)
+      return (
+        <div className="p-3 space-y-2">
+          {bar("40%","h-2","bg-foreground/45")}
+          <div className="grid grid-cols-4 gap-1.5">
+            {items.map((_: any, index: number) => (
+              <div key={index} className="rounded-lg border border-border/50 bg-secondary/10 p-1.5 text-center">
+                <div className="mx-auto h-7 w-7 rounded-xl border border-primary/18 bg-primary/10" />
+                {bar("80%","h-1","bg-foreground/18")}
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+    case "spacer":
+      return (
+        <div className="flex h-full min-h-[88px] items-center justify-center bg-[linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:12px_12px] px-3">
+          <div className="rounded-full border border-dashed border-white/15 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-white/40">
+            Espaciador {data.height || 96}px
+          </div>
+        </div>
+      )
+    case "embed":
+      return (
+        <div className="p-3 space-y-2">
+          {bar("42%","h-2","bg-foreground/45")}
+          <div className="flex h-16 items-center justify-center rounded-xl border border-border/50 bg-secondary/10">
+            <Code2 className="h-5 w-5 text-fuchsia-400/60" />
+          </div>
+          {bar("68%","h-1","bg-foreground/20")}
+        </div>
+      )
     case "simulatorsFeed":
     case "coursesFeed":
     case "evaluationsFeed": {
@@ -1499,9 +1749,9 @@ function SectionMiniPreview({ section }: { section: CMSSection }) {
         <div className="p-3">
           {data.titulo && <div className="text-[9px] font-bold text-foreground/70 truncate text-center mb-2">{data.titulo}</div>}
           <div className="grid grid-cols-4 gap-1">
-            {(items.length ? items : [{icono:"â­"},{icono:"ðŸ†"},{icono:"ðŸ“Š"},{icono:"ðŸŽ¯"}]).slice(0,4).map((s: any, i: number) => (
+            {(items.length ? items : [{ numero: "15K+" }, { numero: "98%" }, { numero: "24/7" }, { numero: "4.9" }]).slice(0,4).map((s: any, i: number) => (
               <div key={i} className="text-center space-y-0.5">
-                <div className="text-sm">{s.icono}</div>
+                <div className="mx-auto h-5 w-5 rounded-lg bg-primary/12" />
                 {s.numero && <div className="text-[9px] font-bold text-foreground/55">{s.numero}</div>}
                 {!s.numero && bar("100%","h-2","bg-foreground/25")}
               </div>
@@ -1739,6 +1989,34 @@ function getStudioSectionContent(section: CMSSection, config: CMSConfig): {
         title: data.titulo || "Bloque de tarjetas",
         description: data.descripcion || "Presenta beneficios, modulos o servicios en columnas.",
         chips: data.items?.slice(0, 3).map((item: { title?: string }) => item.title || "Item") ?? [],
+      }
+    case "richText":
+      return {
+        eyebrow: data.eyebrow || "Contenido",
+        title: data.titulo || "Bloque de contenido flexible",
+        description: data.descripcion || "Combina titulo, texto, bullets y botones en una seccion libre.",
+        chips: [data.primaryLabel, data.secondaryLabel, ...(data.bullets?.slice(0, 2) ?? [])].filter(Boolean),
+      }
+    case "logoStrip":
+      return {
+        eyebrow: data.eyebrow || "Logos",
+        title: data.titulo || "Franja de marcas",
+        description: data.descripcion || "Muestra aliados, instituciones, partners o herramientas.",
+        chips: data.items?.slice(0, 4).map((item: { label?: string }) => item.label || "Logo") ?? [],
+      }
+    case "spacer":
+      return {
+        eyebrow: "Layout",
+        title: "Espaciador",
+        description: `Separa bloques con ${data.height || 96}px de aire visual.`,
+        chips: [`${data.height || 96}px`, "Estructura"],
+      }
+    case "embed":
+      return {
+        eyebrow: "Embed",
+        title: data.titulo || "Integracion visual",
+        description: data.descripcion || "Inserta mapas, dashboards, calendarios o widgets.",
+        chips: [data.mode === "html" ? "HTML" : "URL", data.url ? "URL cargada" : "", data.html ? "Codigo cargado" : ""].filter(Boolean),
       }
     case "simulatorsFeed":
     case "coursesFeed":
@@ -2149,6 +2427,10 @@ function SectionContentEditor({
     case "gallery":      return <GalleryEditor data={section.data} onChange={upd} />
     case "stats":        return <StatsEditor data={section.data} onChange={upd} />
     case "customCode":   return <CustomCodeEditor data={section.data} onChange={upd} />
+    case "richText":     return <RichTextEditor data={section.data} onChange={upd} />
+    case "logoStrip":    return <LogoStripEditor data={section.data} onChange={upd} />
+    case "spacer":       return <SpacerEditor data={section.data} onChange={upd} />
+    case "embed":        return <EmbedEditor data={section.data} onChange={upd} />
     case "formBuilder":  return <FormBuilderEditor data={section.data} onChange={upd} />
     case "pageHero":     return <PageHeroEditor data={section.data} onChange={upd} />
     case "featureCards": return <FeatureCardsEditor data={section.data} onChange={upd} />
@@ -2189,6 +2471,10 @@ function PageSectionContentEditor({
     case "gallery":      return <GalleryEditor data={section.data} onChange={onChange} />
     case "stats":        return <StatsEditor data={section.data} onChange={onChange} />
     case "customCode":   return <CustomCodeEditor data={section.data} onChange={onChange} />
+    case "richText":     return <RichTextEditor data={section.data} onChange={onChange} />
+    case "logoStrip":    return <LogoStripEditor data={section.data} onChange={onChange} />
+    case "spacer":       return <SpacerEditor data={section.data} onChange={onChange} />
+    case "embed":        return <EmbedEditor data={section.data} onChange={onChange} />
     case "formBuilder":  return <FormBuilderEditor data={section.data} onChange={onChange} />
     case "simulatorsFeed":
     case "coursesFeed":
@@ -3203,10 +3489,12 @@ const STUDIO_DEVICES = [
 ] as const
 
 const STUDIO_BLOCK_GROUPS = [
-  { id: "conversion", label: "Conversion", types: ["formBuilder", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "cta"] as CMSSectionType[] },
-  { id: "content", label: "Contenido", types: ["pageHero", "hero", "featureCards", "textBanner", "imageText", "video", "gallery"] as CMSSectionType[] },
-  { id: "trust", label: "Confianza", types: ["benefits", "stats", "faq", "testimonials", "pricing", "contact"] as CMSSectionType[] },
-  { id: "advanced", label: "Avanzado", types: ["customCode"] as CMSSectionType[] },
+  { id: "base", label: "Base universal", description: "Bloques flexibles para construir cualquier layout: texto, tarjetas, logos y espaciadores.", types: ["richText", "featureCards", "logoStrip", "spacer", "textBanner"] as CMSSectionType[] },
+  { id: "conversion", label: "Conversion", description: "Llamados a la accion, formularios y plantillas listas para captar registros.", types: ["hero", "pageHero", "cta", "formBuilder", "pricing", "contact"] as CMSSectionType[] },
+  { id: "media", label: "Media", description: "Imagenes, galerias, video y embeds para explicar o demostrar tu propuesta.", types: ["imageText", "video", "gallery", "embed"] as CMSSectionType[] },
+  { id: "trust", label: "Confianza", description: "Prueba social, beneficios, preguntas frecuentes y metricas para reforzar la pagina.", types: ["benefits", "stats", "faq", "testimonials"] as CMSSectionType[] },
+  { id: "dynamic", label: "Dinamicos", description: "Bloques conectados al admin para simuladores, cursos y evaluaciones.", types: ["simulatorsFeed", "coursesFeed", "evaluationsFeed"] as CMSSectionType[] },
+  { id: "advanced", label: "Avanzado", description: "Widgets, iframes y codigo libre para integraciones externas.", types: ["customCode"] as CMSSectionType[] },
 ] as const
 
 type StudioLeftTab = typeof STUDIO_LEFT_TABS[number]["id"]
@@ -3240,6 +3528,14 @@ function getStudioEditingTips(section: CMSSection | null) {
       return ["Haz click sobre titulo, descripcion o botones para editar directo.", "Arrastra el bloque desde el canvas para cambiar su posicion."]
     case "featureCards":
       return ["Haz click en cada tarjeta para editar titulo, descripcion y emoji.", "Usa el inspector para cambiar columnas y estilo."]
+    case "richText":
+      return ["Edita titulo, descripcion, bullets y botones directo sobre la pagina.", "Usa este bloque como base universal para crear secciones propias."]
+    case "logoStrip":
+      return ["Carga logos o deja solo etiquetas para partners, clientes o herramientas.", "Sirve para confianza, logos institucionales o tecnologias usadas."]
+    case "spacer":
+      return ["Usa este bloque para dar aire entre secciones sin tocar codigo.", "Ajusta la altura desde Contenido o Estilo."]
+    case "embed":
+      return ["Pega una URL embebible o un iframe completo.", "Ideal para mapas, calendarios, dashboards, Loom, Canva o Figma."]
     case "faq":
       return ["Haz click en la pregunta o respuesta para editarla sobre la pagina.", "Puedes ocultar el bloque si aun no esta listo para publicar."]
     case "formBuilder":
@@ -3271,6 +3567,18 @@ function getStudioLayerChildren(section: CMSSection, config: CMSConfig) {
       ].filter(Boolean)
     case "featureCards":
       return ((data.items as Array<{ title?: string }>) ?? []).slice(0, 3).map((item) => item.title || "Tarjeta")
+    case "richText":
+      return [
+        data.titulo ? "Titulo" : "",
+        data.descripcion ? "Descripcion" : "",
+        (data.primaryLabel || data.secondaryLabel) ? "Botones" : "",
+      ].filter(Boolean)
+    case "logoStrip":
+      return ((data.items as Array<{ label?: string }>) ?? []).slice(0, 4).map((item) => item.label || "Logo")
+    case "spacer":
+      return [`${data.height || 96}px`, "Separacion"]
+    case "embed":
+      return [data.mode === "html" ? "HTML" : "URL", data.titulo || "Embed"].filter(Boolean)
     case "benefits":
       return config.benefits.items.slice(0, 3).map((item) => item.title)
     case "testimonials":
