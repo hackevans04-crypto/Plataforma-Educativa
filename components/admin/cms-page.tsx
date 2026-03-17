@@ -5353,12 +5353,14 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto p-4">
         {pages.map((page) => (
-          <button
+          <div
             key={page.slug}
-            type="button"
+            role="button"
+            tabIndex={0}
             onClick={() => activatePage(page.slug, "pages")}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") activatePage(page.slug, "pages") }}
             className={cn(
-              "group w-full rounded-2xl border px-3 py-3 text-left transition-all",
+              "group w-full rounded-2xl border px-3 py-3 text-left transition-all cursor-pointer",
               selectedPageSlug === page.slug
                 ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]"
                 : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]"
@@ -5392,7 +5394,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 </button>
               )}
             </div>
-          </button>
+          </div>
         ))}
       </div>
       <div className="border-t border-white/8 p-4">
@@ -5440,9 +5442,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             const active = selectedSectionId === section.id
             const children = getStudioLayerChildren(section, config)
             return (
-              <button
+              <div
                 key={section.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 draggable
                 onDragStart={() => {
                   setDraggingSectionId(section.id)
@@ -5463,8 +5466,9 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   setDropTargetId(null)
                 }}
                 onClick={() => { setSelectedSectionId(section.id); setLeftTab("layers"); setInspectorTab("content") }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setSelectedSectionId(section.id); setLeftTab("layers"); setInspectorTab("content") } }}
                 className={cn(
-                  "group w-full rounded-2xl border px-3 py-3 text-left transition-all",
+                  "group w-full rounded-2xl border px-3 py-3 text-left transition-all cursor-pointer",
                   active ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]" : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]",
                   !section.visible && "opacity-60",
                   draggingSectionId === section.id && "opacity-40",
@@ -5500,7 +5504,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   <button type="button" onClick={(event) => { event.stopPropagation(); duplicateSectionInPage(section.id) }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-white/20 hover:text-white/70"><Copy className="h-3.5 w-3.5" /></button>
                   {meta?.deletable && <button type="button" onClick={(event) => { event.stopPropagation(); deleteSection(section.id) }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-red-400/35 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>}
                 </div>
-              </button>
+              </div>
             )
           })
         )}
