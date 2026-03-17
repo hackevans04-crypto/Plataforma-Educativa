@@ -806,13 +806,80 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
         <StrList items={features} onChange={v => s({ features: v })} placeholder="ej. Simuladores actualizados" />
       </Card>
 
-      <Card title="Botones CTA">
-        <div className="grid grid-cols-2 gap-3">
-          <F label="Texto boton primario"><input className={iCls} value={data.ctaPrimario || ""} onChange={e => s({ ctaPrimario: e.target.value })} /></F>
-          <F label="Link boton primario"><input className={iCls} value={data.ctaHref || ""} onChange={e => s({ ctaHref: e.target.value })} placeholder="/registro" /></F>
-          <F label="Texto boton secundario"><input className={iCls} value={data.ctaSecundario || ""} onChange={e => s({ ctaSecundario: e.target.value })} /></F>
-          <F label="Link boton secundario"><input className={iCls} value={data.ctaSecHref || ""} onChange={e => s({ ctaSecHref: e.target.value })} placeholder="/#precios" /></F>
-        </div>
+      <Card title="Boton primario">
+        <F label="Texto del boton"><input className={iCls} value={data.ctaPrimario || ""} onChange={e => s({ ctaPrimario: e.target.value })} placeholder="Comenzar Ahora" /></F>
+        <F label="Tipo de accion">
+          <select className={iCls} value={data.primaryAction?.type || "page"} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), type: e.target.value } })}>
+            <option value="page">Pagina interna</option>
+            <option value="external">Link externo</option>
+            <option value="section">Seccion en la pagina</option>
+            <option value="popup">Abrir popup</option>
+            <option value="simulator">Ir a simulador</option>
+            <option value="none">Sin accion</option>
+          </select>
+        </F>
+        {(!data.primaryAction?.type || data.primaryAction?.type === "page" || data.primaryAction?.type === "external") && (
+          <F label="URL / Ruta" helper={data.primaryAction?.type === "external" ? "URL completa: https://..." : "Ruta interna: /registro"}>
+            <input className={iCls} value={data.primaryAction?.href || data.ctaHref || ""} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), type: data.primaryAction?.type || "page", href: e.target.value }, ctaHref: e.target.value })} placeholder="/registro" />
+          </F>
+        )}
+        {data.primaryAction?.type === "section" && (
+          <F label="ID de la seccion destino" helper="El id del bloque al que debe hacer scroll">
+            <input className={iCls} value={data.primaryAction?.sectionId || ""} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), sectionId: e.target.value } })} placeholder="ej. pricing" />
+          </F>
+        )}
+        {data.primaryAction?.type === "simulator" && (
+          <F label="Ruta del simulador">
+            <input className={iCls} value={data.primaryAction?.href || ""} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), href: e.target.value } })} placeholder="/simulador/mi-simulador" />
+          </F>
+        )}
+        {data.primaryAction?.type === "popup" && (
+          <F label="ID del popup">
+            <input className={iCls} value={data.primaryAction?.popupId || ""} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), popupId: e.target.value } })} placeholder="ej. registro-popup" />
+          </F>
+        )}
+        <label className="flex items-center gap-2 mt-1 cursor-pointer">
+          <input type="checkbox" className="rounded" checked={!!data.primaryAction?.openInNewTab} onChange={e => s({ primaryAction: { ...(data.primaryAction || {}), openInNewTab: e.target.checked } })} />
+          <span className="text-xs text-muted-foreground">Abrir en nueva pestana</span>
+        </label>
+      </Card>
+
+      <Card title="Boton secundario">
+        <F label="Texto del boton"><input className={iCls} value={data.ctaSecundario || ""} onChange={e => s({ ctaSecundario: e.target.value })} placeholder="Saber mas" /></F>
+        <F label="Tipo de accion">
+          <select className={iCls} value={data.secondaryAction?.type || "page"} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), type: e.target.value } })}>
+            <option value="page">Pagina interna</option>
+            <option value="external">Link externo</option>
+            <option value="section">Seccion en la pagina</option>
+            <option value="popup">Abrir popup</option>
+            <option value="simulator">Ir a simulador</option>
+            <option value="none">Sin accion</option>
+          </select>
+        </F>
+        {(!data.secondaryAction?.type || data.secondaryAction?.type === "page" || data.secondaryAction?.type === "external") && (
+          <F label="URL / Ruta" helper={data.secondaryAction?.type === "external" ? "URL completa: https://..." : "Ruta interna: /#precios"}>
+            <input className={iCls} value={data.secondaryAction?.href || data.ctaSecHref || ""} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), type: data.secondaryAction?.type || "page", href: e.target.value }, ctaSecHref: e.target.value })} placeholder="/#precios" />
+          </F>
+        )}
+        {data.secondaryAction?.type === "section" && (
+          <F label="ID de la seccion destino" helper="El id del bloque al que debe hacer scroll">
+            <input className={iCls} value={data.secondaryAction?.sectionId || ""} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), sectionId: e.target.value } })} placeholder="ej. pricing" />
+          </F>
+        )}
+        {data.secondaryAction?.type === "simulator" && (
+          <F label="Ruta del simulador">
+            <input className={iCls} value={data.secondaryAction?.href || ""} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), href: e.target.value } })} placeholder="/simulador/mi-simulador" />
+          </F>
+        )}
+        {data.secondaryAction?.type === "popup" && (
+          <F label="ID del popup">
+            <input className={iCls} value={data.secondaryAction?.popupId || ""} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), popupId: e.target.value } })} placeholder="ej. registro-popup" />
+          </F>
+        )}
+        <label className="flex items-center gap-2 mt-1 cursor-pointer">
+          <input type="checkbox" className="rounded" checked={!!data.secondaryAction?.openInNewTab} onChange={e => s({ secondaryAction: { ...(data.secondaryAction || {}), openInNewTab: e.target.checked } })} />
+          <span className="text-xs text-muted-foreground">Abrir en nueva pestana</span>
+        </label>
       </Card>
 
       <Card title="Layout">
@@ -1553,11 +1620,11 @@ function SectionCard({
 // â”€â”€â”€ Section type meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const SM: Record<CMSSectionType, { label: string; icon: React.ElementType; color: string; deletable?: boolean; desc?: string }> = {
-  hero:         { label: "Hero Principal",     icon: Sparkles,      color: "text-primary bg-primary/10" },
-  benefits:     { label: "Beneficios",         icon: Zap,           color: "text-amber-400 bg-amber-400/10" },
-  testimonials: { label: "Testimonios",        icon: Star,          color: "text-blue-400 bg-blue-400/10" },
-  pricing:      { label: "Precios",            icon: Tag,           color: "text-emerald-400 bg-emerald-400/10" },
-  contact:      { label: "Contacto",           icon: Globe,         color: "text-violet-400 bg-violet-400/10" },
+  hero:         { label: "Hero Principal",     icon: Sparkles,      color: "text-primary bg-primary/10",        deletable: true, desc: "Hero principal del sitio" },
+  benefits:     { label: "Beneficios",         icon: Zap,           color: "text-amber-400 bg-amber-400/10",   deletable: true, desc: "Bloque de beneficios destacados" },
+  testimonials: { label: "Testimonios",        icon: Star,          color: "text-blue-400 bg-blue-400/10",     deletable: true, desc: "Opiniones y prueba social" },
+  pricing:      { label: "Precios",            icon: Tag,           color: "text-emerald-400 bg-emerald-400/10", deletable: true, desc: "Planes y precios" },
+  contact:      { label: "Contacto",           icon: Globe,         color: "text-violet-400 bg-violet-400/10", deletable: true, desc: "Contacto o soporte" },
   cta:          { label: "CTA Banner",         icon: Zap,           color: "text-orange-400 bg-orange-400/10",  deletable: true, desc: "Llamada a la accion" },
   imageText:    { label: "Imagen + Texto",     icon: ImageIcon,     color: "text-cyan-400 bg-cyan-400/10",      deletable: true, desc: "Imagen con texto y bullets" },
   video:        { label: "Video",              icon: Video,         color: "text-pink-400 bg-pink-400/10",      deletable: true, desc: "YouTube o Vimeo embed" },
@@ -1574,8 +1641,8 @@ const SM: Record<CMSSectionType, { label: string; icon: React.ElementType; color
   formBuilder:  { label: "Formulario",         icon: FileText,      color: "text-emerald-400 bg-emerald-400/10",deletable: true, desc: "Formulario configurable desde el editor" },
 }
 
-const ADDABLE: CMSSectionType[] = ["simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "customCode"]
-const ADDABLE_PAGE: CMSSectionType[] = ["pageHero", "featureCards", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "customCode"]
+const ADDABLE: CMSSectionType[] = ["hero", "pageHero", "featureCards", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "customCode"]
+const ADDABLE_PAGE: CMSSectionType[] = ["pageHero", "featureCards", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "customCode"]
 
 const DEFAULTS: Record<string, Record<string, any>> = {
   cta:        { titulo: "Comienza hoy", descripcion: "Unete a miles de docentes.", ctaPrimario: "Crear cuenta gratis", ctaPrimarioHref: "/registro", ctaSecundario: "Ver planes", ctaSecundarioHref: "#precios", primaryAction: { type: "page", href: "/registro" }, secondaryAction: { type: "section", sectionId: "pricing" } },
@@ -2585,14 +2652,26 @@ function TabPaginas({ config, onChange, fullscreen = false }: { config: CMSConfi
   const updData  = (data: Record<string, any>) => updateSections(sections.map(s => s.id === selId ? { ...s, data } : s))
   const updatePageMeta = (patch: Partial<CMSPage>) => onChange({
     ...config,
-    pages: pages.map((item) => item.slug === selSlug ? { ...item, ...patch } : item),
+    nav: typeof patch.slug === "string"
+      ? {
+          ...config.nav,
+          items: config.nav.items.map((item) =>
+            item.href === `/${selSlug}` ? { ...item, href: `/${patch.slug}` } : item
+          ),
+        }
+      : config.nav,
+    pages: pages.map((item) => {
+      if (item.slug !== selSlug) return item
+      const shouldSyncNavLabel = typeof patch.title === "string" && (!item.navLabel || item.navLabel === item.title)
+      return { ...item, ...patch, ...(shouldSyncNavLabel ? { navLabel: patch.title } : {}) }
+    }),
   })
 
   const addPage = () => {
     if (!newTitle.trim() || !newSlug.trim()) return
     const slug = newSlug.trim().replace(/[^a-z0-9-]/g, "-")
     if (pages.find(p => p.slug === slug)) return
-    onChange({ ...config, pages: [...pages, { slug, title: newTitle.trim(), sections: [] }] })
+    onChange({ ...config, pages: [...pages, { slug, title: newTitle.trim(), sections: [], showInNav: true, navLabel: newTitle.trim() }] })
     setSelSlug(slug)
     setSelId("")
     setShowNewPage(false)
@@ -2602,7 +2681,14 @@ function TabPaginas({ config, onChange, fullscreen = false }: { config: CMSConfi
   const deletePage = (slug: string) => {
     if (!confirm(`Eliminar la pagina "/${slug}"?`)) return
     const next = pages.filter(p => p.slug !== slug)
-    onChange({ ...config, pages: next })
+    onChange({
+      ...config,
+      nav: {
+        ...config.nav,
+        items: config.nav.items.filter((item) => item.href !== `/${slug}`),
+      },
+      pages: next,
+    })
     if (selSlug === slug) { setSelSlug(next[0]?.slug ?? ""); setSelId("") }
   }
   const duplicatePage = (slug: string) => {
@@ -2619,6 +2705,8 @@ function TabPaginas({ config, onChange, fullscreen = false }: { config: CMSConfi
       builtin: false,
       slug: nextSlug,
       title: `${base.title} copia`,
+      showInNav: base.showInNav ?? true,
+      navLabel: base.navLabel ? `${base.navLabel} copia` : `${base.title} copia`,
       sections: base.sections.map((section) => duplicateCMSSection(section)),
     }
     onChange({ ...config, pages: [...pages, nextPage] })
@@ -2668,7 +2756,7 @@ function TabPaginas({ config, onChange, fullscreen = false }: { config: CMSConfi
               >
                 <ExternalLink className="w-2.5 h-2.5" />
               </a>
-              {!p.builtin && (
+              {(
                 <button onClick={e => { e.stopPropagation(); deletePage(p.slug) }}
                   className={cn("absolute top-1 right-1 w-5 h-5 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded transition-all", fullscreen ? "text-white/25 hover:text-red-400" : "text-muted-foreground hover:text-red-400")}>
                   <Trash2 className="w-2.5 h-2.5" />
@@ -2896,24 +2984,22 @@ function TabPaginas({ config, onChange, fullscreen = false }: { config: CMSConfi
                           placeholder="Nombre de la pagina"
                         />
                       </F>
-                      {!page.builtin && (
-                        <F label="Slug / URL">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-muted-foreground">/</span>
-                            <input
-                              className={iCls}
-                              value={page.slug}
-                              onChange={e => {
-                                const value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")
-                                if (!value || pages.some((item) => item.slug === value && item.slug !== page.slug)) return
-                                updatePageMeta({ slug: value })
-                                setSelSlug(value)
-                              }}
-                              placeholder="mi-pagina"
-                            />
-                          </div>
-                        </F>
-                      )}
+                      <F label="Slug / URL">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">/</span>
+                          <input
+                            className={iCls}
+                            value={page.slug}
+                            onChange={e => {
+                              const value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")
+                              if (!value || pages.some((item) => item.slug === value && item.slug !== page.slug)) return
+                              updatePageMeta({ slug: value })
+                              setSelSlug(value)
+                            }}
+                            placeholder="mi-pagina"
+                          />
+                        </div>
+                      </F>
                     </div>
                   </div>
                   <PageSectionContentEditor section={sel} onChange={updData} onUpdateSettings={() => {}} />
@@ -3113,7 +3199,7 @@ const STUDIO_DEVICES = [
 const STUDIO_BLOCK_GROUPS = [
   { id: "conversion", label: "Conversion", types: ["formBuilder", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "cta"] as CMSSectionType[] },
   { id: "content", label: "Contenido", types: ["pageHero", "hero", "featureCards", "textBanner", "imageText", "video", "gallery"] as CMSSectionType[] },
-  { id: "trust", label: "Confianza", types: ["stats", "faq", "testimonials", "pricing", "contact"] as CMSSectionType[] },
+  { id: "trust", label: "Confianza", types: ["benefits", "stats", "faq", "testimonials", "pricing", "contact"] as CMSSectionType[] },
   { id: "advanced", label: "Avanzado", types: ["customCode"] as CMSSectionType[] },
 ] as const
 
@@ -3126,6 +3212,8 @@ type StudioPageRecord = {
   route: string
   sections: CMSSection[]
   builtin?: boolean
+  showInNav?: boolean
+  navLabel?: string
   home?: boolean
 }
 
@@ -4167,6 +4255,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       route: "/",
       home: true,
       builtin: true,
+      showInNav: true,
+      navLabel: "Inicio",
       sections: config.sections,
     },
     ...(config.pages ?? []).map((page) => ({
@@ -4175,6 +4265,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       route: `/${page.slug}`,
       sections: page.sections,
       builtin: page.builtin,
+      showInNav: page.showInNav,
+      navLabel: page.navLabel,
     })),
   ], [config])
 
@@ -4659,12 +4751,30 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const updateCurrentPageMeta = (patch: Partial<CMSPage>) => {
     if (currentPage.home) return
-    handleChange({
-      ...config,
-      pages: (config.pages ?? []).map((page) =>
-        page.slug === currentPage.slug ? { ...page, ...patch } : page
-      ),
-    })
+    handleChange((currentConfig) => ({
+      ...currentConfig,
+      nav: typeof patch.slug === "string"
+        ? {
+            ...currentConfig.nav,
+            items: currentConfig.nav.items.map((item) =>
+              item.href === `/${currentPage.slug}`
+                ? { ...item, href: `/${patch.slug}` }
+                : item
+            ),
+          }
+        : currentConfig.nav,
+      pages: (currentConfig.pages ?? []).map((page) => {
+        if (page.slug !== currentPage.slug) return page
+
+        const shouldSyncNavLabel = typeof patch.title === "string" && (!page.navLabel || page.navLabel === page.title)
+
+        return {
+          ...page,
+          ...patch,
+          ...(shouldSyncNavLabel ? { navLabel: patch.title } : {}),
+        }
+      }),
+    }))
   }
 
   const duplicatePage = (slug: string) => {
@@ -4683,6 +4793,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       builtin: false,
       slug: nextSlug,
       title: `${base.title} copia`,
+      showInNav: base.showInNav ?? true,
+      navLabel: base.navLabel ? `${base.navLabel} copia` : `${base.title} copia`,
       sections: base.sections.map((section) => duplicateCMSSection(section)),
     }
 
@@ -4697,11 +4809,15 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const deletePage = (slug: string) => {
     const page = (config.pages ?? []).find((item) => item.slug === slug)
-    if (!page || page.builtin) return
+    if (!page) return
     if (!confirm(`Eliminar la pagina "/${slug}"?`)) return
 
     handleChange({
       ...config,
+      nav: {
+        ...config.nav,
+        items: config.nav.items.filter((item) => item.href !== `/${slug}`),
+      },
       pages: (config.pages ?? []).filter((item) => item.slug !== slug),
     })
 
@@ -4719,7 +4835,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
     handleChange({
       ...config,
-      pages: [...(config.pages ?? []), { slug, title, sections: [] }],
+      pages: [...(config.pages ?? []), { slug, title, sections: [], showInNav: true, navLabel: title }],
     })
 
     setShowNewPage(false)
@@ -4900,7 +5016,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 <div className="flex items-center gap-2">
                   <div className="truncate text-sm font-semibold text-white">{page.title}</div>
                   {page.home && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Home</span>}
-                  {page.builtin && !page.home && <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] text-white/50">Base</span>}
+                  {!page.home && page.showInNav !== false && <span className="rounded-full bg-emerald-500/12 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Menu</span>}
                 </div>
                 <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/35">{page.route}</div>
               </div>
@@ -4914,7 +5030,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   <Copy className="h-3.5 w-3.5" />
                 </button>
               )}
-              {!page.home && !page.builtin && (
+              {!page.home && (
                 <button type="button" onClick={(event) => { event.stopPropagation(); deletePage(page.slug) }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-red-400/35 hover:text-red-400">
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -5045,7 +5161,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         </div>
         <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">{config.nav.items.length}</span>
       </div>
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+      <div className="flex-1 space-y-5 overflow-y-auto p-4">
         {config.nav.items.map((item, index) => (
           <div key={item.id} className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
             <div className="flex items-start gap-3">
@@ -5060,6 +5176,33 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             </div>
           </div>
         ))}
+        <div>
+          <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Paginas del menu</div>
+          <div className="space-y-2">
+            {(config.pages ?? []).filter((page) => page.showInNav !== false).length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45">
+                No hay paginas publicadas en el menu.
+              </div>
+            ) : (
+              (config.pages ?? [])
+                .filter((page) => page.showInNav !== false)
+                .map((page) => (
+                  <button
+                    key={`nav-page-${page.slug}`}
+                    type="button"
+                    onClick={() => activatePage(page.slug, "pages")}
+                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3 text-left transition-all hover:border-primary/25 hover:bg-white/[0.05]"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-white">{page.navLabel || page.title}</div>
+                      <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">/{page.slug}</div>
+                    </div>
+                    <span className="rounded-full bg-emerald-500/12 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Auto</span>
+                  </button>
+                ))
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -5099,6 +5242,42 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 </div>
               </F>
               {currentPage.home && <p className="text-xs text-muted-foreground">La pagina principal usa la ruta `/` y los bloques globales del sitio.</p>}
+              {!currentPage.home && (
+                <>
+                  <div className="grid gap-3 rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">Mostrar en navegacion</div>
+                        <div className="text-xs text-white/45">Si la activas, la pagina aparece automaticamente en el menu publico.</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => updateCurrentPageMeta({ showInNav: currentPage.showInNav === false })}
+                        className={cn(
+                          "relative inline-flex h-7 w-12 items-center rounded-full border transition-all",
+                          currentPage.showInNav === false ? "border-white/10 bg-white/5" : "border-emerald-400/35 bg-emerald-500/20"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "inline-block h-5 w-5 rounded-full bg-white transition-all",
+                            currentPage.showInNav === false ? "translate-x-1" : "translate-x-6"
+                          )}
+                        />
+                      </button>
+                    </div>
+                    <F label="Texto del menu">
+                      <input
+                        className={iCls}
+                        value={currentPage.navLabel ?? currentPageTitle}
+                        disabled={currentPage.showInNav === false}
+                        onChange={(event) => updateCurrentPageMeta({ navLabel: event.target.value })}
+                        placeholder="Texto que aparece en el menu"
+                      />
+                    </F>
+                  </div>
+                </>
+              )}
             </Card>
           </div>
         )}
@@ -5110,14 +5289,15 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             <Card title="Datos tecnicos">
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Slug</span><span className="font-medium text-foreground">{currentPage.slug}</span></div>
-                <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Tipo</span><span className="font-medium text-foreground">{currentPage.home ? "Pagina principal" : currentPage.builtin ? "Pagina base" : "Pagina personalizada"}</span></div>
+                <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Tipo</span><span className="font-medium text-foreground">{currentPage.home ? "Pagina principal" : "Pagina del sitio"}</span></div>
+                {!currentPage.home && <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Menu</span><span className="font-medium text-foreground">{currentPage.showInNav === false ? "Oculto" : currentPage.navLabel || currentPage.title}</span></div>}
               </div>
             </Card>
             {!currentPage.home && (
               <Card title="Acciones">
                 <div className="grid grid-cols-2 gap-3">
                   <Btn onClick={() => duplicatePage(currentPage.slug)}><Copy className="h-4 w-4" />Duplicar</Btn>
-                  {!currentPage.builtin ? <Btn variant="danger" onClick={() => deletePage(currentPage.slug)}><Trash2 className="h-4 w-4" />Eliminar</Btn> : <div className="rounded-xl border border-border bg-secondary/10 px-3 py-2 text-xs text-muted-foreground">Pagina base protegida</div>}
+                  <Btn variant="danger" onClick={() => deletePage(currentPage.slug)}><Trash2 className="h-4 w-4" />Eliminar</Btn>
                 </div>
               </Card>
             )}
@@ -5327,25 +5507,38 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45">No hay formularios insertados en esta página.</div>
               ) : (
                 pageForms.map((section) => (
-                  <button
+                  <div
                     key={section.id}
-                    type="button"
-                    onClick={() => {
-                      setFormInspectorTarget("section")
-                      setSelectedSectionId(section.id)
-                      setSelectedPopupId("")
-                      setLeftTab("forms")
-                      setInspectorTab("content")
-                      setRightPanelCollapsed(false)
-                    }}
                     className={cn(
-                      "w-full rounded-2xl border px-3 py-3 text-left transition-all",
+                      "rounded-2xl border px-3 py-3 transition-all",
                       selectedSectionId === section.id ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]" : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]"
                     )}
                   >
-                    <div className="text-sm font-semibold text-white">{section.data?.titulo || "Formulario"}</div>
-                    <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">{section.id}</div>
-                  </button>
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormInspectorTarget("section")
+                          setSelectedSectionId(section.id)
+                          setSelectedPopupId("")
+                          setLeftTab("forms")
+                          setInspectorTab("content")
+                          setRightPanelCollapsed(false)
+                        }}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <div className="text-sm font-semibold text-white">{section.data?.titulo || "Formulario"}</div>
+                        <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">{section.id}</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteSection(section.id)}
+                        className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-red-400/35 hover:text-red-400"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 ))
               )}
             </div>
@@ -5357,25 +5550,38 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45">No hay popups de formulario creados.</div>
               ) : (
                 popupForms.map((popup) => (
-                  <button
+                  <div
                     key={popup.id}
-                    type="button"
-                    onClick={() => {
-                      setFormInspectorTarget("popup")
-                      setSelectedSectionId("")
-                      setSelectedPopupId(popup.id)
-                      setLeftTab("forms")
-                      setInspectorTab("content")
-                      setRightPanelCollapsed(false)
-                    }}
                     className={cn(
-                      "w-full rounded-2xl border px-3 py-3 text-left transition-all",
+                      "rounded-2xl border px-3 py-3 transition-all",
                       selectedPopupId === popup.id ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]" : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]"
                     )}
                   >
-                    <div className="text-sm font-semibold text-white">{popup.name}</div>
-                    <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">{popup.title}</div>
-                  </button>
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormInspectorTarget("popup")
+                          setSelectedSectionId("")
+                          setSelectedPopupId(popup.id)
+                          setLeftTab("forms")
+                          setInspectorTab("content")
+                          setRightPanelCollapsed(false)
+                        }}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <div className="text-sm font-semibold text-white">{popup.name}</div>
+                        <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">{popup.title}</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deletePopup(popup.id)}
+                        className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-red-400/35 hover:text-red-400"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 ))
               )}
             </div>
