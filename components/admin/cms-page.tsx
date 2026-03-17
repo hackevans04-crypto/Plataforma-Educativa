@@ -569,108 +569,41 @@ function StatsEditor({ data, onChange }: { data: Record<string, any>; onChange: 
   )
 }
 
+// CustomCodeEditor: now only handles code view — the visual editor lives in the main inspector panel
 function CustomCodeEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
-  const iframeRef   = useRef<HTMLIFrameElement>(null)
-  const [selectedEl, setSelectedEl]     = useState<EditorElementInfo | null>(null)
-  const [isEditing, setIsEditing]       = useState(false)
-  const [previewMode, setPreviewMode]   = useState<"edit" | "code">("edit")
-
-  // Listen for messages from the iframe runtime
-  useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      const d = e.data
-      if (!d || typeof d !== "object") return
-      if (d.__editor_select)      { setSelectedEl(d.info as EditorElementInfo); setIsEditing(false) }
-      if (d.__editor_editing)     { setIsEditing(true) }
-      if (d.__editor_text_change) { setIsEditing(false) }
-    }
-    window.addEventListener("message", onMsg)
-    return () => window.removeEventListener("message", onMsg)
-  }, [])
-
+  const [showCode, setShowCode] = useState(false)
   const hasHtml = !!(data.html || "").trim()
 
   return (
     <div className="p-5 space-y-4">
-      <Card title="Nota interna">
-        <F label="Descripcion"><input className={iCls} value={data.nota || ""} onChange={e => s({ nota: e.target.value })} placeholder="ej. Simulador Pedagogia - importado" /></F>
-      </Card>
+      {/* Hint when HTML is loaded */}
+      {hasHtml && (
+        <div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-[11px] text-white/50 leading-5">
+          Haz clic directamente en el bloque del canvas para seleccionar y editar elementos.
+          El panel derecho muestra las propiedades del elemento seleccionado.
+        </div>
+      )}
 
-      {hasHtml ? (
-        <>
-          {/* Mode toggle */}
-          <div className="flex items-center gap-1 rounded-xl border border-white/8 p-1">
-            <button onClick={() => setPreviewMode("edit")}
-              className={cn("flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all",
-                previewMode === "edit" ? "bg-primary text-white" : "text-white/40 hover:text-white/70")}>
-              Editor visual
-            </button>
-            <button onClick={() => setPreviewMode("code")}
-              className={cn("flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all",
-                previewMode === "code" ? "bg-white/8 text-white" : "text-white/40 hover:text-white/70")}>
-              Ver codigo
-            </button>
-          </div>
-
-          {previewMode === "edit" && (
-            <div className="space-y-3">
-              {/* Live iframe preview */}
-              <div className="rounded-xl border border-white/8 overflow-hidden">
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-white/3 border-b border-white/5">
-                  <span className={cn("w-2 h-2 rounded-full", isEditing ? "bg-emerald-400 animate-pulse" : "bg-primary/60")} />
-                  <span className="text-[10px] text-white/35 flex-1">
-                    {isEditing ? "Editando inline — Esc para salir" : "Clic = seleccionar · Doble clic = editar texto · Arrastrar = mover"}
-                  </span>
-                </div>
-                <div className="max-h-72 overflow-hidden">
-                  <CustomCodeSection
-                    data={data}
-                    editMode={true}
-                    iframeRef={iframeRef}
-                    onElementSelect={(info) => { setSelectedEl(info); setIsEditing(false) }}
-                  />
-                </div>
-              </div>
-
-              {/* Element inspector */}
-              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-                <HtmlElementInspector
-                  element={selectedEl}
-                  isEditing={isEditing}
-                  iframeRef={iframeRef}
-                  onClose={() => { setSelectedEl(null); setIsEditing(false) }}
-                />
-              </div>
-            </div>
-          )}
-
-          {previewMode === "code" && (
-            <Card title="Codigo HTML">
-              <F label="HTML">
-                <textarea
-                  className={cn(codeCls, "min-h-[240px]")}
-                  value={data.html || ""}
-                  onChange={e => { s({ html: e.target.value }); setSelectedEl(null) }}
-                  spellCheck={false}
-                />
-              </F>
-            </Card>
-          )}
-        </>
-      ) : (
-        <Card title="Codigo HTML">
-          <F label="HTML" helper='Ej: <iframe src="https://..." width="100%" height="450"></iframe>'>
+      {/* Ver / editar codigo toggle */}
+      <div>
+        <button onClick={() => setShowCode(v => !v)}
+          className="w-full flex items-center justify-between rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-white/50 hover:text-white hover:border-white/20 transition-all">
+          <span>{showCode ? "Ocultar codigo HTML" : "Ver / editar codigo HTML"}</span>
+          <span className="text-white/25">{showCode ? "▲" : "▼"}</span>
+        </button>
+        {showCode && (
+          <div className="mt-2">
             <textarea
-              className={cn(codeCls, "min-h-[280px]")}
+              className={cn(codeCls, "min-h-[260px]")}
               value={data.html || ""}
               onChange={e => s({ html: e.target.value })}
-              placeholder={"<!-- Pega tu HTML aqui -->\n<iframe\n  src=\"https://www.youtube.com/embed/...\"\n  width=\"100%\"\n  height=\"450\"\n  allowfullscreen>\n</iframe>"}
+              placeholder={"<!-- Pega tu HTML aqui -->\n<iframe src=\"https://...\" width=\"100%\" height=\"450\" allowfullscreen></iframe>"}
               spellCheck={false}
             />
-          </F>
-        </Card>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -2326,6 +2259,7 @@ function StudioViewport({
                         onAddBlock={onAddBlock}
                         onReorder={onReorder}
                         previewMode={previewMode}
+                        htmlIframeRef={htmlIframeRef}
                       />
                     </div>
                   </div>
@@ -2381,6 +2315,7 @@ function StudioViewport({
                         onAddBlock={onAddBlock}
                         onReorder={onReorder}
                         previewMode={previewMode}
+                        htmlIframeRef={htmlIframeRef}
                       />
                     </div>
                   </div>
@@ -2493,23 +2428,109 @@ function PageSectionContentEditor({
 function AddModal({ onAdd, onClose, pageMode }: { onAdd: (type: CMSSectionType) => void; onClose: () => void; pageMode?: boolean }) {
   const list = pageMode ? ADDABLE_PAGE : ADDABLE
   const [hovered, setHovered] = useState<CMSSectionType | null>(null)
+  const [search, setSearch] = useState("")
+  const [groupFilter, setGroupFilter] = useState<string>("all")
+
+  const groups = STUDIO_BLOCK_GROUPS
+    .map((group) => ({
+      ...group,
+      types: group.types.filter((type) => list.includes(type)),
+    }))
+    .filter((group) => group.types.length > 0)
+
+  const visibleTypes = groups
+    .flatMap((group) => group.types)
+    .filter((type, index, array) => array.indexOf(type) === index)
+    .filter((type) => {
+      if (groupFilter !== "all" && !groups.find((group) => group.id === groupFilter)?.types.includes(type)) {
+        return false
+      }
+      if (!search.trim()) return true
+      const haystack = `${SM[type].label} ${SM[type].desc ?? ""}`.toLowerCase()
+      return haystack.includes(search.trim().toLowerCase())
+    })
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-3" onClick={onClose}>
-      <div className="w-full max-w-3xl rounded-2xl border border-border bg-card shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-5xl rounded-2xl border border-border bg-card shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-secondary/10">
           <div>
             <div className="text-xs font-bold uppercase tracking-widest text-primary mb-0.5">Biblioteca de bloques</div>
-            <div className="font-semibold text-foreground">Elige un bloque para agregar a la pagina</div>
+            <div className="font-semibold text-foreground">Combina bloques base, plantillas y bloques dinamicos para crear cualquier pagina</div>
           </div>
           <button onClick={onClose} className="w-9 h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all">
             <X className="w-5 h-5" />
           </button>
         </div>
+        <div className="border-b border-border bg-secondary/5 px-5 py-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <input
+              className={iCls}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar bloque, patron o integracion..."
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setGroupFilter("all")}
+                className={cn(
+                  "h-9 rounded-full border px-4 text-xs font-semibold transition-all",
+                  groupFilter === "all" ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/30"
+                )}
+              >
+                Todo
+              </button>
+              {groups.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => setGroupFilter(group.id)}
+                  className={cn(
+                    "h-9 rounded-full border px-4 text-xs font-semibold transition-all",
+                    groupFilter === group.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/30"
+                  )}
+                >
+                  {group.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mt-3 text-xs leading-5 text-muted-foreground">
+            Inspirado en el patron de editores visuales como Wix Studio, Webflow, Framer y Fluid Engine: mezcla elementos base, secciones listas y bloques conectados a datos.
+          </div>
+        </div>
         {/* Grid with mini previews */}
-        <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[62vh] overflow-y-auto">
-          {list.map(type => {
+        <div className="grid gap-0 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="hidden border-r border-border/70 bg-secondary/[0.03] p-4 lg:block">
+            <div className="space-y-3">
+              {groups.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => setGroupFilter(group.id)}
+                  className={cn(
+                    "w-full rounded-2xl border px-4 py-3 text-left transition-all",
+                    groupFilter === group.id ? "border-primary/30 bg-primary/8" : "border-white/8 bg-white/[0.03] hover:border-primary/20"
+                  )}
+                >
+                  <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#7ca0cb]">{group.label}</div>
+                  <div className="mt-2 text-[11px] leading-5 text-white/55">{group.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="max-h-[62vh] overflow-y-auto p-4">
+            {visibleTypes.length === 0 ? (
+              <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
+                <LayoutTemplate className="h-8 w-8 text-white/20" />
+                <div className="mt-3 text-sm font-semibold text-white">Sin coincidencias en la biblioteca</div>
+                <div className="mt-2 max-w-md text-xs leading-5 text-white/45">Prueba con otra busqueda o cambia la categoria. El objetivo es que combines bloques base, secciones listas y bloques dinamicos segun tu idea.</div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {visibleTypes.map(type => {
             const meta  = SM[type]
             const Icon  = meta.icon
             const isHov = hovered === type
@@ -2525,37 +2546,40 @@ function AddModal({ onAdd, onClose, pageMode }: { onAdd: (type: CMSSectionType) 
                   isHov
                     ? "border-primary shadow-[0_0_0_2px_rgba(232,57,42,0.25),0_8px_24px_rgba(0,0,0,0.2)] -translate-y-0.5"
                     : "border-border/70 hover:border-primary/40"
-                )}
-              >
-                {/* Mini preview area */}
-                <div className="bg-[#0a0d12] min-h-[88px] relative overflow-hidden">
-                  <SectionMiniPreview section={fakeSec} />
-                  {isHov && (
-                    <div className="absolute inset-0 bg-primary/15 flex items-center justify-center">
-                      <span className="flex items-center gap-1.5 text-xs font-bold text-white bg-primary px-3 py-1.5 rounded-full shadow-lg">
-                        <Plus className="w-3 h-3" />Agregar bloque
-                      </span>
-                    </div>
                   )}
-                </div>
-                {/* Label */}
-                <div className={cn("flex items-center gap-2.5 px-3 py-2.5 border-t transition-colors", isHov ? "bg-primary/8 border-primary/20" : "bg-card border-border/60")}>
-                  <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all", meta.color, isHov && "scale-110")}>
-                    <Icon className="w-3.5 h-3.5" />
+                >
+                  {/* Mini preview area */}
+                  <div className="bg-[#0a0d12] min-h-[88px] relative overflow-hidden">
+                    <SectionMiniPreview section={fakeSec} />
+                    {isHov && (
+                      <div className="absolute inset-0 bg-primary/15 flex items-center justify-center">
+                        <span className="flex items-center gap-1.5 text-xs font-bold text-white bg-primary px-3 py-1.5 rounded-full shadow-lg">
+                          <Plus className="w-3 h-3" />Agregar bloque
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-foreground leading-tight">{meta.label}</div>
-                    {meta.desc && <div className="text-[10px] text-muted-foreground truncate">{meta.desc}</div>}
+                  {/* Label */}
+                  <div className={cn("flex items-start gap-2.5 px-3 py-3 border-t transition-colors", isHov ? "bg-primary/8 border-primary/20" : "bg-card border-border/60")}>
+                    <div className={cn("mt-0.5 w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all", meta.color, isHov && "scale-110")}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-foreground leading-tight">{meta.label}</div>
+                      {meta.desc && <div className="mt-1 text-[11px] leading-5 text-muted-foreground">{meta.desc}</div>}
+                    </div>
                   </div>
-                </div>
-              </button>
-            )
-          })}
+                </button>
+              )
+            })}
+              </div>
+            )}
+          </div>
         </div>
         {/* Footer */}
         <div className="px-5 py-3 border-t border-border bg-secondary/5 flex items-center gap-2">
           <Sparkles className="w-3.5 h-3.5 text-primary/50 flex-shrink-0" />
-          <p className="text-[11px] text-muted-foreground">Haz clic para agregar el bloque. Puedes reordenarlo y editar todo su contenido despues.</p>
+          <p className="text-[11px] text-muted-foreground">Agrega el bloque, ordénalo y luego combínalo con formularios, feeds, embeds o HTML. La biblioteca ya no está limitada a simuladores o formularios.</p>
         </div>
       </div>
     </div>
@@ -3527,7 +3551,7 @@ function getStudioEditingTips(section: CMSSection | null) {
     case "pageHero":
       return ["Haz click sobre titulo, descripcion o botones para editar directo.", "Arrastra el bloque desde el canvas para cambiar su posicion."]
     case "featureCards":
-      return ["Haz click en cada tarjeta para editar titulo, descripcion y emoji.", "Usa el inspector para cambiar columnas y estilo."]
+      return ["Haz click en cada tarjeta para editar titulo, descripcion y distintivo visual.", "Usa el inspector para cambiar columnas y estilo."]
     case "richText":
       return ["Edita titulo, descripcion, bullets y botones directo sobre la pagina.", "Usa este bloque como base universal para crear secciones propias."]
     case "logoStrip":
@@ -3654,6 +3678,7 @@ function getSectionActionSummaries(section: CMSSection, config: CMSConfig) {
         { label: "Boton secundario", value: getActionSummary(config.hero.secondaryAction) },
       ]
     case "pageHero":
+    case "richText":
     case "cta":
       return [
         { label: "Boton primario", value: getActionSummary(section.data?.primaryAction) },
@@ -4513,6 +4538,11 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const mountedRef = useRef(false)
   const reviewPanelStateRef = useRef<{ left: boolean; right: boolean } | null>(null)
 
+  // ---- HTML editor bridge (shared by canvas iframe + inspector panel) ----
+  const [htmlEl, setHtmlEl] = useState<EditorElementInfo | null>(null)
+  const [htmlEditing, setHtmlEditing] = useState(false)
+  const htmlIframeRef = useRef<HTMLIFrameElement | null>(null)
+
   const handleChange = (next: CMSConfig | ((current: CMSConfig) => CMSConfig), trackHistory = true) => {
     if (trackHistory) {
       setPast((current) => [...current.slice(-39), cloneCMSConfigState(config)])
@@ -4646,6 +4676,18 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       setSelectedSectionId(currentSections[0].id)
     }
   }, [currentSections, selectedSectionId])
+
+  // Listen for HTML editor bridge messages from the canvas iframe
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (!e.data || typeof e.data !== "object") return
+      if (e.data.__editor_select)      { setHtmlEl(e.data.info as EditorElementInfo); setHtmlEditing(false) }
+      if (e.data.__editor_editing)     { setHtmlEditing(true) }
+      if (e.data.__editor_text_change) { setHtmlEditing(false) }
+    }
+    window.addEventListener("message", onMsg)
+    return () => window.removeEventListener("message", onMsg)
+  }, [])
 
   useEffect(() => {
     if (leftTab === "navigation" && inspectorTab !== "content") {
@@ -5671,7 +5713,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               groupedBlocks.map((group) => (
                 <div key={group.id}>
                   <div className="mb-3 flex items-center justify-between">
-                    <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">{group.label}</div>
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">{group.label}</div>
+                      {"description" in group ? <div className="mt-1 max-w-[260px] text-[11px] leading-5 text-white/38">{group.description}</div> : null}
+                    </div>
                     <div className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/35">{group.types.length}</div>
                   </div>
                   <div className="grid grid-cols-1 gap-3">
@@ -6444,6 +6489,38 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             <div className="text-base font-semibold text-white">Editor del bloque</div>
             <div className="max-w-xs text-sm text-white/45">Selecciona un bloque en la pagina real para editar su contenido, estilo y opciones avanzadas.</div>
           </div>
+        ) : inspectorTab === "content" && selectedSection.type === "customCode" ? (
+          // ---- HTML Smart Editor: full panel, no mini iframe ----
+          <div className="flex flex-col gap-3 p-4">
+            {/* Status bar */}
+            <div className={cn("flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-medium",
+              htmlEditing ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-400"
+              : htmlEl    ? "border-primary/25 bg-primary/5 text-primary/80"
+              :              "border-white/8 bg-white/3 text-white/40")}>
+              <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
+                htmlEditing ? "bg-emerald-400 animate-pulse" : htmlEl ? "bg-primary" : "bg-white/20")} />
+              {htmlEditing ? "Editando inline — Esc para salir"
+               : htmlEl   ? `<${htmlEl.tag}> seleccionado — edita propiedades abajo`
+               :             "Haz clic en el bloque del canvas para seleccionar un elemento"}
+            </div>
+            {/* Element inspector */}
+            <HtmlElementInspector
+              element={htmlEl}
+              isEditing={htmlEditing}
+              iframeRef={htmlIframeRef as React.RefObject<HTMLIFrameElement>}
+              onClose={() => { setHtmlEl(null); setHtmlEditing(false) }}
+            />
+            {/* Nota interna */}
+            <div className="border-t border-white/8 pt-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-white/25 mb-1.5">Nota interna</div>
+              <input
+                className={iCls}
+                value={selectedSection.data?.nota as string || ""}
+                onChange={e => updateSelectedSectionData({ nota: e.target.value })}
+                placeholder="ej. Simulador de Pedagogia - importado"
+              />
+            </div>
+          </div>
         ) : inspectorTab === "content" ? (
           <div className="space-y-5 p-5">
             <Card title="Resumen del bloque">
@@ -6502,7 +6579,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 onUpdateSettings={updateSelectedSectionSettings}
               />
             )}
-            {(selectedSection.type === "pageHero" || selectedSection.type === "cta") && (
+            {(selectedSection.type === "pageHero" || selectedSection.type === "cta" || selectedSection.type === "richText") && (
               <>
                 <div className="flex items-center gap-2 px-1 pt-2">
                   <div className="h-px flex-1 bg-white/8" />
@@ -6595,7 +6672,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   onSyncFlow={syncConnectedFlow}
                 />
               </>
-            ) : selectedSection.type === "pageHero" || selectedSection.type === "cta" ? (
+            ) : selectedSection.type === "pageHero" || selectedSection.type === "cta" || selectedSection.type === "richText" ? (
               <>
                 <ActionConfigEditor
                   title="Boton primario"

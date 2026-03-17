@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import type { MouseEvent, ReactNode } from "react"
 import { ArrowDown, ArrowUp, Award, BadgePlus, BookOpen, Copy, Code2, Eye, EyeOff, FileImage, FileText, GalleryVertical, GripVertical, HelpCircle, Layers, LayoutTemplate, MessageSquare, Minus, Pencil, PlayCircle, Plus, Sparkles, Star, Target, TextCursorInput, Trash2, Video } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -330,7 +330,13 @@ function renderSectionContent(
     case "stats":
       return <StatsSection data={section.data} />
     case "customCode":
-      return <CustomCodeSection data={section.data} />
+      return (
+        <CustomCodeSection
+          data={section.data}
+          editMode={selected}
+          iframeRef={selected && htmlIframeRef ? htmlIframeRef as React.RefObject<HTMLIFrameElement> : undefined}
+        />
+      )
     case "pageHero":
       return (
         <PageHeroSection
@@ -463,6 +469,7 @@ export default function StudioSitePreview({
   onAddBlock,
   onReorder,
   previewMode = false,
+  htmlIframeRef,
 }: {
   config: CMSConfig
   sections: CMSSection[]
@@ -476,6 +483,7 @@ export default function StudioSitePreview({
   onAddBlock?: (index?: number) => void
   onReorder?: (sourceId: string, targetIndex: number) => void
   previewMode?: boolean
+  htmlIframeRef?: React.MutableRefObject<HTMLIFrameElement | null>
 }) {
   const datasets = useLandingBuilderData()
   const rootRef = useRef<HTMLDivElement>(null)
