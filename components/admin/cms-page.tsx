@@ -865,8 +865,8 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
 
 // ─── HTML Importer ────────────────────────────────────────────────────────────
 
-type HtmlDetection = {
-  type: “simulator” | “multistep” | “form” | “landing” | “content”
+interface HtmlDetection {
+  kind: “simulator” | “multistep” | “form” | “landing” | “content”
   label: string
   emoji: string
   title: string
@@ -892,15 +892,15 @@ function detectHtmlContent(html: string): HtmlDetection {
   const title       = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, “”).trim().slice(0, 60) : “Sin titulo”
   const hasSteps    = screenCount > 1 || stepCount > 1
 
-  let type: HtmlDetection[“type”] = “content”
+  let kind: HtmlDetection[“kind”] = “content”
   let label = “Contenido libre”
   let emoji = “📄”
-  if (hasSteps && (hasScore || hasTimer)) { type = “simulator”; label = “Simulador / Quiz”; emoji = “🎯” }
-  else if (hasSteps)                      { type = “multistep”; label = “Flujo multi-paso”; emoji = “📋” }
-  else if (hasForm)                       { type = “form”;      label = “Formulario”;       emoji = “📝” }
-  else if (hasCards)                      { type = “landing”;   label = “Landing / Tarjetas”; emoji = “🎨” }
+  if (hasSteps && (hasScore || hasTimer)) { kind = “simulator”; label = “Simulador / Quiz”; emoji = “🎯” }
+  else if (hasSteps)                      { kind = “multistep”; label = “Flujo multi-paso”; emoji = “📋” }
+  else if (hasForm)                       { kind = “form”;      label = “Formulario”;       emoji = “📝” }
+  else if (hasCards)                      { kind = “landing”;   label = “Landing / Tarjetas”; emoji = “🎨” }
 
-  return { type, label, emoji, title, hasForm, hasSteps, hasTimer, hasScore, scriptCount, styleCount }
+  return { kind, label, emoji, title, hasForm, hasSteps, hasTimer, hasScore, scriptCount, styleCount }
 }
 
 function scopeHtmlForSandbox(rawHtml: string, scopeId: string): string {
