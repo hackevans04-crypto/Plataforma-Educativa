@@ -571,44 +571,89 @@ function StatsEditor({ data, onChange }: { data: Record<string, any>; onChange: 
 
 function CustomCodeEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
+  const iframeRef = React.useRef<HTMLIFrameElement>(null)
+  const [selectedEl, setSelectedEl] = React.useState<EditorElementInfo | null>(null)
+  const [previewMode, setPreviewMode] = React.useState<"edit" | "code">("edit")
+
+  const hasHtml = !!(data.html || "").trim()
+
   return (
-    <div className="p-5 space-y-5">
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 flex gap-3">
-        <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-        <div>
-          <p className="text-sm font-semibold text-amber-300 mb-1">Codigo HTML personalizado</p>
-          <p className="text-xs text-amber-200/60 leading-relaxed">Puedes insertar HTML, iframes de YouTube, Google Maps, widgets externos, etc. Para componentes React personalizados, guarda el codigo y pasalo al desarrollador para integrarlo como componente.</p>
-        </div>
-      </div>
-      <Card title="Nota interna (no se muestra en la pagina)">
-        <F label="Descripcion del bloque"><input className={iCls} value={data.nota || ""} onChange={e => s({ nota: e.target.value })} placeholder="ej. Iframe Google Maps - Quito" /></F>
+    <div className="p-5 space-y-4">
+      <Card title="Nota interna">
+        <F label="Descripcion"><input className={iCls} value={data.nota || ""} onChange={e => s({ nota: e.target.value })} placeholder="ej. Simulador Pedagogia - importado" /></F>
       </Card>
-      <Card title="Codigo HTML">
-        <F label="HTML" helper='Ej: <iframe src="https://..." width="100%" height="450"></iframe>'>
-          <textarea
-            className={cn(codeCls, "min-h-[280px]")}
-            value={data.html || ""}
-            onChange={e => s({ html: e.target.value })}
-            placeholder={'<!-- Pega tu HTML aqui -->\n<iframe\n  src="https://www.youtube.com/embed/..."\n  width="100%"\n  height="450"\n  allowfullscreen>\n</iframe>'}
-            spellCheck={false}
-          />
-        </F>
-        {data.html && (
-          <div className="mt-3">
-            <p className="text-xs text-muted-foreground mb-2">Vista previa:</p>
-            <div className="rounded-xl border border-border bg-card p-4 overflow-auto max-h-64" dangerouslySetInnerHTML={{ __html: data.html }} />
+
+      {hasHtml ? (
+        <>
+          {/* Mode toggle */}
+          <div className="flex items-center gap-1 rounded-xl border border-white/8 p-1">
+            <button onClick={() => setPreviewMode("edit")}
+              className={cn("flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all",
+                previewMode === "edit" ? "bg-primary text-white" : "text-white/40 hover:text-white/70")}>
+              Editor visual
+            </button>
+            <button onClick={() => setPreviewMode("code")}
+              className={cn("flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all",
+                previewMode === "code" ? "bg-white/8 text-white" : "text-white/40 hover:text-white/70")}>
+              Ver codigo
+            </button>
           </div>
-        )}
-      </Card>
-      <Card title="Codigo React (referencia)">
-        <F label="Equivalente como componente React" helper="Copia este template para crear un componente propio">
-          <textarea
-            className={cn(codeCls, "min-h-[160px]")}
-            readOnly
-            value={`// components/landing/custom-${Date.now()}.tsx\n"use client"\n\nexport default function CustomSection() {\n  return (\n    <section className="py-20">\n      <div className="max-w-7xl mx-auto px-6 lg:px-12">\n        {/* Tu contenido aqui */}\n        ${data.html ? data.html.slice(0, 100) + "..." : "<p>Contenido personalizado</p>"}\n      </div>\n    </section>\n  )\n}`}
-          />
-        </F>
-      </Card>
+
+          {previewMode === "edit" && (
+            <div className="space-y-3">
+              {/* Live iframe preview */}
+              <div className="rounded-xl border border-white/8 overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-white/3 border-b border-white/5">
+                  <span className="w-2 h-2 rounded-full bg-primary/60" />
+                  <span className="text-[10px] text-white/35 flex-1">Haz clic en cualquier elemento para editarlo</span>
+                </div>
+                <div className="max-h-72 overflow-hidden">
+                  <CustomCodeSection
+                    data={data}
+                    editMode={true}
+                    iframeRef={iframeRef}
+                    onElementSelect={(info) => setSelectedEl(info)}
+                  />
+                </div>
+              </div>
+
+              {/* Element inspector */}
+              <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+                <HtmlElementInspector
+                  element={selectedEl}
+                  iframeRef={iframeRef}
+                  onClose={() => setSelectedEl(null)}
+                />
+              </div>
+            </div>
+          )}
+
+          {previewMode === "code" && (
+            <Card title="Codigo HTML">
+              <F label="HTML">
+                <textarea
+                  className={cn(codeCls, "min-h-[240px]")}
+                  value={data.html || ""}
+                  onChange={e => { s({ html: e.target.value }); setSelectedEl(null) }}
+                  spellCheck={false}
+                />
+              </F>
+            </Card>
+          )}
+        </>
+      ) : (
+        <Card title="Codigo HTML">
+          <F label="HTML" helper='Ej: <iframe src="https://..." width="100%" height="450"></iframe>'>
+            <textarea
+              className={cn(codeCls, "min-h-[280px]")}
+              value={data.html || ""}
+              onChange={e => s({ html: e.target.value })}
+              placeholder={"<!-- Pega tu HTML aqui -->\n<iframe\n  src=\"https://www.youtube.com/embed/...\"\n  width=\"100%\"\n  height=\"450\"\n  allowfullscreen>\n</iframe>"}
+              spellCheck={false}
+            />
+          </F>
+        </Card>
+      )}
     </div>
   )
 }
@@ -864,6 +909,9 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
 }
 
 import { HtmlImporter } from "@/components/admin/html-importer"
+import { HtmlElementInspector } from "@/components/admin/html-element-inspector"
+import CustomCodeSection from "@/components/landing/custom-code-section"
+import type { EditorElementInfo } from "@/components/admin/html-editor-bridge"
 
 
 function FeatureCardsEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
