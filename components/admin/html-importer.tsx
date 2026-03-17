@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 import type { CMSSectionType } from "@/hooks/use-cms"
 
 // ============================================================
-// PHASE 1 — PARSER: separate structure, styles, scripts
+// PHASE 1 — PARSER
 // ============================================================
 
 interface ParsedHtml {
@@ -14,6 +14,7 @@ interface ParsedHtml {
   scripts: string[]
   body: string
   title: string
+  raw: string
 }
 
 function parseHtml(raw: string): ParsedHtml {
@@ -30,7 +31,7 @@ function parseHtml(raw: string): ParsedHtml {
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
         .replace(/<\/?html[^>]*>/gi, "")
-        .replace(/<\/?head[^>]*>[\s\S]*?(?=<body|$)/gi, "")
+        .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
 
   const h1Match =
     raw.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) ??
@@ -39,15 +40,15 @@ function parseHtml(raw: string): ParsedHtml {
     ? h1Match[1].replace(/<[^>]*>/g, "").trim().slice(0, 60)
     : "Sin titulo"
 
-  return { styles, scripts, body, title }
+  return { styles, scripts, body, title, raw }
 }
 
 // ============================================================
-// PHASE 2 — CLASSIFIER: detect type and recommend mode
+// PHASE 2 — CLASSIFIER
 // ============================================================
 
 type HtmlType = "simulator" | "form" | "landing" | "widget" | "content"
-type ImportMode = "adapted" | "hybrid" | "sandbox"
+type ImportMode = "sandbox" | "hybrid" | "adapted"
 
 interface HtmlElements {
   buttons: number
@@ -60,7 +61,6 @@ interface HtmlElements {
   hasScore: boolean
   hasForms: boolean
   hasVideo: boolean
-  hasNav: boolean
 }
 
 interface Detection {
@@ -86,7 +86,6 @@ function classify(raw: string, parsed: ParsedHtml): Detection {
   const hasForms = forms > 0 || inputs > 2
   const hasSteps = screens > 1 || steps > 1
   const hasVideo = lower.includes("<video") || lower.includes("youtube") || lower.includes("vimeo")
-  const hasNav   = lower.includes("<nav") || (raw.match(/<a\s/gi) ?? []).length > 5
 
   let type: HtmlType = "content"
   let label = "Contenido libre"
@@ -95,44 +94,37 @@ function classify(raw: string, parsed: ParsedHtml): Detection {
   else if (hasSteps)                       { type = "simulator"; label = "Flujo multi-paso" }
   else if (hasForms)                       { type = "form";      label = "Formulario" }
   else if (cards > 2)                      { type = "landing";   label = "Landing / Tarjetas" }
-  else if (hasNav)                         { type = "widget";    label = "Widget con navegacion" }
 
-  // Recommend: complex/scripted content = sandbox, forms/buttons = hybrid, simple = adapted
+  // Complex HTML with scripts → sandbox (don't touch); forms/buttons → hybrid; simple → adapted
   const recommendation: ImportMode =
-    parsed.scripts.length > 2 || hasSteps ? "sandbox" :
-    hasForms || buttons > 0               ? "hybrid"  : "adapted"
+    parsed.scripts.length > 0 || hasSteps || hasTimer ? "sandbox" :
+    hasForms || buttons > 0                            ? "hybrid"  : "adapted"
 
   return {
     label, type, title: parsed.title,
     elements: {
-      buttons, inputs, cards, steps: screens + steps,
-      scripts: parsed.scripts.length, styles: parsed.styles.length,
-      hasTimer, hasScore, hasForms, hasVideo, hasNav,
+      buttons, inputs, cards,
+      steps: screens + steps,
+      scripts: parsed.scripts.length,
+      styles: parsed.styles.length,
+      hasTimer, hasScore, hasForms, hasVideo,
     },
     recommendation,
   }
 }
 
 // ============================================================
-// PHASE 3 — NORMALIZER + CSS SCOPER
+// PHASE 3 — CSS SCOPER (used only in adapted mode)
 // ============================================================
 
-// All selectors that could pollute the parent page
-const ELEMENT_RE = /^(html|body|\*|:root|button|input|select|textarea|h[1-6]|p|a\b|ul|ol|li|table|th|td|form|label|img|svg)([\s,{:]|$)/i
+const ELEMENT_RE = /^(html|body|\*|:root|button|input|select|textarea|h[1-6]|p|a\b|ul|ol|li|table|th|td|form|label)([\s,{:]|$)/i
 
 function scopeStylesheet(css: string, id: string): string {
-  // Keep @keyframes and @font-face as-is; skip empty chunks
   const chunks = css.split(/(?<=\})/)
   return chunks.map((chunk) => {
     const trimmed = chunk.trim()
     if (!trimmed) return ""
-
-    if (
-      trimmed.startsWith("@keyframes") ||
-      trimmed.startsWith("@font-face")
-    ) return chunk
-
-    // Pass @media / @supports through (their inner selectors are already scoped by proxy)
+    if (trimmed.startsWith("@keyframes") || trimmed.startsWith("@font-face")) return chunk
     if (trimmed.startsWith("@")) return chunk
 
     const braceIdx = trimmed.indexOf("{")
@@ -146,10 +138,8 @@ function scopeStylesheet(css: string, id: string): string {
       .map((s) => {
         const t = s.trim()
         if (!t) return ""
-        // Always scope under #id — for global selectors this replaces body/html scope
-        if (ELEMENT_RE.test(t)) return "#" + id + " " + t
-        // :root / html / body become the container itself
         if (/^(html|body|:root|\*)(\s|,|$)/i.test(t)) return "#" + id
+        if (ELEMENT_RE.test(t)) return "#" + id + " " + t
         return "#" + id + " " + t
       })
       .filter(Boolean)
@@ -160,111 +150,76 @@ function scopeStylesheet(css: string, id: string): string {
 }
 
 // ============================================================
-// PHASE 4 — VISUAL ADAPTER: system design tokens
+// PHASE 4 — VISUAL ADAPTER tokens (adapted mode only)
 // ============================================================
 
-function buildSystemTokens(id: string): string {
-  return [
-    "#" + id + " {",
-    "  --sys-primary: var(--primary, #E8392A);",
-    "  --sys-bg: var(--background, #0a0a0a);",
-    "  --sys-surface: rgba(255,255,255,0.04);",
-    "  --sys-border: rgba(255,255,255,0.10);",
-    "  --sys-text: var(--foreground, #ffffff);",
-    "  --sys-muted: rgba(255,255,255,0.50);",
-    "  --sys-radius: 0.75rem;",
-    "  --sys-font: var(--font-sans, system-ui, -apple-system, sans-serif);",
-    "  all: initial;",
-    "  display: block;",
-    "  box-sizing: border-box;",
-    "  font-family: var(--sys-font) !important;",
-    "  color: var(--sys-text);",
-    "  background: transparent;",
-    "}",
-    "#" + id + " * { box-sizing: border-box; font-family: var(--sys-font) !important; }",
-  ].join("\n")
-}
-
-function buildAdaptedStyles(id: string): string {
+function buildSystemStyles(id: string): string {
   const s = "#" + id
   return [
-    // Typography
-    s + " h1," + s + " h2," + s + " h3," + s + " h4," + s + " h5," + s + " h6 { color:var(--sys-text)!important; font-weight:700!important; line-height:1.2!important; }",
-    s + " p," + s + " span," + s + " li," + s + " td," + s + " th," + s + " label { color:var(--sys-text)!important; }",
-    s + " h1 { font-size:clamp(1.5rem,4vw,2.5rem)!important; }",
-    s + " h2 { font-size:clamp(1.25rem,3vw,2rem)!important; }",
-    s + " h3 { font-size:clamp(1rem,2.5vw,1.5rem)!important; }",
-    // Buttons
-    s + " button," + s + " [type=button]," + s + " [type=submit]," + s + " [role=button] { background:var(--sys-primary)!important; color:#fff!important; border:none!important; border-radius:var(--sys-radius)!important; padding:.5rem 1.25rem!important; font-weight:600!important; font-size:.875rem!important; cursor:pointer!important; transition:opacity .15s!important; display:inline-flex!important; align-items:center!important; justify-content:center!important; gap:.5rem!important; }",
-    s + " button:hover { opacity:.85!important; }",
-    // Inputs
-    s + " input," + s + " select," + s + " textarea { background:var(--sys-surface)!important; border:1px solid var(--sys-border)!important; border-radius:var(--sys-radius)!important; color:var(--sys-text)!important; padding:.5rem .875rem!important; font-size:.875rem!important; width:100%!important; outline:none!important; }",
-    s + " input:focus," + s + " select:focus," + s + " textarea:focus { border-color:var(--sys-primary)!important; box-shadow:0 0 0 2px rgba(232,57,42,.2)!important; }",
-    s + " input::placeholder," + s + " textarea::placeholder { color:var(--sys-muted)!important; }",
-    s + " select option { background:#1a1a1a!important; color:var(--sys-text)!important; }",
-    // Cards / containers
-    s + " [class*=card]," + s + " [class*=Card]," + s + " [class*=panel]," + s + " [class*=box] { background:var(--sys-surface)!important; border:1px solid var(--sys-border)!important; border-radius:var(--sys-radius)!important; }",
-    // Links
-    s + " a { color:var(--sys-primary)!important; text-decoration:none!important; }",
-    s + " a:hover { opacity:.8!important; }",
-    // Tables
-    s + " table { width:100%!important; border-collapse:collapse!important; }",
-    s + " th," + s + " td { padding:.5rem .75rem!important; border-bottom:1px solid var(--sys-border)!important; text-align:left!important; }",
-    s + " th { font-weight:600!important; color:var(--sys-primary)!important; }",
-  ].join("\n")
-}
-
-function buildHybridOverrides(id: string): string {
-  const s = "#" + id
-  return [
-    s + " { background:transparent!important; }",
-    s + "," + s + " * { font-family:var(--font-sans,inherit)!important; }",
-    s + " button," + s + " [type=button]," + s + " [type=submit] { background:var(--primary,#E8392A)!important; color:#fff!important; border:none!important; border-radius:.75rem!important; font-weight:600!important; cursor:pointer!important; }",
-    s + " button:hover { opacity:.85!important; }",
-    s + " input," + s + " select," + s + " textarea { background:rgba(255,255,255,.05)!important; border:1px solid rgba(255,255,255,.12)!important; border-radius:.75rem!important; color:inherit!important; }",
-    s + " input:focus," + s + " select:focus," + s + " textarea:focus { border-color:var(--primary,#E8392A)!important; outline:none!important; }",
+    s + "{--p:var(--primary,#E8392A);--sf:rgba(255,255,255,.04);--sb:rgba(255,255,255,.10);--st:var(--foreground,#fff);--sm:rgba(255,255,255,.5);--sr:.75rem;--ff:var(--font-sans,system-ui,-apple-system,sans-serif);all:initial;display:block;box-sizing:border-box;font-family:var(--ff)!important;color:var(--st);}",
+    s + " *{box-sizing:border-box;font-family:var(--ff)!important;}",
+    s + " h1," + s + " h2," + s + " h3," + s + " h4," + s + " h5," + s + " h6{color:var(--st)!important;font-weight:700!important;line-height:1.2!important;}",
+    s + " p," + s + " span," + s + " li," + s + " label{color:var(--st)!important;}",
+    s + " button," + s + " [type=button]," + s + " [type=submit]{background:var(--p)!important;color:#fff!important;border:none!important;border-radius:var(--sr)!important;padding:.5rem 1.25rem!important;font-weight:600!important;font-size:.875rem!important;cursor:pointer!important;transition:opacity .15s!important;}",
+    s + " button:hover{opacity:.85!important;}",
+    s + " input," + s + " select," + s + " textarea{background:var(--sf)!important;border:1px solid var(--sb)!important;border-radius:var(--sr)!important;color:var(--st)!important;padding:.5rem .875rem!important;font-size:.875rem!important;width:100%!important;outline:none!important;}",
+    s + " input:focus," + s + " select:focus," + s + " textarea:focus{border-color:var(--p)!important;box-shadow:0 0 0 2px rgba(232,57,42,.2)!important;}",
+    s + " input::placeholder," + s + " textarea::placeholder{color:var(--sm)!important;}",
+    s + " [class*=card]{background:var(--sf)!important;border:1px solid var(--sb)!important;border-radius:var(--sr)!important;}",
+    s + " a{color:var(--p)!important;text-decoration:none!important;}",
   ].join("\n")
 }
 
 // ============================================================
-// PHASE 5 — BUILDER: assemble final HTML per mode
+// PHASE 5 — BUILDER
+// Sandbox: raw HTML untouched (iframe handles isolation)
+// Hybrid:  raw HTML + system override <style> injected at end
+// Adapted: strip original CSS, inject system tokens
 // ============================================================
 
-function buildHtml(parsed: ParsedHtml, id: string, mode: ImportMode): string {
-  const scripts = parsed.scripts.join("\n")
-  const scriptBlock = scripts.trim()
-    ? "<script>(function(){\n" + scripts + "\n})();<\/script>"
+function buildHtml(parsed: ParsedHtml, mode: ImportMode): string {
+  const { raw, styles, scripts, body } = parsed
+
+  // ── SANDBOX: don't touch anything ──
+  if (mode === "sandbox") {
+    return raw
+  }
+
+  // ── HYBRID: inject override CSS into the original document ──
+  if (mode === "hybrid") {
+    const overrides = [
+      "<style>",
+      "  *, *::before, *::after { font-family: var(--font-sans, system-ui, -apple-system, sans-serif) !important; }",
+      "  button, [type=button], [type=submit] { background:var(--primary,#E8392A)!important; color:#fff!important; border:none!important; border-radius:.75rem!important; font-weight:600!important; cursor:pointer!important; }",
+      "  button:hover { opacity:.85!important; }",
+      "  input, select, textarea { background:rgba(255,255,255,.05)!important; border:1px solid rgba(255,255,255,.12)!important; border-radius:.75rem!important; color:inherit!important; }",
+      "  input:focus, select:focus, textarea:focus { border-color:var(--primary,#E8392A)!important; outline:none!important; }",
+      "</style>",
+    ].join("\n")
+
+    // If it's a full document, insert overrides before </head> or </body>
+    if (/<\/head>/i.test(raw)) {
+      return raw.replace(/<\/head>/i, overrides + "\n</head>")
+    }
+    if (/<\/body>/i.test(raw)) {
+      return raw.replace(/<\/body>/i, overrides + "\n</body>")
+    }
+    return overrides + "\n" + raw
+  }
+
+  // ── ADAPTED: strip original CSS, inject system tokens ──
+  const id = "hi_" + Date.now()
+
+  const strippedBody = body
+  const scopedCss    = styles.map((s) => scopeStylesheet(s, id)).join("\n")
+  const systemCss    = buildSystemStyles(id)
+  const scriptBlock  = scripts.join("\n").trim()
+    ? "<script>(function(){\n" + scripts.join("\n") + "\n})();<\/script>"
     : ""
 
-  if (mode === "adapted") {
-    // Strip original CSS entirely — apply system tokens + full element overrides
-    const tokens  = buildSystemTokens(id)
-    const adapted = buildAdaptedStyles(id)
-    return (
-      "<style>\n" + tokens + "\n" + adapted + "\n</style>\n" +
-      "<div id=\"" + id + "\">" + parsed.body + "</div>\n" +
-      scriptBlock
-    )
-  }
-
-  if (mode === "hybrid") {
-    // Keep original CSS (scoped) + add system overrides on top
-    const scopedCss  = parsed.styles.map((s) => scopeStylesheet(s, id)).join("\n")
-    const overrides  = buildHybridOverrides(id)
-    return (
-      "<style>\n#" + id + "{all:initial;display:block;box-sizing:border-box;}\n" +
-      scopedCss + "\n" + overrides + "\n</style>\n" +
-      "<div id=\"" + id + "\">" + parsed.body + "</div>\n" +
-      scriptBlock
-    )
-  }
-
-  // sandbox — full CSS isolation, no visual changes
-  const scopedCss = parsed.styles.map((s) => scopeStylesheet(s, id)).join("\n")
   return (
-    "<style>\n#" + id + "{all:initial;display:block;box-sizing:border-box;}\n" +
-    scopedCss + "\n</style>\n" +
-    "<div id=\"" + id + "\">" + parsed.body + "</div>\n" +
+    "<style>\n" + systemCss + "\n/* scoped originals */\n" + scopedCss + "\n</style>\n" +
+    "<div id=\"" + id + "\">" + strippedBody + "</div>\n" +
     scriptBlock
   )
 }
@@ -275,16 +230,16 @@ function buildHtml(parsed: ParsedHtml, id: string, mode: ImportMode): string {
 
 const MODES: Array<{ val: ImportMode; lbl: string; badge?: string; desc: string }> = [
   {
-    val: "adapted", lbl: "Adaptado al sistema", badge: "Mejor opcion",
-    desc: "Elimina el CSS original. Aplica tipografia, colores, botones e inputs del sistema. Conserva scripts y funcionalidad.",
+    val: "sandbox", lbl: "Sandbox", badge: "Recomendado",
+    desc: "HTML original sin modificar. CSS y JS funcionan exactamente como en el archivo. Maximo nivel de fidelidad.",
   },
   {
     val: "hybrid", lbl: "Hibrido",
-    desc: "Conserva el CSS original aislado. Sobreescribe botones, inputs y tipografia con los estilos del sistema.",
+    desc: "Conserva el HTML y JS originales. Sobreescribe solo botones, inputs y tipografia con el estilo del sistema.",
   },
   {
-    val: "sandbox", lbl: "Sandbox",
-    desc: "Aisla el CSS sin modificarlo. Sin adaptacion visual. Ideal para HTML muy complejos con muchos scripts.",
+    val: "adapted", lbl: "Adaptado al sistema",
+    desc: "Elimina el CSS original. Aplica completamente el design system. Solo para HTML simples sin mucho JS.",
   },
 ]
 
@@ -296,26 +251,26 @@ const TYPE_ICON: Record<HtmlType, string> = {
   content:   "📄",
 }
 
-const MODE_INFO: Record<ImportMode, string> = {
-  adapted: "CSS original eliminado · Tokens del sistema aplicados · Scripts conservados",
-  hybrid:  "CSS original aislado · Botones e inputs del sistema · Tipografia heredada",
-  sandbox: "CSS aislado bajo contenedor unico · Sin cambios visuales · Funcionalidad intacta",
+const MODE_COLOR: Record<ImportMode, string> = {
+  sandbox: "border-emerald-500/20 bg-emerald-500/5 text-emerald-400/80",
+  hybrid:  "border-amber-500/20 bg-amber-500/5 text-amber-400/80",
+  adapted: "border-white/8 bg-white/3 text-white/40",
 }
 
-const MODE_COLOR: Record<ImportMode, string> = {
-  adapted: "border-emerald-500/20 bg-emerald-500/5 text-emerald-400/80",
-  hybrid:  "border-amber-500/20 bg-amber-500/5 text-amber-400/80",
-  sandbox: "border-white/8 bg-white/3 text-white/40",
+const MODE_INFO: Record<ImportMode, string> = {
+  sandbox: "HTML original intacto · CSS vivo · JS ejecuta · Scripts funcionan · Iframe aislado",
+  hybrid:  "HTML original intacto · JS ejecuta · Botones e inputs del sistema sobreescritos",
+  adapted: "CSS original eliminado · Tokens del sistema aplicados · Solo para HTML simples",
 }
 
 export function HtmlImporter({ onCreateSection }: {
   onCreateSection: (type: CMSSectionType, data: Record<string, unknown>) => void
 }) {
-  const [uiMode, setUiMode]       = React.useState("idle")
-  const [detection, setDetection] = React.useState<Detection | null>(null)
-  const [parsed, setParsed]       = React.useState<ParsedHtml | null>(null)
-  const [fileName, setFileName]   = React.useState("")
-  const [importMode, setImportMode] = React.useState<ImportMode>("adapted")
+  const [uiMode, setUiMode]         = React.useState("idle")
+  const [detection, setDetection]   = React.useState<Detection | null>(null)
+  const [parsed, setParsed]         = React.useState<ParsedHtml | null>(null)
+  const [fileName, setFileName]     = React.useState("")
+  const [importMode, setImportMode] = React.useState<ImportMode>("sandbox")
   const fileRef = React.useRef<HTMLInputElement>(null)
 
   const handleFile = (file: File) => {
@@ -336,8 +291,7 @@ export function HtmlImporter({ onCreateSection }: {
 
   const handleConfirm = () => {
     if (!detection || !parsed) return
-    const id   = "hi_" + Date.now()
-    const html = buildHtml(parsed, id, importMode)
+    const html = buildHtml(parsed, importMode)
     onCreateSection("customCode", {
       html,
       nota: "Importado: " + fileName + " [" + importMode + "] - " + detection.label,
@@ -376,7 +330,6 @@ export function HtmlImporter({ onCreateSection }: {
           </div>
         </div>
 
-        {/* Element breakdown */}
         {(() => {
           const el = detection.elements
           const counts = [
@@ -399,13 +352,11 @@ export function HtmlImporter({ onCreateSection }: {
           ) : null
         })()}
 
-        {/* Feature tags */}
         <div className="flex flex-wrap gap-1">
           {detection.elements.hasTimer && <span className="rounded-full bg-amber-500/15 border border-amber-500/20 px-2 py-0.5 text-[10px] text-amber-400">Temporizador</span>}
           {detection.elements.hasScore && <span className="rounded-full bg-blue-500/15 border border-blue-500/20 px-2 py-0.5 text-[10px] text-blue-400">Resultados</span>}
           {detection.elements.hasForms && <span className="rounded-full bg-green-500/15 border border-green-500/20 px-2 py-0.5 text-[10px] text-green-400">Formulario</span>}
           {detection.elements.hasVideo && <span className="rounded-full bg-purple-500/15 border border-purple-500/20 px-2 py-0.5 text-[10px] text-purple-400">Video</span>}
-          {detection.elements.hasNav   && <span className="rounded-full bg-white/5 border border-white/8 px-2 py-0.5 text-[10px] text-white/50">Navegacion</span>}
         </div>
       </div>
 
@@ -421,13 +372,15 @@ export function HtmlImporter({ onCreateSection }: {
                 <span className={cn("text-sm font-semibold", importMode === val ? "text-primary" : "text-white")}>
                   {lbl}
                 </span>
-                {badge && val === "adapted" && (
-                  <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
-                    importMode === val ? "bg-primary/20 text-primary" : "bg-white/8 text-white/30")}>
-                    {badge}
-                  </span>
+                {badge && (
+                  <span className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                    val === detection.recommendation
+                      ? "bg-primary/20 text-primary"
+                      : "bg-white/8 text-white/30"
+                  )}>{badge}</span>
                 )}
-                {val === detection.recommendation && importMode !== val && (
+                {val === detection.recommendation && !badge && importMode !== val && (
                   <span className="rounded-full bg-white/8 px-1.5 py-0.5 text-[9px] text-white/35 uppercase tracking-wide">
                     sugerido
                   </span>
@@ -439,7 +392,7 @@ export function HtmlImporter({ onCreateSection }: {
         </div>
       </div>
 
-      {/* Mode info strip */}
+      {/* Mode info */}
       <div className={cn("rounded-xl border p-2.5 text-[11px] leading-5", MODE_COLOR[importMode])}>
         {MODE_INFO[importMode]}
       </div>
@@ -458,7 +411,7 @@ export function HtmlImporter({ onCreateSection }: {
     </div>
   )
 
-  // ---- Idle: drop zone ----
+  // ---- Idle ----
   return (
     <div
       onDrop={handleDrop}
