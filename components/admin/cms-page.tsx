@@ -5367,6 +5367,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const [isAutosaving, setIsAutosaving] = useState(false)
   const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  const [shellWidth, setShellWidth] = useState(0)
   const mountedRef = useRef(false)
   const reviewPanelStateRef = useRef<{ left: boolean; right: boolean } | null>(null)
 
@@ -5487,6 +5488,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     const bindings = ((selectedSection.data?.actionBindings as CMSCustomCodeActionBinding[] | undefined) ?? [])
     return bindings.find((binding) => binding.eid === htmlEl.eid) ?? null
   }, [selectedSection, htmlEl?.eid])
+  const compactStudioLayout = shellWidth > 0 && shellWidth < 1024
+  const effectiveFocusMode = focusMode || compactStudioLayout
 
   useEffect(() => {
     if (!mountedRef.current) {
@@ -5534,21 +5537,37 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }, [htmlEl?.eid])
 
   useEffect(() => {
-    if (!focusMode || studioMode !== "edit") {
+    if (typeof window === "undefined") return
+
+    const syncShellWidth = () => setShellWidth(window.innerWidth)
+    syncShellWidth()
+    window.addEventListener("resize", syncShellWidth)
+
+    return () => window.removeEventListener("resize", syncShellWidth)
+  }, [])
+
+  useEffect(() => {
+    if (!effectiveFocusMode || studioMode !== "edit") {
+      setFocusLeftOpen(false)
+      setFocusRightOpen(false)
+      return
+    }
+
+    if (compactStudioLayout && !focusMode) {
       setFocusLeftOpen(false)
       setFocusRightOpen(false)
       return
     }
 
     setFocusRightOpen(true)
-  }, [focusMode, studioMode])
+  }, [compactStudioLayout, effectiveFocusMode, focusMode, studioMode])
 
   useEffect(() => {
-    if (!focusMode || studioMode !== "edit") return
+    if (!effectiveFocusMode || studioMode !== "edit") return
     if (selectedSectionId || htmlEl?.eid || htmlEditing) {
       setFocusRightOpen(true)
     }
-  }, [focusMode, studioMode, selectedSectionId, htmlEl?.eid, htmlEditing])
+  }, [effectiveFocusMode, studioMode, selectedSectionId, htmlEl?.eid, htmlEditing])
 
   useEffect(() => {
     if (selectedSection?.type !== "customCode" || !htmlEl) return
@@ -6249,8 +6268,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const selectedSectionMeta = selectedSection ? getStudioSectionMeta(selectedSection.type) : null
   const SelectedSectionIcon = selectedSectionMeta?.icon
   const reviewModeActive = studioMode === "review"
-  const focusEditingMode = focusMode && studioMode === "edit"
-  const canvasOnlyMode = reviewModeActive || focusMode
+  const focusEditingMode = effectiveFocusMode && studioMode === "edit"
+  const canvasOnlyMode = reviewModeActive || compactStudioLayout || focusMode
   const inspectorTabs =
     selectedSection?.type === "customCode"
       ? CUSTOM_CODE_INSPECTOR_TABS
@@ -8134,6 +8153,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const renderFocusModeDock = () => {
     if (!focusEditingMode) return null
 
+    const dockTitle = compactStudioLayout ? "Editor movil" : "Modo enfoque"
+
     const dockButtons = [
       {
         key: "layers",
@@ -8179,7 +8200,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       <div className="pointer-events-none absolute inset-0 z-30">
         <div className="pointer-events-auto absolute left-3 right-3 bottom-3 flex flex-wrap items-center gap-2 rounded-[26px] border border-white/10 bg-[#08111b]/92 p-2 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl md:left-3 md:right-auto md:top-3 md:bottom-auto md:w-[170px] md:flex-col">
           <div className="w-full rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.22em] text-primary/85">
-            Modo enfoque
+            {dockTitle}
           </div>
           {dockButtons.map((button) => (
             <button
@@ -8299,6 +8320,11 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             {saved && !changed && <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] text-emerald-300">Guardado</span>}
             {isAutosaving && <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2.5 py-1 text-[11px] text-sky-300">Auto guardando...</span>}
             {published && <span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-[11px] text-primary">Publicado</span>}
+            {compactStudioLayout && studioMode === "edit" && (
+              <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] text-primary">
+                Editor movil: usa el dock inferior
+              </span>
+            )}
           </div>
         </div>
 
@@ -8393,20 +8419,27 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => setFocusMode((value) => !value)}
-            className={cn(
-              "inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all whitespace-nowrap",
-              focusMode
-                ? "border-primary/35 bg-primary/12 text-primary"
-                : "border-white/10 text-white/60 hover:border-white/20 hover:text-white"
-            )}
-          >
-            <Monitor className="h-4 w-4" />
-            {focusMode ? "Salir enfoque" : "Modo enfoque"}
-          </button>
-          {viewport === "desktop" && (
+          {compactStudioLayout ? (
+            <div className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-3.5 text-xs font-semibold text-primary whitespace-nowrap">
+              <Smartphone className="h-4 w-4" />
+              Navegacion compacta
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setFocusMode((value) => !value)}
+              className={cn(
+                "inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all whitespace-nowrap",
+                focusMode
+                  ? "border-primary/35 bg-primary/12 text-primary"
+                  : "border-white/10 text-white/60 hover:border-white/20 hover:text-white"
+              )}
+            >
+              <Monitor className="h-4 w-4" />
+              {focusMode ? "Salir enfoque" : "Modo enfoque"}
+            </button>
+          )}
+          {!compactStudioLayout && viewport === "desktop" && (
             <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
               {([1440, 1280] as const).map((width) => (
                 <button
