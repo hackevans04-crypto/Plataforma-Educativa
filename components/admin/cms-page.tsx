@@ -5488,6 +5488,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     const bindings = ((selectedSection.data?.actionBindings as CMSCustomCodeActionBinding[] | undefined) ?? [])
     return bindings.find((binding) => binding.eid === htmlEl.eid) ?? null
   }, [selectedSection, htmlEl?.eid])
+  const mobileStudioLayout = shellWidth > 0 && shellWidth < 768
   const compactStudioLayout = shellWidth > 0 && shellWidth < 1024
   const effectiveFocusMode = focusMode || compactStudioLayout
 
@@ -6381,13 +6382,36 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const openFocusLeftTab = (tab: StudioLeftTab) => {
     setLeftTab(tab)
+    setFocusRightOpen(false)
     setFocusLeftOpen((current) => (leftTab === tab ? !current : true))
   }
 
   const openFocusInspectorTab = (tab: StudioInspectorTab) => {
     setInspectorTab(tab)
+    setFocusLeftOpen(false)
     setFocusRightOpen(true)
   }
+
+  const renderMobileLeftTabStrip = () => (
+    <div className="studio-scroll flex items-center gap-2 overflow-x-auto border-b border-white/8 px-4 py-3">
+      {STUDIO_LEFT_TABS.map((tabItem) => (
+        <button
+          key={tabItem.id}
+          type="button"
+          onClick={() => setLeftTab(tabItem.id)}
+          className={cn(
+            "inline-flex shrink-0 items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-medium transition-all",
+            leftTab === tabItem.id
+              ? "border-primary/35 bg-primary/12 text-primary"
+              : "border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:text-white"
+          )}
+        >
+          <tabItem.icon className="h-3.5 w-3.5" />
+          {tabItem.label}
+        </button>
+      ))}
+    </div>
+  )
 
   const renderLeftIconRail = () => (
     <div className="flex h-full w-[64px] flex-shrink-0 flex-col items-center gap-2 border-r border-white/8 bg-[#050c16] px-2 py-3">
@@ -8153,7 +8177,93 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const renderFocusModeDock = () => {
     if (!focusEditingMode) return null
 
-    const dockTitle = compactStudioLayout ? "Editor movil" : "Modo enfoque"
+    const dockTitle = mobileStudioLayout ? "Editor movil" : compactStudioLayout ? "Edicion compacta" : "Modo enfoque"
+
+    if (mobileStudioLayout) {
+      const mobileDockButtons = [
+        {
+          key: "pages",
+          label: "Paginas",
+          icon: Globe,
+          active: focusLeftOpen && leftTab === "pages",
+          onClick: () => openFocusLeftTab("pages"),
+        },
+        {
+          key: "layers",
+          label: "Capas",
+          icon: Layers,
+          active: focusLeftOpen && leftTab === "layers",
+          onClick: () => openFocusLeftTab("layers"),
+        },
+        {
+          key: "add",
+          label: "Agregar",
+          icon: Plus,
+          active: false,
+          onClick: () => {
+            setInsertIndex(null)
+            setShowAdd(true)
+          },
+        },
+        {
+          key: "components",
+          label: "Bloques",
+          icon: LayoutTemplate,
+          active: focusLeftOpen && leftTab === "components",
+          onClick: () => openFocusLeftTab("components"),
+        },
+        {
+          key: "inspector",
+          label: "Inspector",
+          icon: SelectedSectionIcon ?? Pencil,
+          active: focusRightOpen,
+          onClick: () => {
+            if (focusRightOpen) {
+              setFocusRightOpen(false)
+              return
+            }
+            openFocusInspectorTab("content")
+          },
+        },
+      ] as const
+
+      return (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+          <div className="pointer-events-auto rounded-[28px] border border-white/10 bg-[#08111b]/94 p-2 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+            <div className="mb-2 flex items-center justify-between gap-3 px-2">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary/85">{dockTitle}</div>
+                <div className="mt-1 text-xs text-white/45">
+                  {selectedSectionMeta?.label ?? "Abre capas, bloques o inspector para editar"}
+                </div>
+              </div>
+              <div className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/40">
+                {studioMode === "edit" ? "Editar" : studioMode}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-2">
+              {mobileDockButtons.map((button) => (
+                <button
+                  key={button.key}
+                  type="button"
+                  onClick={button.onClick}
+                  className={cn(
+                    "flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center text-[11px] font-medium transition-all",
+                    button.active
+                      ? "border-primary/40 bg-primary/12 text-primary shadow-[0_10px_30px_rgba(232,57,42,0.18)]"
+                      : "border-white/10 bg-white/[0.03] text-white/68 hover:border-white/20 hover:text-white"
+                  )}
+                >
+                  <button.icon className="h-4 w-4 flex-shrink-0" />
+                  <span className="leading-tight">{button.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )
+    }
 
     const dockButtons = [
       {
@@ -8226,6 +8336,35 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const renderFocusLeftOverlay = () => {
     if (!focusEditingMode || !focusLeftOpen) return null
 
+    if (mobileStudioLayout) {
+      return (
+        <div className="pointer-events-auto absolute inset-0 z-40 bg-[#02050b]/76 backdrop-blur-sm" onClick={() => setFocusLeftOpen(false)}>
+          <div
+            className="absolute inset-0 flex flex-col overflow-hidden bg-[#08111b]/98"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-white/8 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary/85">Herramientas</div>
+                <div className="truncate text-sm font-semibold text-white">{activeLeftTabMeta.label}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFocusLeftOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/55 transition-all hover:border-white/20 hover:text-white"
+                aria-label={`Cerrar panel ${activeLeftTabMeta.label}`}
+                title={`Cerrar panel ${activeLeftTabMeta.label}`}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {renderMobileLeftTabStrip()}
+            <div className="min-h-0 flex-1 overflow-hidden">{renderActiveLeftSidebar()}</div>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="pointer-events-none absolute inset-0 z-20">
         <div className="pointer-events-auto absolute inset-x-3 bottom-3 max-h-[78%] lg:inset-y-3 lg:left-3 lg:right-auto lg:w-[340px] xl:w-[360px]">
@@ -8248,6 +8387,34 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const renderFocusRightOverlay = () => {
     if (!focusEditingMode || !focusRightOpen) return null
+
+    if (mobileStudioLayout) {
+      return (
+        <div className="pointer-events-auto absolute inset-0 z-40 bg-[#02050b]/76 backdrop-blur-sm" onClick={() => setFocusRightOpen(false)}>
+          <div
+            className="absolute inset-0 flex flex-col overflow-hidden bg-[#08111b]/98"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-white/8 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary/85">Inspector</div>
+                <div className="truncate text-sm font-semibold text-white">{selectedSectionMeta?.label ?? "Selecciona un bloque"}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFocusRightOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/55 transition-all hover:border-white/20 hover:text-white"
+                aria-label="Cerrar inspector"
+                title="Cerrar inspector"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">{renderActiveInspectorPanel()}</div>
+          </div>
+        </div>
+      )
+    }
 
     return (
       <div className="pointer-events-none absolute inset-0 z-20">
@@ -8306,7 +8473,12 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }
 
   return (
-    <div className="relative flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[#07111f] pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-white">
+    <div
+      className={cn(
+        "relative flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[#07111f] pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-white",
+        mobileStudioLayout && focusEditingMode && "pb-[calc(env(safe-area-inset-bottom)+118px)]"
+      )}
+    >
       <header className="relative z-30 flex flex-shrink-0 flex-col gap-3 border-b border-white/10 bg-[#08111f] px-3 py-3 sm:px-4 xl:px-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
@@ -8322,7 +8494,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             {published && <span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-[11px] text-primary">Publicado</span>}
             {compactStudioLayout && studioMode === "edit" && (
               <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] text-primary">
-                Editor movil: usa el dock inferior
+                {mobileStudioLayout ? "Editor movil: usa el dock inferior" : "Edicion compacta: usa paneles flotantes"}
               </span>
             )}
           </div>
@@ -8482,6 +8654,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               setLeftTab("layers")
               setInspectorTab("content")
               setRightPanelCollapsed(false)
+              if (mobileStudioLayout) {
+                setFocusLeftOpen(false)
+                setFocusRightOpen(true)
+              }
             }}
             config={config}
             mode={viewport}
