@@ -5,6 +5,7 @@ import type { MouseEvent, ReactNode } from "react"
 import { ArrowDown, ArrowUp, Award, BadgePlus, BookOpen, Copy, Code2, Eye, EyeOff, FileImage, FileText, GalleryVertical, GripVertical, HelpCircle, Layers, LayoutTemplate, MessageSquare, Minus, Pencil, PlayCircle, Plus, Sparkles, Star, Target, TextCursorInput, Trash2, Video } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { CMSActionConfig, CMSConfig, CMSSection, CMSSectionType } from "@/hooks/use-cms"
+import type { EditorElementInfo } from "@/components/admin/html-editor-bridge"
 import Navbar from "@/components/navbar"
 import Footer from "@/components/footer"
 import AnimatedBackground from "@/components/animated-background"
@@ -27,11 +28,8 @@ import DynamicFeedSection from "@/components/landing/dynamic-feed-section"
 import { resolveLandingBuilderItems, useLandingBuilderData } from "@/hooks/use-landing-builder-data"
 import FormBuilderSection from "@/components/landing/form-builder-section"
 import LandingPopupHost from "@/components/landing/landing-popup-host"
+import { EmbedSection, LogoStripSection, RichTextSection, SpacerSection } from "@/components/landing/cms-page-renderer"
 import { getLandingSectionDomId } from "@/hooks/use-landing-actions"
-import RichTextSection from "@/components/landing/rich-text-section"
-import LogoStripSection from "@/components/landing/logo-strip-section"
-import SpacerSection from "@/components/landing/spacer-section"
-import EmbedSection from "@/components/landing/embed-section"
 
 const BG_CLASSES: Record<string, string> = {
   transparent: "",
@@ -71,6 +69,30 @@ const SECTION_META: Record<CMSSectionType, { label: string; icon: ReactNode }> =
   logoStrip: { label: "Logos", icon: <BadgePlus className="h-3.5 w-3.5" /> },
   spacer: { label: "Espaciador", icon: <Minus className="h-3.5 w-3.5" /> },
   embed: { label: "Embed", icon: <Code2 className="h-3.5 w-3.5" /> },
+}
+
+const LEGACY_SECTION_META: Record<string, { label: string; icon: ReactNode }> = {
+  navbar: { label: "Navegacion", icon: <LayoutTemplate className="h-3.5 w-3.5" /> },
+  footer: { label: "Footer", icon: <LayoutTemplate className="h-3.5 w-3.5" /> },
+  html: { label: "HTML", icon: <Code2 className="h-3.5 w-3.5" /> },
+  features: { label: "Features", icon: <BookOpen className="h-3.5 w-3.5" /> },
+}
+
+function formatSectionTypeLabel(type: string) {
+  return type
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (char) => char.toUpperCase())
+}
+
+function getSectionMeta(type: string): { label: string; icon: ReactNode } {
+  return (
+    SECTION_META[type as CMSSectionType] ??
+    LEGACY_SECTION_META[type] ??
+    { label: formatSectionTypeLabel(type || "bloque"), icon: <LayoutTemplate className="h-3.5 w-3.5" /> }
+  )
 }
 
 function getSimulatorSubmitAction(action: CMSActionConfig): CMSActionConfig {
@@ -117,7 +139,7 @@ function SectionShell({
   const customBg = section.style?.bg && !BG_CLASSES[section.style.bg]
     ? { backgroundColor: section.style.bg }
     : undefined
-  const meta = SECTION_META[section.type]
+  const meta = getSectionMeta(section.type)
   const handleToolbarClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     event.stopPropagation()
@@ -264,9 +286,13 @@ function renderSectionContent(
   config: CMSConfig,
   datasets: ReturnType<typeof useLandingBuilderData>,
   selected: boolean,
+  htmlIframeRef?: React.MutableRefObject<HTMLIFrameElement | null>,
   onSelect?: (id: string) => void,
   onInlineUpdate?: (sectionId: string, patch: Record<string, any>) => void,
-  onAction?: (action?: CMSActionConfig, fallbackHref?: string) => void
+  onAction?: (action?: CMSActionConfig, fallbackHref?: string) => void,
+  onHtmlElementSelect?: (info: EditorElementInfo | null) => void,
+  onHtmlEditingChange?: (editing: boolean) => void,
+  onHtmlSnapshot?: (html: string) => void
 ) {
   switch (section.type) {
     case "hero":
@@ -335,6 +361,17 @@ function renderSectionContent(
           data={section.data}
           editMode={selected}
           iframeRef={selected && htmlIframeRef ? htmlIframeRef as React.RefObject<HTMLIFrameElement> : undefined}
+          onActivate={!selected ? () => onSelect?.(section.id) : undefined}
+          onElementSelect={selected ? (info) => {
+            onSelect?.(section.id)
+            onHtmlElementSelect?.(info)
+          } : undefined}
+          onEditingChange={selected ? (editing) => {
+            if (editing) onSelect?.(section.id)
+            onHtmlEditingChange?.(editing)
+          } : undefined}
+          onEditorSnapshot={selected ? onHtmlSnapshot : undefined}
+          onAction={(action, fallbackHref) => onAction?.(action, fallbackHref)}
         />
       )
     case "pageHero":
@@ -405,7 +442,7 @@ function renderSectionContent(
         />
       )
     case "spacer":
-      return <SpacerSection data={section.data} />
+      return <SpacerSection data={section.data} editMode={selected} />
     case "embed":
       return (
         <EmbedSection
@@ -470,6 +507,9 @@ export default function StudioSitePreview({
   onReorder,
   previewMode = false,
   htmlIframeRef,
+  onHtmlElementSelect,
+  onHtmlEditingChange,
+  onHtmlSnapshot,
 }: {
   config: CMSConfig
   sections: CMSSection[]
@@ -484,6 +524,9 @@ export default function StudioSitePreview({
   onReorder?: (sourceId: string, targetIndex: number) => void
   previewMode?: boolean
   htmlIframeRef?: React.MutableRefObject<HTMLIFrameElement | null>
+  onHtmlElementSelect?: (info: EditorElementInfo | null) => void
+  onHtmlEditingChange?: (editing: boolean) => void
+  onHtmlSnapshot?: (html: string) => void
 }) {
   const datasets = useLandingBuilderData()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -506,11 +549,15 @@ export default function StudioSitePreview({
 
   useEffect(() => {
     const closeMenu = () => setContextMenu(null)
-    window.addEventListener("click", closeMenu)
-    window.addEventListener("resize", closeMenu)
+    const ownerWindow = rootRef.current?.ownerDocument?.defaultView ?? window
+    const ownerDocument = rootRef.current?.ownerDocument ?? document
+    ownerWindow.addEventListener("click", closeMenu)
+    ownerWindow.addEventListener("resize", closeMenu)
+    ownerDocument.addEventListener("click", closeMenu)
     return () => {
-      window.removeEventListener("click", closeMenu)
-      window.removeEventListener("resize", closeMenu)
+      ownerWindow.removeEventListener("click", closeMenu)
+      ownerWindow.removeEventListener("resize", closeMenu)
+      ownerDocument.removeEventListener("click", closeMenu)
     }
   }, [])
 
@@ -543,7 +590,7 @@ export default function StudioSitePreview({
         const target = rootRef.current?.querySelector<HTMLElement>(`#${getLandingSectionDomId(sectionId)}`)
         if (target) {
           target.scrollIntoView({ behavior: "smooth", block: "start" })
-          setPreviewNotice(`Scroll a sección: ${SECTION_META[sections.find((section) => section.id === sectionId)?.type || "pageHero"]?.label || sectionId}`)
+          setPreviewNotice(`Scroll a sección: ${getSectionMeta(sections.find((section) => section.id === sectionId)?.type || "pageHero").label || sectionId}`)
         }
         return
       }
@@ -631,7 +678,7 @@ export default function StudioSitePreview({
           onClick={(event) => event.stopPropagation()}
         >
           <div className="px-2 pb-2 pt-1 text-[10px] font-bold uppercase tracking-[0.22em] text-white/35">
-            {SECTION_META[contextSection.type]?.label ?? "Bloque"}
+            {getSectionMeta(contextSection.type).label}
           </div>
           <div className="grid gap-1">
             <button type="button" onClick={() => { onSelect?.(contextSection.id); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/75 transition-all hover:bg-white/5 hover:text-white"><Pencil className="h-4 w-4" />Editar</button>
@@ -705,7 +752,7 @@ export default function StudioSitePreview({
                     dragging={draggingId === section.id}
                   >
                     <div id={getLandingSectionDomId(section.id)}>
-                      {renderSectionContent(section, config, datasets, editable && selectedId === section.id, onSelect, onInlineUpdate, executePreviewAction)}
+                      {renderSectionContent(section, config, datasets, editable && selectedId === section.id, htmlIframeRef, onSelect, onInlineUpdate, executePreviewAction, onHtmlElementSelect, onHtmlEditingChange, onHtmlSnapshot)}
                     </div>
                   </SectionShell>
                   {editable && renderInsertSlot(trailingInsertIndex, `slot-after-${section.id}`)}
