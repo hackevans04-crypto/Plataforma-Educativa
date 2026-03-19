@@ -1,10 +1,10 @@
 ﻿"use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertCircle, ArrowDown, ArrowLeft, ArrowUp, BadgePlus, Check, ChevronDown, ChevronUp,
-  ClipboardCheck, Code2, ExternalLink, Eye, EyeOff, FileImage, FileText, Globe, GraduationCap, ImageIcon,
+  ClipboardCheck, Code2, ExternalLink, Eye, EyeOff, FileImage, FileText, Globe, GraduationCap, ImageIcon, BookOpen,
   LayoutTemplate, Layers, Link2, MessageSquare, Minus, Pencil, Play, Plus,
   RefreshCw, Save, Settings, Sparkles, Star, Tag, TextCursorInput, Trash2, Type,
   Video, X, Zap, BarChart3, AlignCenter, AlignLeft, AlignRight, Target, ChevronLeft, ChevronRight,
@@ -12,16 +12,19 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
-  type CMSActionConfig, type CMSConfig, type CMSFormFieldConfig, type CMSPage, type CMSPopup, type CMSSection, type CMSSectionSettings, type CMSSectionStyle, type CMSSectionType,
+  type CMSActionConfig, type CMSConfig, type CMSCustomCodeActionBinding, type CMSFormFieldConfig, type CMSHtmlImportMode, type CMSPage, type CMSPopup, type CMSSection, type CMSSectionSettings, type CMSSectionStyle, type CMSSectionType,
   DEFAULT_CMS, getCMSConfig, publishCMSConfig, saveCMSConfig,
 } from "@/hooks/use-cms"
 import StudioSitePreview from "@/components/admin/studio-site-preview"
+import StudioPreviewFrame from "@/components/admin/studio-preview-frame"
 import {
   getDefaultSectionSettings,
   getCollectionKeyFromSection,
   resolveLandingBuilderItems,
   useLandingBuilderData,
 } from "@/hooks/use-landing-builder-data"
+import { buildImportedHtml, getHtmlImportSettings } from "@/lib/html-import-utils"
+import { replaceKnownEmojisInDocumentHtml } from "@/lib/site-icon-registry"
 
 // â”€â”€â”€ Atoms â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -132,6 +135,86 @@ function StatPairs({ stats, onChange }: { stats: { value: string; label: string 
   )
 }
 
+function normalizeColorValue(value: string | undefined, fallback = "#E8392A") {
+  return /^#([0-9a-fA-F]{6})$/.test(value || "") ? (value as string) : fallback
+}
+
+function StudioColorField({
+  label,
+  value,
+  onChange,
+  helper,
+  fallback = "#E8392A",
+}: {
+  label: string
+  value?: string
+  onChange: (value: string) => void
+  helper?: string
+  fallback?: string
+}) {
+  return (
+    <F label={label} helper={helper}>
+      <div className="grid grid-cols-[56px_1fr] gap-2">
+        <input
+          type="color"
+          className="h-10 w-full rounded-xl border border-border bg-secondary/15 cursor-pointer"
+          value={normalizeColorValue(value, fallback)}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <input
+          className={iCls}
+          value={value || ""}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={fallback}
+        />
+      </div>
+    </F>
+  )
+}
+
+function StudioRangeField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  helper,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min: number
+  max: number
+  step?: number
+  helper?: string
+}) {
+  return (
+    <F label={label} helper={helper}>
+      <div className="grid grid-cols-[1fr_72px] gap-3">
+        <input
+          className="h-10 w-full accent-primary"
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(event) => onChange(Number(event.target.value))}
+        />
+        <input
+          className={iCls}
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(event) => onChange(Number(event.target.value) || min)}
+        />
+      </div>
+    </F>
+  )
+}
+
 // â”€â”€â”€ Style Editor (used in every section's "Estilo" tab) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const BG_PRESETS = [
@@ -143,7 +226,7 @@ const BG_PRESETS = [
 
 const PAD_PRESETS = [
   { key: "none", label: "Sin padding" },
-  { key: "sm",   label: "PequeÃ±o" },
+  { key: "sm",   label: "Pequeno" },
   { key: "md",   label: "Normal" },
   { key: "lg",   label: "Grande" },
 ]
@@ -207,6 +290,8 @@ function StyleEditor({ style, onChange }: { style?: CMSSectionStyle; onChange: (
 function HeroEditor({ config, onChange }: { config: CMSConfig; onChange: (c: CMSConfig) => void }) {
   const h = config.hero
   const set = (p: Partial<typeof h>) => onChange({ ...config, hero: { ...h, ...p } })
+  const appearance = h.appearance ?? {}
+  const setAppearance = (patch: Record<string, any>) => set({ appearance: { ...appearance, ...patch } })
   return (
     <div className="p-5 space-y-5">
       <Card title="Cabecera">
@@ -225,6 +310,26 @@ function HeroEditor({ config, onChange }: { config: CMSConfig; onChange: (c: CMS
         <div className="grid grid-cols-2 gap-4">
           <F label="Boton primario"><input className={iCls} value={h.ctaPrimario} onChange={e => set({ ctaPrimario: e.target.value })} /></F>
           <F label="Boton secundario"><input className={iCls} value={h.ctaSecundario} onChange={e => set({ ctaSecundario: e.target.value })} /></F>
+        </div>
+      </Card>
+      <Card title="Apariencia visual">
+        <div className="grid grid-cols-2 gap-3">
+          <StudioColorField label="Color badge" value={appearance.badgeColor} onChange={(value) => setAppearance({ badgeColor: value })} />
+          <StudioColorField label="Color titulo" value={appearance.titleColor} onChange={(value) => setAppearance({ titleColor: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Color descripcion" value={appearance.descriptionColor} onChange={(value) => setAppearance({ descriptionColor: value })} fallback="#9CA3AF" />
+          <StudioColorField label="Boton primario" value={appearance.primaryButtonBg} onChange={(value) => setAppearance({ primaryButtonBg: value })} />
+          <StudioColorField label="Texto boton 1" value={appearance.primaryButtonText} onChange={(value) => setAppearance({ primaryButtonText: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Texto boton 2" value={appearance.secondaryButtonText} onChange={(value) => setAppearance({ secondaryButtonText: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Borde boton 2" value={appearance.secondaryButtonBorder} onChange={(value) => setAppearance({ secondaryButtonBorder: value })} fallback="#374151" />
+          <StudioColorField label="Fondo panel derecho" value={appearance.surfaceBg} onChange={(value) => setAppearance({ surfaceBg: value })} fallback="#111827" />
+          <StudioColorField label="Borde panel derecho" value={appearance.surfaceBorder} onChange={(value) => setAppearance({ surfaceBorder: value })} fallback="#1F2937" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <StudioRangeField label="Padding vertical" value={Number(appearance.sectionPaddingY || 80)} onChange={(value) => setAppearance({ sectionPaddingY: value })} min={48} max={180} step={4} />
+          <StudioRangeField label="Padding horizontal" value={Number(appearance.sectionPaddingX || 24)} onChange={(value) => setAppearance({ sectionPaddingX: value })} min={16} max={96} step={4} />
+          <StudioRangeField label="Tamano titulo" value={Number(appearance.titleSize || 72)} onChange={(value) => setAppearance({ titleSize: value })} min={42} max={110} />
+          <StudioRangeField label="Peso titulo" value={Number(appearance.titleWeight || 700)} onChange={(value) => setAppearance({ titleWeight: value })} min={500} max={900} step={100} />
+          <StudioRangeField label="Tamano descripcion" value={Number(appearance.descriptionSize || 18)} onChange={(value) => setAppearance({ descriptionSize: value })} min={14} max={30} />
         </div>
       </Card>
     </div>
@@ -319,6 +424,8 @@ function TestimonialsEditor({ config, onChange }: { config: CMSConfig; onChange:
 
 function CTAEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
+  const appearance = (data.appearance as Record<string, any>) || {}
+  const sAppearance = (patch: Record<string, any>) => s({ appearance: { ...appearance, ...patch } })
   return (
     <div className="p-5 space-y-5">
       <Card title="Contenido">
@@ -331,6 +438,18 @@ function CTAEditor({ data, onChange }: { data: Record<string, any>; onChange: (d
           <F label="Link boton primario"><input className={iCls} value={data.ctaPrimarioHref || ""} onChange={e => s({ ctaPrimarioHref: e.target.value })} placeholder="/registro" /></F>
           <F label="Texto boton secundario" helper="Dejar vacÃ­o para ocultar"><input className={iCls} value={data.ctaSecundario || ""} onChange={e => s({ ctaSecundario: e.target.value })} /></F>
           <F label="Link boton secundario"><input className={iCls} value={data.ctaSecundarioHref || ""} onChange={e => s({ ctaSecundarioHref: e.target.value })} /></F>
+        </div>
+      </Card>
+      <Card title="Apariencia visual">
+        <div className="grid grid-cols-2 gap-3">
+          <StudioColorField label="Color acento" value={appearance.accentColor} onChange={(value) => sAppearance({ accentColor: value })} />
+          <StudioColorField label="Color titulo" value={appearance.titleColor} onChange={(value) => sAppearance({ titleColor: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Color descripcion" value={appearance.descriptionColor} onChange={(value) => sAppearance({ descriptionColor: value })} fallback="#D1D5DB" />
+          <StudioColorField label="Fondo boton 1" value={appearance.primaryButtonBg} onChange={(value) => sAppearance({ primaryButtonBg: value })} />
+          <StudioColorField label="Texto boton 1" value={appearance.primaryButtonText} onChange={(value) => sAppearance({ primaryButtonText: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Texto boton 2" value={appearance.secondaryButtonText} onChange={(value) => sAppearance({ secondaryButtonText: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Borde boton 2" value={appearance.secondaryButtonBorder} onChange={(value) => sAppearance({ secondaryButtonBorder: value })} fallback="#374151" />
+          <StudioRangeField label="Padding vertical" value={Number(appearance.sectionPaddingY || 80)} onChange={(value) => sAppearance({ sectionPaddingY: value })} min={56} max={220} step={4} />
         </div>
       </Card>
     </div>
@@ -541,6 +660,8 @@ function GalleryEditor({ data, onChange }: { data: Record<string, any>; onChange
 function StatsEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
   const items = (data.items || []) as { id: string; numero: string; label: string; icono: string }[]
+  const appearance = (data.appearance as Record<string, any>) || {}
+  const sAppearance = (patch: Record<string, any>) => s({ appearance: { ...appearance, ...patch } })
   return (
     <div className="p-5 space-y-5">
       <Card title="Encabezado">
@@ -565,45 +686,498 @@ function StatsEditor({ data, onChange }: { data: Record<string, any>; onChange: 
           ))}
         </div>
       </Card>
+      <Card title="Apariencia visual">
+        <div className="grid grid-cols-2 gap-3">
+          <StudioColorField label="Color acento" value={appearance.accentColor} onChange={(value) => sAppearance({ accentColor: value })} />
+          <StudioColorField label="Color titulo" value={appearance.titleColor} onChange={(value) => sAppearance({ titleColor: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Color numero" value={appearance.numberColor} onChange={(value) => sAppearance({ numberColor: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Color etiqueta" value={appearance.labelColor} onChange={(value) => sAppearance({ labelColor: value })} fallback="#9CA3AF" />
+          <StudioColorField label="Fondo tarjeta" value={appearance.cardBg} onChange={(value) => sAppearance({ cardBg: value })} fallback="#111827" />
+          <StudioColorField label="Borde tarjeta" value={appearance.cardBorder} onChange={(value) => sAppearance({ cardBorder: value })} fallback="#1F2937" />
+          <StudioRangeField label="Padding bloque" value={Number(appearance.sectionPaddingY || 64)} onChange={(value) => sAppearance({ sectionPaddingY: value })} min={40} max={180} step={4} />
+          <StudioRangeField label="Padding tarjeta" value={Number(appearance.cardPadding || 0)} onChange={(value) => sAppearance({ cardPadding: value })} min={0} max={64} step={4} />
+        </div>
+      </Card>
     </div>
   )
 }
 
+type HtmlInspectorNodeKind = "image" | "button" | "field" | "icon" | "text" | "container"
+
+const HTML_ICON_SHAPE_TAGS = new Set(["path", "rect", "circle", "line", "polyline", "polygon", "ellipse", "g", "use"])
+
+function looksLikeSelectedHtmlIcon(element: EditorElementInfo | null | undefined) {
+  if (!element) return false
+  const tag = element.tag
+  const classes = String(element.classes || "").toLowerCase()
+  const html = String(element.html || "").toLowerCase()
+  const text = String(element.text || "").trim()
+  return (
+    tag === "svg" ||
+    HTML_ICON_SHAPE_TAGS.has(tag) ||
+    !!element.attrs?.dataIcon ||
+    classes.includes("he-inline-icon") ||
+    classes.includes("lucide") ||
+    html.includes("data-he-icon-root") ||
+    html.includes("data-he-icon=") ||
+    (html.includes("<svg") && text.length <= 2) ||
+    (/^\p{Emoji}+$/u.test(text) && text.length <= 8)
+  )
+}
+
+function getSelectedHtmlTextValue(element: EditorElementInfo | null | undefined) {
+  return String(element?.text || "").replace(/\s+/g, " ").trim()
+}
+
+function selectedHtmlHasVisualChrome(element: EditorElementInfo | null | undefined) {
+  if (!element) return false
+  const background = element.styles.backgroundColor || ""
+  const borderWidth = parseFloat(element.styles.borderWidth || "0")
+  const borderRadius = parseFloat(element.styles.borderRadius || "0")
+  return (
+    (!!background && background !== "transparent" && background !== "rgba(0, 0, 0, 0)") ||
+    borderWidth > 0 ||
+    borderRadius > 0 ||
+    (!!element.styles.boxShadow && element.styles.boxShadow !== "none")
+  )
+}
+
+function looksLikeSelectedHtmlButtonContainer(element: EditorElementInfo | null | undefined) {
+  if (!element || element.id === "he-import-root") return false
+  if (["img", "input", "textarea", "select"].includes(element.tag)) return false
+  if (element.isActionable || looksLikeSelectedHtmlIcon(element)) return false
+  if (!["div", "span", "label", "li", "p"].includes(element.tag)) return false
+  const html = String(element.html || "").toLowerCase()
+  if (/<(input|textarea|select|button|a|img|video|iframe|table|ul|ol)\b/.test(html)) return false
+  const text = getSelectedHtmlTextValue(element)
+  const childCount = element.children?.length ?? 0
+  if (!text || text.length > 90 || childCount > 4) return false
+  const display = String(element.styles.display || "").toLowerCase()
+  const inlineLike = display.includes("inline") || display.includes("flex") || display.includes("grid")
+  const hasIcon = !!element.attrs?.dataIcon || html.includes("<svg") || html.includes("data-he-icon") || /^\p{Emoji}+$/u.test(text)
+  return (selectedHtmlHasVisualChrome(element) || hasIcon) && inlineLike
+}
+
+function looksLikeSelectedHtmlTextContainer(element: EditorElementInfo | null | undefined) {
+  if (!element || element.id === "he-import-root") return false
+  if (["img", "input", "textarea", "select"].includes(element.tag)) return false
+  if (element.isActionable || looksLikeSelectedHtmlIcon(element) || looksLikeSelectedHtmlButtonContainer(element)) return false
+  if (!["div", "span", "label", "li", "p"].includes(element.tag)) return false
+  const html = String(element.html || "").toLowerCase()
+  if (/<(input|textarea|select|button|a|img|video|iframe|table|ul|ol)\b/.test(html)) return false
+  const text = getSelectedHtmlTextValue(element)
+  const childCount = element.children?.length ?? 0
+  if (!text || text.length > 180 || childCount > 3) return false
+  return true
+}
+
+function getSelectedHtmlNodeKind(element: EditorElementInfo | null | undefined): HtmlInspectorNodeKind {
+  if (!element) return "container"
+  if (element.tag === "img") return "image"
+  if (["input", "textarea", "select"].includes(element.tag)) return "field"
+  if (element.isActionable || looksLikeSelectedHtmlButtonContainer(element)) return "button"
+  if (looksLikeSelectedHtmlIcon(element)) return "icon"
+  if (element.isText || looksLikeSelectedHtmlTextContainer(element)) return "text"
+  return "container"
+}
+
+function postHtmlEditorCommand(
+  iframeRef: { current: HTMLIFrameElement | null } | undefined,
+  command: Record<string, unknown>
+) {
+  iframeRef?.current?.contentWindow?.postMessage(command, "*")
+}
+
+function applySiteThemeToSelectedHtmlElement(
+  element: EditorElementInfo,
+  iframeRef: { current: HTMLIFrameElement | null } | undefined,
+  theme: Record<string, any>
+) {
+  if (!element?.eid || !iframeRef?.current?.contentWindow) return false
+
+  const eid = element.eid
+  const accent = theme.accentColor || "var(--he-primary, #E8392A)"
+  const surface = theme.surfaceColor || "var(--he-surface, rgba(13,24,38,.82))"
+  const text = theme.textColor || "var(--he-foreground, #E2EAF0)"
+  const muted = theme.mutedColor || "var(--he-muted, rgba(226,234,240,.72))"
+  const border = theme.borderColor || "var(--he-border, rgba(120,144,171,.18))"
+  const fontFamily = theme.fontFamily || "var(--he-font-sans, 'Barlow', system-ui, sans-serif)"
+  const kind = getSelectedHtmlNodeKind(element)
+  const send = (command: Record<string, unknown>) => postHtmlEditorCommand(iframeRef, command)
+  const style = (prop: string, value: string) =>
+    send({ __editor_cmd: true, cmd: "style", eid, prop, value })
+  const queryStyle = (selector: string, prop: string, value: string) =>
+    send({ __editor_cmd: true, cmd: "style_query", eid, selector, prop, value })
+
+  if (kind === "field") {
+    ;[
+      ["backgroundImage", "none"],
+      ["backgroundColor", surface],
+      ["color", text],
+      ["borderColor", border],
+      ["borderWidth", "1px"],
+      ["borderRadius", "16px"],
+      ["padding", ".85rem 1rem"],
+      ["fontFamily", fontFamily],
+      ["fontWeight", "500"],
+      ["boxShadow", "none"],
+      ["outline", "none"],
+    ].forEach(([prop, value]) => style(prop, value))
+
+    if (element.tag === "select") {
+      ;[
+        ["appearance", "none"],
+        ["cursor", "pointer"],
+        ["paddingRight", "1rem"],
+      ].forEach(([prop, value]) => style(prop, value))
+      queryStyle("option", "backgroundColor", "#0d1826")
+      queryStyle("option", "color", text)
+      queryStyle("option", "fontFamily", fontFamily)
+    }
+  } else if (kind === "button") {
+    ;[
+      ["backgroundImage", "none"],
+      ["display", "inline-flex"],
+      ["alignItems", "center"],
+      ["justifyContent", "center"],
+      ["gap", ".55rem"],
+      ["fontFamily", fontFamily],
+      ["fontWeight", "700"],
+      ["textAlign", "center"],
+      ["whiteSpace", "normal"],
+      ["overflowWrap", "anywhere"],
+      ["maxWidth", "100%"],
+      ["minWidth", "0"],
+      ["padding", ".8rem 1.2rem"],
+      ["borderRadius", "18px"],
+      ["borderWidth", "1px"],
+      ["boxShadow", "0 10px 26px rgba(232,57,42,.18)"],
+      ["backgroundColor", accent],
+      ["color", "#ffffff"],
+      ["borderColor", `color-mix(in srgb, ${accent} 70%, #ffffff 8%)`],
+    ].forEach(([prop, value]) => style(prop, value))
+  } else if (kind === "icon") {
+    const baseSize = Math.max(18, Math.min(40, Number.parseFloat(element.styles.width || element.styles.height || element.styles.fontSize || "24") || 24))
+    ;[
+      ["display", "inline-flex"],
+      ["alignItems", "center"],
+      ["justifyContent", "center"],
+      ["color", accent],
+      ["fontSize", `${baseSize}px`],
+      ["width", `${baseSize}px`],
+      ["height", `${baseSize}px`],
+      ["lineHeight", "1"],
+      ["zIndex", "2"],
+    ].forEach(([prop, value]) => style(prop, value))
+    queryStyle("[data-he-icon-root='1']", "color", accent)
+    queryStyle("[data-he-icon-root='1']", "width", `${baseSize}px`)
+    queryStyle("[data-he-icon-root='1']", "height", `${baseSize}px`)
+    queryStyle("svg", "color", accent)
+    queryStyle("svg", "stroke", "currentColor")
+    queryStyle("svg", "fill", "currentColor")
+    queryStyle("svg", "width", `${baseSize}px`)
+    queryStyle("svg", "height", `${baseSize}px`)
+    ;["path", "rect", "circle", "line", "polyline", "polygon", "ellipse", "g", "use"].forEach((selector) => {
+      queryStyle(selector, "stroke", "currentColor")
+      queryStyle(selector, "fill", "currentColor")
+    })
+  } else if (kind === "text") {
+    const isTitle = /^h[1-6]$/.test(element.tag)
+    const isEyebrow = !isTitle && String(element.text || "").trim().length <= 24 && String(element.text || "").trim() === String(element.text || "").trim().toUpperCase()
+    if (isTitle) {
+      ;[
+        ["fontFamily", fontFamily],
+        ["fontSize", "clamp(28px, 4vw, 42px)"],
+        ["fontWeight", "800"],
+        ["lineHeight", "1.08"],
+        ["letterSpacing", "-0.02em"],
+        ["color", text],
+      ].forEach(([prop, value]) => style(prop, value))
+    } else if (isEyebrow) {
+      ;[
+        ["fontFamily", fontFamily],
+        ["fontSize", "12px"],
+        ["fontWeight", "700"],
+        ["letterSpacing", ".08em"],
+        ["textTransform", "uppercase"],
+        ["color", accent],
+      ].forEach(([prop, value]) => style(prop, value))
+    } else {
+      ;[
+        ["fontFamily", fontFamily],
+        ["fontSize", "16px"],
+        ["fontWeight", "500"],
+        ["lineHeight", "1.7"],
+        ["letterSpacing", "0"],
+        ["color", muted],
+      ].forEach(([prop, value]) => style(prop, value))
+    }
+  } else if (kind === "image") {
+    ;[
+      ["display", "block"],
+      ["maxWidth", "100%"],
+      ["height", "auto"],
+      ["objectFit", "contain"],
+      ["borderRadius", "18px"],
+    ].forEach(([prop, value]) => style(prop, value))
+  } else {
+    ;[
+      ["backgroundImage", "none"],
+      ["backgroundColor", surface],
+      ["color", text],
+      ["borderColor", border],
+      ["borderWidth", "1px"],
+      ["borderRadius", "20px"],
+      ["boxShadow", "0 10px 24px rgba(0,0,0,.16)"],
+      ["padding", "24px"],
+    ].forEach(([prop, value]) => style(prop, value))
+  }
+
+  window.setTimeout(() => {
+    send({ __editor_cmd: true, cmd: "highlight", eid })
+  }, 60)
+
+  return true
+}
+
 // CustomCodeEditor: now only handles code view — the visual editor lives in the main inspector panel
-function CustomCodeEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
+function CustomCodeEditor({
+  data,
+  onChange,
+  selectedHtmlElement,
+  htmlIframeRef,
+}: {
+  data: Record<string, any>
+  onChange: (d: Record<string, any>) => void
+  selectedHtmlElement?: EditorElementInfo | null
+  htmlIframeRef?: { current: HTMLIFrameElement | null }
+}) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
   const [showCode, setShowCode] = useState(false)
+  const [panel, setPanel] = useState<"visual" | "dev">("visual")
   const hasHtml = !!(data.html || "").trim()
+  const importSettings = getHtmlImportSettings(data)
+  const themeOverrides = (data.themeOverrides ?? {}) as Record<string, any>
+  const canAdapt = !!String(data.html || data.sourceHtml || "").trim()
+
+  const reapplyImportTheme = (nextMode: CMSHtmlImportMode = importSettings.mode) => {
+    if (selectedHtmlElement?.eid && htmlIframeRef?.current?.contentWindow) {
+      const applied = applySiteThemeToSelectedHtmlElement(selectedHtmlElement, htmlIframeRef, themeOverrides)
+      if (applied) return
+    }
+
+    const source = String(data.html || data.sourceHtml || "")
+    if (!source.trim()) return
+
+    const built = buildImportedHtml(source, {
+      mode: nextMode,
+      stripNavigation: importSettings.stripNavigation,
+      stripFooter: importSettings.stripFooter,
+      theme: {
+        accentColor: themeOverrides.accentColor || undefined,
+        textColor: themeOverrides.textColor || undefined,
+        surfaceColor: themeOverrides.surfaceColor || undefined,
+        borderColor: themeOverrides.borderColor || undefined,
+        backgroundColor: themeOverrides.backgroundColor || undefined,
+      },
+    })
+
+    s({
+      html: built.html,
+      importMode: nextMode,
+      stripNavigation: importSettings.stripNavigation,
+      stripFooter: importSettings.stripFooter,
+      themeOverrides,
+    })
+  }
+
+  const replaceImportedEmojis = () => {
+    if (selectedHtmlElement?.eid && htmlIframeRef?.current?.contentWindow) {
+      postHtmlEditorCommand(htmlIframeRef, { __editor_cmd: true, cmd: "highlight", eid: selectedHtmlElement.eid })
+    }
+    const source = String(data.html || data.sourceHtml || "")
+    if (!source.trim()) return
+    s({ html: replaceKnownEmojisInDocumentHtml(source) })
+  }
+
+  const replaceImportedHtml = (_type: CMSSectionType, nextData: Record<string, unknown>) => {
+    if (_type !== "customCode") return
+    onChange({
+      ...data,
+      ...nextData,
+      actionBindings: Array.isArray(nextData.actionBindings) ? nextData.actionBindings : (data.actionBindings ?? []),
+    })
+    setPanel("visual")
+  }
 
   return (
-    <div className="p-5 space-y-4">
-      {/* Hint when HTML is loaded */}
+    <div className="space-y-4">
+      <div className="flex overflow-hidden rounded-2xl border border-white/8">
+        {([
+          { id: "visual", label: "Visual" },
+          { id: "dev", label: "Dev" },
+        ] as const).map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setPanel(item.id)}
+            className={cn(
+              "flex-1 py-2 text-xs font-semibold transition-all",
+              panel === item.id ? "bg-white/8 text-white" : "text-white/35 hover:text-white/60"
+            )}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       {hasHtml && (
         <div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-[11px] text-white/50 leading-5">
-          Haz clic directamente en el bloque del canvas para seleccionar y editar elementos.
-          El panel derecho muestra las propiedades del elemento seleccionado.
+          Haz clic directamente en el bloque del canvas para seleccionar y editar elementos. Los cambios visuales quedan guardados y puedes conectar botones desde la pestaña de Acciones.
         </div>
       )}
 
-      {/* Ver / editar codigo toggle */}
-      <div>
-        <button onClick={() => setShowCode(v => !v)}
-          className="w-full flex items-center justify-between rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-white/50 hover:text-white hover:border-white/20 transition-all">
-          <span>{showCode ? "Ocultar codigo HTML" : "Ver / editar codigo HTML"}</span>
-          <span className="text-white/25">{showCode ? "▲" : "▼"}</span>
-        </button>
-        {showCode && (
-          <div className="mt-2">
-            <textarea
-              className={cn(codeCls, "min-h-[260px]")}
-              value={data.html || ""}
-              onChange={e => s({ html: e.target.value })}
-              placeholder={"<!-- Pega tu HTML aqui -->\n<iframe src=\"https://...\" width=\"100%\" height=\"450\" allowfullscreen></iframe>"}
-              spellCheck={false}
+      {panel === "visual" ? (
+        <>
+          <Card title="Adaptacion visual">
+            <div className="grid gap-2">
+              {([
+                ["adapted", "Adaptado al sitio"],
+                ["hybrid", "Hibrido"],
+                ["sandbox", "Original"],
+              ] as const).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => s({ importMode: mode })}
+                  className={cn(
+                    "rounded-2xl border px-4 py-3 text-left text-sm font-semibold leading-5 transition-all",
+                    importSettings.mode === mode ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/35"
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="grid gap-3">
+              <button
+                type="button"
+                onClick={() => s({ stripNavigation: !importSettings.stripNavigation })}
+                className={cn(
+                  "flex items-start justify-between gap-4 rounded-2xl border px-4 py-4 text-left transition-all",
+                  importSettings.stripNavigation ? "border-primary bg-primary/10" : "border-border bg-secondary/10 hover:border-primary/35"
+                )}
+              >
+                <div>
+                  <div className="text-sm font-semibold text-white">Usar navbar del sitio</div>
+                  <div className="mt-1 text-xs text-white/45">Oculta el nav importado para mantener el header principal.</div>
+                </div>
+                <div className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", importSettings.stripNavigation ? "bg-primary text-white" : "bg-white/5 text-white/40")}>
+                  {importSettings.stripNavigation ? "Activo" : "Inactivo"}
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => s({ stripFooter: !importSettings.stripFooter })}
+                className={cn(
+                  "flex items-start justify-between gap-4 rounded-2xl border px-4 py-4 text-left transition-all",
+                  importSettings.stripFooter ? "border-primary bg-primary/10" : "border-border bg-secondary/10 hover:border-primary/35"
+                )}
+              >
+                <div>
+                  <div className="text-sm font-semibold text-white">Ocultar footer importado</div>
+                  <div className="mt-1 text-xs text-white/45">Evita duplicar el pie de pagina dentro del bloque HTML.</div>
+                </div>
+                <div className={cn("rounded-full px-2 py-1 text-[10px] font-semibold", importSettings.stripFooter ? "bg-primary text-white" : "bg-white/5 text-white/40")}>
+                  {importSettings.stripFooter ? "Activo" : "Inactivo"}
+                </div>
+              </button>
+            </div>
+            <div className="grid gap-3">
+              <StudioColorField
+                label="Color principal"
+                value={themeOverrides.accentColor || "#E8392A"}
+                onChange={(value) => s({ themeOverrides: { ...themeOverrides, accentColor: value } })}
+                helper="Usado para botones, links y acentos del bloque importado."
+              />
+              <StudioColorField
+                label="Color de superficie"
+                value={themeOverrides.surfaceColor || ""}
+                onChange={(value) => s({ themeOverrides: { ...themeOverrides, surfaceColor: value } })}
+                helper="Opcional. Personaliza tarjetas y formularios dentro del HTML."
+                fallback="#0d1826"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Btn
+                variant="primary"
+                onClick={() => reapplyImportTheme()}
+                disabled={!canAdapt}
+                className="w-full justify-center whitespace-normal text-center leading-5"
+              >
+                <Sparkles className="h-4 w-4" />
+                Adaptar al estilo de la pagina
+              </Btn>
+              <Btn
+                variant="ghost"
+                onClick={replaceImportedEmojis}
+                disabled={!canAdapt}
+                className="w-full justify-center whitespace-normal text-center leading-5"
+              >
+                <Sparkles className="h-4 w-4" />
+                Reemplazar emojis por iconos
+              </Btn>
+            </div>
+          </Card>
+
+          <Card title="Nota interna">
+            <input
+              className={iCls}
+              value={data.nota || ""}
+              onChange={(e) => s({ nota: e.target.value })}
+              placeholder="ej. Landing importada para simulador de pedagogia"
             />
-          </div>
-        )}
-      </div>
+          </Card>
+        </>
+      ) : (
+        <>
+          <Card title="Importar / reemplazar HTML">
+            <div className="mb-3 text-[11px] leading-5 text-white/45">
+              Sube otro archivo `.html` y reemplaza el contenido de este bloque para seguir editandolo con las mismas herramientas visuales.
+            </div>
+            <HtmlImporter onCreateSection={replaceImportedHtml} />
+          </Card>
+
+          <Card title="Codigo HTML" action={
+            <button
+              type="button"
+              onClick={() => setShowCode((value) => !value)}
+              className="text-xs text-white/50 transition-colors hover:text-white"
+            >
+              {showCode ? "Ocultar" : "Mostrar"}
+            </button>
+          }>
+            {showCode ? (
+              <div className="space-y-3">
+                <textarea
+                  className={cn(codeCls, "min-h-[260px]")}
+                  value={data.html || ""}
+                  onChange={e => s({ html: e.target.value })}
+                  placeholder={"<!-- Pega tu HTML aqui -->\n<iframe src=\"https://...\" width=\"100%\" height=\"450\" allowfullscreen></iframe>"}
+                  spellCheck={false}
+                />
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-3 text-[11px] leading-5 text-white/45">
+                  Si modificas el codigo manualmente, luego puedes volver a pulsar "Adaptar al estilo de la pagina" para reordenar colores, botones y navbar segun el tema del sitio.
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/45">
+                Manten oculto el codigo si quieres trabajar solo de forma visual. El editor del canvas y las acciones del admin siguen funcionando sin tocar HTML.
+              </div>
+            )}
+          </Card>
+        </>
+      )}
     </div>
   )
 }
@@ -970,6 +1544,8 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
   const rightPanel = data.rightPanel || "none"
   const stats      = (data.stats as { emoji: string; value: string; label: string }[]) || []
   const features   = (data.features as string[]) || []
+  const appearance = (data.appearance as Record<string, any>) || {}
+  const sAppearance = (patch: Record<string, any>) => s({ appearance: { ...appearance, ...patch } })
 
   return (
     <div className="p-5 space-y-5">
@@ -1049,6 +1625,19 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
           </div>
         )}
       </Card>
+      <Card title="Apariencia visual">
+        <div className="grid grid-cols-2 gap-3">
+          <StudioColorField label="Color titulo" value={appearance.titleColor} onChange={(value) => sAppearance({ titleColor: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Color descripcion" value={appearance.descriptionColor} onChange={(value) => sAppearance({ descriptionColor: value })} fallback="#9CA3AF" />
+          <StudioColorField label="Glow de fondo" value={appearance.glowColor} onChange={(value) => sAppearance({ glowColor: value })} fallback={data.accentColor || "#E8392A"} />
+          <StudioColorField label="Fondo panel derecho" value={appearance.surfaceBg} onChange={(value) => sAppearance({ surfaceBg: value })} fallback="#111827" />
+          <StudioColorField label="Borde panel derecho" value={appearance.surfaceBorder} onChange={(value) => sAppearance({ surfaceBorder: value })} fallback="#1F2937" />
+          <StudioRangeField label="Padding vertical" value={Number(appearance.sectionPaddingY || 96)} onChange={(value) => sAppearance({ sectionPaddingY: value })} min={56} max={220} step={4} />
+          <StudioRangeField label="Padding horizontal" value={Number(appearance.sectionPaddingX || 24)} onChange={(value) => sAppearance({ sectionPaddingX: value })} min={16} max={96} step={4} />
+          <StudioRangeField label="Tamano titulo" value={Number(appearance.titleSize || 64)} onChange={(value) => sAppearance({ titleSize: value })} min={36} max={92} />
+          <StudioRangeField label="Tamano descripcion" value={Number(appearance.descriptionSize || 18)} onChange={(value) => sAppearance({ descriptionSize: value })} min={14} max={28} />
+        </div>
+      </Card>
     </div>
   )
 }
@@ -1062,6 +1651,8 @@ import type { EditorElementInfo } from "@/components/admin/html-editor-bridge"
 function FeatureCardsEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
   const items = (data.items as { id: string; emoji: string; title: string; description: string; accentColor?: string }[]) || []
+  const appearance = (data.appearance as Record<string, any>) || {}
+  const sAppearance = (patch: Record<string, any>) => s({ appearance: { ...appearance, ...patch } })
 
   return (
     <div className="p-5 space-y-5">
@@ -1103,6 +1694,18 @@ function FeatureCardsEditor({ data, onChange }: { data: Record<string, any>; onC
               <F label="Descripcion"><textarea className={tCls} rows={2} value={item.description} onChange={e => s({ items: items.map((x, j) => j === i ? { ...x, description: e.target.value } : x) })} /></F>
             </div>
           ))}
+        </div>
+      </Card>
+      <Card title="Apariencia visual">
+        <div className="grid grid-cols-2 gap-3">
+          <StudioColorField label="Titulo bloque" value={appearance.headingTitleColor} onChange={(value) => sAppearance({ headingTitleColor: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Descripcion bloque" value={appearance.headingDescriptionColor} onChange={(value) => sAppearance({ headingDescriptionColor: value })} fallback="#9CA3AF" />
+          <StudioColorField label="Fondo tarjeta" value={appearance.cardBg} onChange={(value) => sAppearance({ cardBg: value })} fallback="#111827" />
+          <StudioColorField label="Borde tarjeta" value={appearance.cardBorder} onChange={(value) => sAppearance({ cardBorder: value })} fallback="#1F2937" />
+          <StudioColorField label="Titulo tarjeta" value={appearance.titleColor} onChange={(value) => sAppearance({ titleColor: value })} fallback="#FFFFFF" />
+          <StudioColorField label="Descripcion tarjeta" value={appearance.descriptionColor} onChange={(value) => sAppearance({ descriptionColor: value })} fallback="#9CA3AF" />
+          <StudioRangeField label="Padding bloque" value={Number(appearance.sectionPaddingY || 64)} onChange={(value) => sAppearance({ sectionPaddingY: value })} min={40} max={180} step={4} />
+          <StudioRangeField label="Padding tarjeta" value={Number(appearance.cardPadding || 24)} onChange={(value) => sAppearance({ cardPadding: value })} min={16} max={48} step={2} />
         </div>
       </Card>
     </div>
@@ -1730,7 +2333,7 @@ function SectionCard({
   onSelect: () => void; onMoveUp: () => void; onMoveDown: () => void
   onToggle: () => void; onDelete: () => void; onDuplicate?: () => void
 }) {
-  const meta = SM[section.type]
+  const meta = getStudioSectionMeta(section.type)
   const Icon = meta?.icon ?? LayoutTemplate
   return (
     <div
@@ -1826,8 +2429,147 @@ const SM: Record<CMSSectionType, { label: string; icon: React.ElementType; color
   embed:        { label: "Embed universal",    icon: Code2,         color: "text-fuchsia-400 bg-fuchsia-400/10", deletable: true, desc: "Mapas, calendarios, widgets o embeds" },
 }
 
-const ADDABLE: CMSSectionType[] = ["hero", "pageHero", "richText", "featureCards", "logoStrip", "spacer", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "embed", "customCode"]
-const ADDABLE_PAGE: CMSSectionType[] = ["pageHero", "richText", "featureCards", "logoStrip", "spacer", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "embed", "customCode"]
+const LEGACY_SM: Record<string, { label: string; icon: React.ElementType; color: string; deletable?: boolean; desc?: string }> = {
+  navbar:   { label: "Navegacion", icon: LayoutTemplate, color: "text-white/70 bg-white/5", deletable: true, desc: "Bloque legacy de navegacion" },
+  footer:   { label: "Footer", icon: LayoutTemplate, color: "text-white/70 bg-white/5", deletable: true, desc: "Bloque legacy de footer" },
+  html:     { label: "HTML", icon: Code2, color: "text-green-400 bg-green-400/10", deletable: true, desc: "Bloque legacy de HTML" },
+  features: { label: "Features", icon: BookOpen, color: "text-sky-400 bg-sky-400/10", deletable: true, desc: "Bloque legacy de features" },
+}
+
+function formatStudioSectionLabel(type: string) {
+  return type
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (char) => char.toUpperCase())
+}
+
+function getStudioSectionMeta(type: string) {
+  return (
+    SM[type as CMSSectionType] ??
+    LEGACY_SM[type] ??
+    {
+      label: formatStudioSectionLabel(type || "bloque"),
+      icon: LayoutTemplate,
+      color: "text-white/70 bg-white/5",
+      deletable: true,
+      desc: "Bloque no registrado en la biblioteca actual",
+    }
+  )
+}
+
+function getLibraryCapabilities(type: CMSSectionType) {
+  switch (type) {
+    case "richText":
+      return {
+        tags: ["Flexible", "Texto", "CTA"],
+        tools: ["Titulos y parrafos", "Listas y botones", "Ajuste editorial"],
+        bestFor: ["Secciones editoriales", "Propuestas de valor", "Bloques personalizados"],
+        outcome: "Ideal para construir secciones libres con texto, listas y botones sin depender de una plantilla fija.",
+      }
+    case "featureCards":
+      return {
+        tags: ["Grid", "Editable", "Cards"],
+        tools: ["Tarjetas repetibles", "Columnas rapidas", "Iconos y acentos"],
+        bestFor: ["Servicios", "Beneficios", "Pasos del proceso"],
+        outcome: "Crea grids ordenados con tarjetas editables y consistentes en desktop, tablet y mobile.",
+      }
+    case "logoStrip":
+      return {
+        tags: ["Marcas", "Confianza", "Logos"],
+        tools: ["Partners", "Instituciones", "Herramientas"],
+        bestFor: ["Partners", "Instituciones", "Tecnologias usadas"],
+        outcome: "Sirve para reforzar confianza con logos, marcas aliadas o herramientas integradas.",
+      }
+    case "spacer":
+      return {
+        tags: ["Layout", "Ritmo", "Espacio"],
+        tools: ["Separacion vertical", "Respira el diseño", "Ajuste de altura"],
+        bestFor: ["Separar secciones", "Dar aire", "Ajustar ritmo visual"],
+        outcome: "Mantiene orden visual entre bloques sin meter contenido innecesario.",
+      }
+    case "hero":
+    case "pageHero":
+      return {
+        tags: ["Impacto", "CTA", "Hero"],
+        tools: ["Badge y titulo", "Botones conectables", "Panel visual"],
+        bestFor: ["Portadas", "Encabezados", "Landing principal"],
+        outcome: "Bloque de impacto para abrir la pagina con mensaje fuerte y llamadas a la accion.",
+      }
+    case "cta":
+      return {
+        tags: ["Conversion", "Registro", "CTA"],
+        tools: ["Cierre de seccion", "Boton primario", "Boton secundario"],
+        bestFor: ["Captacion", "Cierre de venta", "Registro rapido"],
+        outcome: "Refuerza conversion con una llamada final clara y lista para conectar a acciones.",
+      }
+    case "formBuilder":
+      return {
+        tags: ["Leads", "Form", "Envio"],
+        tools: ["Campos configurables", "Accion al enviar", "Mensajes de exito"],
+        bestFor: ["Leads", "Inscripciones", "Contacto"],
+        outcome: "Formulario listo para captar registros con campos, validacion y accion configurable.",
+      }
+    case "imageText":
+      return {
+        tags: ["Media", "Story", "Bullets"],
+        tools: ["Imagen + copy", "CTA", "Lista destacada"],
+        bestFor: ["Casos de uso", "Explicacion visual", "Secciones mixtas"],
+        outcome: "Equilibra imagen y texto en un layout estable para mostrar propuesta y beneficios.",
+      }
+    case "video":
+      return {
+        tags: ["Media", "Demo", "Embed"],
+        tools: ["Video principal", "Texto de apoyo", "Bloque demostrativo"],
+        bestFor: ["Demos", "Presentaciones", "Clases introductorias"],
+        outcome: "Aterriza una demostracion o video explicativo con soporte visual alrededor.",
+      }
+    case "gallery":
+      return {
+        tags: ["Media", "Grid", "Galeria"],
+        tools: ["Multiples imagenes", "Columnas", "Presentacion visual"],
+        bestFor: ["Capturas", "Evidencias", "Material promocional"],
+        outcome: "Organiza imagenes o capturas en una cuadricula limpia y facil de mantener.",
+      }
+    case "embed":
+      return {
+        tags: ["Embed", "Widget", "Externo"],
+        tools: ["Mapas o calendarios", "Dashboards", "Widgets externos"],
+        bestFor: ["Canva", "Calendarios", "Mapas o dashboards"],
+        outcome: "Inserta contenido externo sin romper la estructura visual del Studio.",
+      }
+    case "benefits":
+    case "stats":
+    case "faq":
+    case "testimonials":
+      return {
+        tags: ["Confianza", "Prueba", "Soporte"],
+        tools: ["Reforzar valor", "Prueba social", "Objeciones y metricas"],
+        bestFor: ["Objeciones", "Metricas", "Prueba social"],
+        outcome: "Bloques pensados para reforzar confianza y convertir mejor antes del CTA.",
+      }
+    case "simulatorsFeed":
+    case "coursesFeed":
+    case "evaluationsFeed":
+      return {
+        tags: ["Dinamico", "Admin", "Feed"],
+        tools: ["Datos publicados", "Bloque conectado", "CTA automatizable"],
+        bestFor: ["Catalogos", "Bloques conectados", "Contenido vivo"],
+        outcome: "Trae informacion publicada desde el admin para mantener la pagina siempre actualizada.",
+      }
+    default:
+      return {
+        tags: ["Bloque", "Sistema", "Editable"],
+        tools: ["Contenido base", "Ajustes visuales", "Uso en landing"],
+        bestFor: ["Secciones base", "Paginas de apoyo", "Construccion rapida"],
+        outcome: "Bloque adaptable para cubrir necesidades generales dentro del builder.",
+      }
+  }
+}
+
+const ADDABLE: CMSSectionType[] = ["hero", "pageHero", "richText", "featureCards", "logoStrip", "spacer", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "embed"]
+const ADDABLE_PAGE: CMSSectionType[] = ["pageHero", "richText", "featureCards", "logoStrip", "spacer", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "embed"]
 
 const DEFAULTS: Record<string, Record<string, any>> = {
   cta:        { titulo: "Comienza hoy", descripcion: "Unete a miles de docentes.", ctaPrimario: "Crear cuenta gratis", ctaPrimarioHref: "/registro", ctaSecundario: "Ver planes", ctaSecundarioHref: "#precios", primaryAction: { type: "page", href: "/registro" }, secondaryAction: { type: "section", sectionId: "pricing" } },
@@ -1837,7 +2579,7 @@ const DEFAULTS: Record<string, Record<string, any>> = {
   gallery:    { titulo: "", descripcion: "", columns: 3, images: [] },
   stats:      { titulo: "", items: [{ id: "s1", numero: "15,000+", label: "Docentes activos", icono: "ðŸ‘¨â€ðŸ«" }, { id: "s2", numero: "98%", label: "Aprobacion", icono: "ðŸ†" }] },
   faq:        { titulo: "Preguntas frecuentes", descripcion: "Todo lo que necesitas saber.", items: [{ id: "f1", pregunta: "Â¿Como funciona?", respuesta: "Hack Evans es la plataforma de preparacion docente #1 en Ecuador." }] },
-  customCode:   { nota: "", html: "" },
+  customCode:   { nota: "", html: "", importMode: "adapted", stripNavigation: true, stripFooter: true, actionBindings: [], themeOverrides: { accentColor: "#E8392A" } },
   richText:   { eyebrow: "Contenido flexible", titulo: "Construye cualquier seccion", descripcion: "Usa este bloque para titulares, descripcion, listas, llamados a la accion y contenido editorial sin tocar codigo.", body: "", bullets: ["Punto clave", "Resultado esperado"], alignment: "left", maxWidth: "lg", primaryLabel: "Accion principal", primaryHref: "/registro", secondaryLabel: "Accion secundaria", secondaryHref: "/simulador", primaryAction: { type: "page", href: "/registro" }, secondaryAction: { type: "page", href: "/simulador" } },
   logoStrip:  { eyebrow: "Confianza", titulo: "Marcas, aliados o herramientas", descripcion: "Muestra clientes, partners, instituciones o tecnologias usadas en tu flujo.", columns: 4, items: [{ id: `lg_${Date.now()}_1`, label: "Logo 1", subLabel: "Partner", imageUrl: "", href: "" }, { id: `lg_${Date.now()}_2`, label: "Logo 2", subLabel: "Cliente", imageUrl: "", href: "" }, { id: `lg_${Date.now()}_3`, label: "Logo 3", subLabel: "Institucion", imageUrl: "", href: "" }, { id: `lg_${Date.now()}_4`, label: "Logo 4", subLabel: "Herramienta", imageUrl: "", href: "" }] },
   spacer:     { height: 96 },
@@ -2026,10 +2768,14 @@ function getStudioSectionContent(section: CMSSection, config: CMSConfig): {
       }
     case "customCode":
       return {
-        eyebrow: "HTML",
-        title: data.nota || "Widget personalizado",
-        description: "Bloque libre para iframes, scripts o integraciones externas.",
-        chips: [data.html ? "Codigo cargado" : "Sin codigo"],
+        eyebrow: data.importMode === "adapted" ? "HTML adaptado" : "HTML",
+        title: data.importedTitle || data.nota || "Widget personalizado",
+        description: "Bloque libre para HTML importado, widgets o integraciones externas.",
+        chips: [
+          data.importMode === "adapted" ? "Tema del sitio" : "",
+          data.stripNavigation === true ? "Navbar del sitio" : "",
+          data.html ? "Codigo cargado" : "Sin codigo",
+        ].filter(Boolean),
       }
     default:
       return {
@@ -2068,6 +2814,10 @@ function StudioViewport({
   onReorder,
   previewMode,
   desktopWidth,
+  htmlIframeRef,
+  onHtmlElementSelect,
+  onHtmlEditingChange,
+  onHtmlSnapshot,
 }: {
   title: string
   route: string
@@ -2086,6 +2836,10 @@ function StudioViewport({
   onReorder?: (sourceId: string, targetIndex: number) => void
   previewMode?: boolean
   desktopWidth?: 1440 | 1280
+  htmlIframeRef?: React.MutableRefObject<HTMLIFrameElement | null>
+  onHtmlElementSelect?: (info: EditorElementInfo | null) => void
+  onHtmlEditingChange?: (editing: boolean) => void
+  onHtmlSnapshot?: (html: string) => void
 }) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
@@ -2102,7 +2856,7 @@ function StudioViewport({
 
   const isDesktop = mode === "desktop"
   const isTablet = mode === "tablet"
-  const canvasShell = "overflow-hidden rounded-[28px] border border-white/10 bg-[#07101a] shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
+  const canvasShell = "min-h-0 overflow-visible rounded-[28px] border border-white/10 bg-[#07101a] shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
 
   useEffect(() => {
     const updateScale = () => {
@@ -2110,10 +2864,11 @@ function StudioViewport({
       const preview = previewRef.current
       if (!workspace || !preview) return
 
-      const horizontalPadding = isDesktop ? 24 : 56
-      const availableWidth = Math.max(workspace.clientWidth - horizontalPadding, 320)
+      const style = window.getComputedStyle(workspace)
+      const paddingX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
+      const availableWidth = Math.max(workspace.clientWidth - paddingX, 320)
       const nextScale = Math.min(1, availableWidth / viewportWidth)
-      const appliedScale = zoomMode === "fit" ? nextScale : zoomMode / 100
+      const appliedScale = zoomMode === "fit" ? nextScale : Math.min(zoomMode / 100, nextScale)
       const nextHeight = preview.scrollHeight * nextScale
 
       setFitScale(nextScale)
@@ -2133,9 +2888,27 @@ function StudioViewport({
     }
   }, [isDesktop, viewportWidth, mode, sections, selectedId, route, zoomMode])
 
-  const appliedScale = zoomMode === "fit" ? fitScale : zoomMode / 100
+  const appliedScale = zoomMode === "fit" ? fitScale : Math.min(zoomMode / 100, fitScale)
   const scaledViewportWidth = Math.max(220, Math.round(viewportWidth * appliedScale))
-  const viewportFrameWidth = Math.min(viewportWidth + (isDesktop ? 168 : isTablet ? 112 : 72), 1720)
+  const viewportFrameWidth = Math.min(viewportWidth + (isDesktop ? 168 : isTablet ? 96 : 56), 1720)
+  const sitePreviewProps = {
+    config,
+    sections,
+    selectedId,
+    onSelect,
+    onInlineUpdate,
+    onDuplicate,
+    onToggleVisibility,
+    onMove,
+    onDelete,
+    onAddBlock,
+    onReorder,
+    previewMode,
+    htmlIframeRef,
+    onHtmlElementSelect,
+    onHtmlEditingChange,
+    onHtmlSnapshot,
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -2147,7 +2920,11 @@ function StudioViewport({
     <div className="flex h-full min-h-0 flex-col bg-[#060b12]">
       <div
         ref={workspaceRef}
-        className="relative flex-1 min-h-0 overflow-auto bg-[#060b12]"
+        data-he-studio-scroll-root="1"
+        className={cn(
+          "studio-scroll relative flex-1 min-h-0 overflow-y-scroll overscroll-contain bg-[#060b12]",
+          mode === "desktop" ? "overflow-x-auto" : "overflow-x-hidden"
+        )}
         style={{
           backgroundImage: [
             "linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px)",
@@ -2157,7 +2934,7 @@ function StudioViewport({
           backgroundSize: "24px 24px, 24px 24px, auto",
         }}
       >
-        <div className="flex min-h-full items-start justify-center px-6 py-8 xl:px-10 2xl:px-14">
+        <div className="flex min-h-full items-start justify-center px-4 py-6 sm:px-5 md:px-6 xl:px-10 2xl:px-14">
           <div className="w-full" style={{ maxWidth: `${viewportFrameWidth}px` }}>
             <div className="mb-4 flex items-center justify-between gap-3 px-1">
               <div className="rounded-full border border-white/10 bg-[#08111b]/90 px-3 py-1.5 text-[11px] text-white/45">
@@ -2220,7 +2997,7 @@ function StudioViewport({
               )}
                 <div
                   ref={previewRef}
-                  className="origin-top transition-transform duration-200"
+                  className="origin-top transition-transform duration-200 overflow-x-hidden"
                   style={{
                     width: `${viewportWidth}px`,
                     transform: `scale(${appliedScale})`,
@@ -2246,25 +3023,11 @@ function StudioViewport({
                       </a>
                     </div>
                     <div className="flex-1">
-                      <StudioSitePreview
-                        config={config}
-                        sections={sections}
-                        selectedId={selectedId}
-                        onSelect={onSelect}
-                        onInlineUpdate={onInlineUpdate}
-                        onDuplicate={onDuplicate}
-                        onToggleVisibility={onToggleVisibility}
-                        onMove={onMove}
-                        onDelete={onDelete}
-                        onAddBlock={onAddBlock}
-                        onReorder={onReorder}
-                        previewMode={previewMode}
-                        htmlIframeRef={htmlIframeRef}
-                      />
+                      <StudioSitePreview {...sitePreviewProps} />
                     </div>
                   </div>
                 ) : isTablet ? (
-                  <div className={canvasShell}>
+                  <div className={cn(canvasShell, "overflow-hidden")}>
                     <div className="flex items-center gap-2 border-b border-white/8 bg-[#07101a] px-4 py-2">
                       <div className="flex items-center gap-1.5">
                         <div className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
@@ -2278,20 +3041,9 @@ function StudioViewport({
                         </div>
                       </div>
                     </div>
-                    <StudioSitePreview
-                      config={config}
-                      sections={sections}
-                      selectedId={selectedId}
-                      onSelect={onSelect}
-                      onInlineUpdate={onInlineUpdate}
-                      onDuplicate={onDuplicate}
-                      onToggleVisibility={onToggleVisibility}
-                      onMove={onMove}
-                      onDelete={onDelete}
-                      onAddBlock={onAddBlock}
-                      onReorder={onReorder}
-                      previewMode={previewMode}
-                    />
+                    <StudioPreviewFrame className="w-full">
+                      <StudioSitePreview {...sitePreviewProps} />
+                    </StudioPreviewFrame>
                   </div>
                 ) : (
                   <div className="flex flex-col">
@@ -2302,21 +3054,9 @@ function StudioViewport({
                       </div>
                     </div>
                     <div className={cn("overflow-hidden rounded-b-[32px] border border-white/10 border-t-0 shadow-[0_32px_80px_rgba(0,0,0,0.7)]", canvasShell)}>
-                      <StudioSitePreview
-                        config={config}
-                        sections={sections}
-                        selectedId={selectedId}
-                        onSelect={onSelect}
-                        onInlineUpdate={onInlineUpdate}
-                        onDuplicate={onDuplicate}
-                        onToggleVisibility={onToggleVisibility}
-                        onMove={onMove}
-                        onDelete={onDelete}
-                        onAddBlock={onAddBlock}
-                        onReorder={onReorder}
-                        previewMode={previewMode}
-                        htmlIframeRef={htmlIframeRef}
-                      />
+                      <StudioPreviewFrame className="w-full">
+                        <StudioSitePreview {...sitePreviewProps} />
+                      </StudioPreviewFrame>
                     </div>
                   </div>
                 )}
@@ -2425,11 +3165,24 @@ function PageSectionContentEditor({
 
 // â”€â”€â”€ Add Section Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function AddModal({ onAdd, onClose, pageMode }: { onAdd: (type: CMSSectionType) => void; onClose: () => void; pageMode?: boolean }) {
+function AddModal({
+  onAdd,
+  onClose,
+  pageMode,
+}: {
+  onAdd: (type: CMSSectionType) => void
+  onClose: () => void
+  pageMode?: boolean
+}) {
   const list = pageMode ? ADDABLE_PAGE : ADDABLE
   const [hovered, setHovered] = useState<CMSSectionType | null>(null)
+  const [detailsType, setDetailsType] = useState<CMSSectionType | null>(null)
   const [search, setSearch] = useState("")
   const [groupFilter, setGroupFilter] = useState<string>("all")
+  const handleAdd = (type: CMSSectionType) => {
+    onAdd(type)
+    onClose()
+  }
 
   const groups = STUDIO_BLOCK_GROUPS
     .map((group) => ({
@@ -2446,13 +3199,14 @@ function AddModal({ onAdd, onClose, pageMode }: { onAdd: (type: CMSSectionType) 
         return false
       }
       if (!search.trim()) return true
-      const haystack = `${SM[type].label} ${SM[type].desc ?? ""}`.toLowerCase()
+      const meta = getStudioSectionMeta(type)
+      const haystack = `${meta.label} ${meta.desc ?? ""}`.toLowerCase()
       return haystack.includes(search.trim().toLowerCase())
     })
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-3" onClick={onClose}>
-      <div className="w-full max-w-5xl rounded-2xl border border-border bg-card shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="flex h-[min(92vh,980px)] w-full max-w-[min(1440px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-secondary/10">
           <div>
@@ -2476,7 +3230,7 @@ function AddModal({ onAdd, onClose, pageMode }: { onAdd: (type: CMSSectionType) 
                 type="button"
                 onClick={() => setGroupFilter("all")}
                 className={cn(
-                  "h-9 rounded-full border px-4 text-xs font-semibold transition-all",
+                  "h-10 rounded-xl border px-4 text-xs font-semibold transition-all",
                   groupFilter === "all" ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/30"
                 )}
               >
@@ -2488,7 +3242,7 @@ function AddModal({ onAdd, onClose, pageMode }: { onAdd: (type: CMSSectionType) 
                   type="button"
                   onClick={() => setGroupFilter(group.id)}
                   className={cn(
-                    "h-9 rounded-full border px-4 text-xs font-semibold transition-all",
+                    "h-10 rounded-xl border px-4 text-xs font-semibold transition-all",
                     groupFilter === group.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/30"
                   )}
                 >
@@ -2501,85 +3255,153 @@ function AddModal({ onAdd, onClose, pageMode }: { onAdd: (type: CMSSectionType) 
             Inspirado en el patron de editores visuales como Wix Studio, Webflow, Framer y Fluid Engine: mezcla elementos base, secciones listas y bloques conectados a datos.
           </div>
         </div>
-        {/* Grid with mini previews */}
-        <div className="grid gap-0 lg:grid-cols-[260px_minmax(0,1fr)]">
-          <div className="hidden border-r border-border/70 bg-secondary/[0.03] p-4 lg:block">
-            <div className="space-y-3">
-              {groups.map((group) => (
-                <button
-                  key={group.id}
-                  type="button"
-                  onClick={() => setGroupFilter(group.id)}
-                  className={cn(
-                    "w-full rounded-2xl border px-4 py-3 text-left transition-all",
-                    groupFilter === group.id ? "border-primary/30 bg-primary/8" : "border-white/8 bg-white/[0.03] hover:border-primary/20"
-                  )}
-                >
-                  <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#7ca0cb]">{group.label}</div>
-                  <div className="mt-2 text-[11px] leading-5 text-white/55">{group.description}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="max-h-[62vh] overflow-y-auto p-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4">
+          <div className="space-y-5">
             {visibleTypes.length === 0 ? (
-              <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
+              <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
                 <LayoutTemplate className="h-8 w-8 text-white/20" />
                 <div className="mt-3 text-sm font-semibold text-white">Sin coincidencias en la biblioteca</div>
                 <div className="mt-2 max-w-md text-xs leading-5 text-white/45">Prueba con otra busqueda o cambia la categoria. El objetivo es que combines bloques base, secciones listas y bloques dinamicos segun tu idea.</div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {visibleTypes.map(type => {
-            const meta  = SM[type]
-            const Icon  = meta.icon
-            const isHov = hovered === type
-            const fakeSec: CMSSection = { id: `prev-${type}`, type, visible: true, data: (DEFAULTS[type] as Record<string,any>) ?? {} }
-            return (
-              <button
-                key={type}
-                onClick={() => { onAdd(type); onClose() }}
-                onMouseEnter={() => setHovered(type)}
-                onMouseLeave={() => setHovered(null)}
-                className={cn(
-                  "flex flex-col rounded-2xl border overflow-hidden transition-all text-left",
-                  isHov
-                    ? "border-primary shadow-[0_0_0_2px_rgba(232,57,42,0.25),0_8px_24px_rgba(0,0,0,0.2)] -translate-y-0.5"
-                    : "border-border/70 hover:border-primary/40"
-                  )}
-                >
-                  {/* Mini preview area */}
-                  <div className="bg-[#0a0d12] min-h-[88px] relative overflow-hidden">
-                    <SectionMiniPreview section={fakeSec} />
-                    {isHov && (
-                      <div className="absolute inset-0 bg-primary/15 flex items-center justify-center">
-                        <span className="flex items-center gap-1.5 text-xs font-bold text-white bg-primary px-3 py-1.5 rounded-full shadow-lg">
-                          <Plus className="w-3 h-3" />Agregar bloque
-                        </span>
+              groups
+                .filter((group) => groupFilter === "all" || group.id === groupFilter)
+                .map((group) => {
+                  const groupTypes = visibleTypes.filter((type) => group.types.includes(type))
+                  if (!groupTypes.length) return null
+
+                  return (
+                    <div key={group.id}>
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#7ca0cb]">{group.label}</div>
+                          <div className="mt-1 text-[11px] leading-5 text-white/40">{group.description}</div>
+                        </div>
+                        <span className="rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[10px] text-white/35">{groupTypes.length}</span>
                       </div>
-                    )}
-                  </div>
-                  {/* Label */}
-                  <div className={cn("flex items-start gap-2.5 px-3 py-3 border-t transition-colors", isHov ? "bg-primary/8 border-primary/20" : "bg-card border-border/60")}>
-                    <div className={cn("mt-0.5 w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all", meta.color, isHov && "scale-110")}>
-                      <Icon className="w-4 h-4" />
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        {groupTypes.map((type) => {
+                          const meta = getStudioSectionMeta(type)
+                          const Icon = meta.icon
+                          const isHov = hovered === type
+                          const isExpanded = detailsType === type
+                          const fakeSec: CMSSection = { id: `prev-${type}`, type, visible: true, data: (DEFAULTS[type] as Record<string, any>) ?? {} }
+                          const profile = getLibraryCapabilities(type)
+
+                          return (
+                            <div
+                              key={type}
+                              onMouseEnter={() => setHovered(type)}
+                              onMouseLeave={() => setHovered(null)}
+                              className={cn(
+                                "flex h-full flex-col overflow-hidden rounded-xl border text-left transition-all",
+                                isHov
+                                  ? "border-primary shadow-[0_0_0_2px_rgba(232,57,42,0.25),0_8px_24px_rgba(0,0,0,0.2)] -translate-y-0.5"
+                                  : "border-border/70 hover:border-primary/40"
+                              )}
+                            >
+                              <div className="relative min-h-[110px] overflow-hidden bg-[#0a0d12]">
+                                <SectionMiniPreview section={fakeSec} />
+                                <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {profile.tags.slice(0, 2).map((tag) => (
+                                      <span key={tag} className="rounded-lg border border-white/10 bg-[#07101a]/85 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <span className="rounded-lg border border-primary/25 bg-black/60 px-2.5 py-1 text-[10px] font-semibold text-primary">
+                                    {group.label}
+                                  </span>
+                                </div>
+                                {isHov && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-primary/15">
+                                    <span className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-lg">
+                                      <Plus className="w-3 h-3" />
+                                      Agregar bloque
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className={cn("flex flex-1 flex-col gap-3 border-t px-4 py-4 transition-colors", isHov ? "border-primary/20 bg-primary/8" : "border-border/60 bg-card")}>
+                                <div className="flex items-start gap-3">
+                                  <div className={cn("mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg transition-all", meta.color, isHov && "scale-105")}>
+                                    <Icon className="w-4 h-4" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-sm font-semibold leading-tight text-foreground">{meta.label}</div>
+                                    {meta.desc ? <div className="mt-1 text-[11px] leading-5 text-muted-foreground">{meta.desc}</div> : null}
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {profile.tags.map((tag) => (
+                                    <span key={tag} className="rounded-lg border border-white/10 bg-secondary/20 px-2.5 py-1 text-[10px] font-medium text-white/65">
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                                <div className="rounded-lg border border-white/8 bg-[#0c1118] p-3">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7ca0cb]">Incluye</div>
+                                  <div className="mt-2 grid gap-2">
+                                    {profile.tools.map((tool) => (
+                                      <div key={tool} className="flex items-center gap-2 text-[12px] leading-5 text-white/72">
+                                        <Check className="h-3.5 w-3.5 text-primary" />
+                                        <span>{tool}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                                {isExpanded ? (
+                                  <div className="rounded-lg border border-primary/20 bg-primary/6 p-3">
+                                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Ideal para</div>
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                      {profile.bestFor.map((item) => (
+                                        <span key={item} className="rounded-lg border border-primary/15 bg-black/20 px-2.5 py-1 text-[10px] font-medium text-white/75">
+                                          {item}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <div className="mt-3 text-[11px] leading-5 text-white/55">{profile.outcome}</div>
+                                  </div>
+                                ) : null}
+                                <div className="mt-auto flex gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setDetailsType((current) => current === type ? null : type)}
+                                    className={cn(
+                                      "inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold transition-all",
+                                      isExpanded
+                                        ? "border-primary/35 bg-primary/10 text-primary"
+                                        : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                                    )}
+                                  >
+                                    {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                                    {isExpanded ? "Ocultar detalles" : "Ver detalles"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAdd(type)}
+                                    className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary/90"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    Agregar
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold text-foreground leading-tight">{meta.label}</div>
-                      {meta.desc && <div className="mt-1 text-[11px] leading-5 text-muted-foreground">{meta.desc}</div>}
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
-              </div>
+                  )
+                })
             )}
           </div>
         </div>
         {/* Footer */}
         <div className="px-5 py-3 border-t border-border bg-secondary/5 flex items-center gap-2">
           <Sparkles className="w-3.5 h-3.5 text-primary/50 flex-shrink-0" />
-          <p className="text-[11px] text-muted-foreground">Agrega el bloque, ordénalo y luego combínalo con formularios, feeds, embeds o HTML. La biblioteca ya no está limitada a simuladores o formularios.</p>
+          <p className="text-[11px] text-muted-foreground">Explora bloques del sistema, revisa detalles antes de insertarlos y combinalos luego desde el canvas del Studio.</p>
         </div>
       </div>
     </div>
@@ -2637,7 +3459,7 @@ function TabSecciones({ config, onChange, fullscreen = false }: { config: CMSCon
     <div className={wrapCls} style={wrapStyle}>
       {/* â”€â”€ Left panel: Capas â”€â”€ */}
       {fullscreen ? (
-        <div className="w-[260px] flex-shrink-0 flex flex-col border-r border-white/8 bg-[#08111b]">
+        <div className="w-[clamp(240px,18vw,280px)] flex-shrink-0 flex flex-col border-r border-white/8 bg-[#08111b]">
           {/* Panel header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
             <div>
@@ -2655,7 +3477,7 @@ function TabSecciones({ config, onChange, fullscreen = false }: { config: CMSCon
               </div>
             )}
             {sections.map((sec, idx) => {
-              const meta = SM[sec.type]
+              const meta = getStudioSectionMeta(sec.type)
               const Icon = meta?.icon ?? LayoutTemplate
               const isActive = sec.id === selId
               return (
@@ -2815,19 +3637,19 @@ function TabSecciones({ config, onChange, fullscreen = false }: { config: CMSCon
 
       {/* â”€â”€ Inspector â”€â”€ */}
       {fullscreen ? (
-        <div className="w-[320px] flex-shrink-0 flex flex-col bg-[#08111b] border-l border-white/8">
+        <div className="w-[clamp(280px,22vw,320px)] flex-shrink-0 flex flex-col bg-[#08111b] border-l border-white/8">
           {sel ? (
             <>
               {/* Inspector header */}
               <div className="px-4 py-4 border-b border-white/8">
                 <div className="flex items-center gap-3 mb-3">
-                  {(() => { const meta = SM[sel.type]; const Icon = meta.icon; return (
+                  {(() => { const meta = getStudioSectionMeta(sel.type); const Icon = meta.icon; return (
                     <div className={cn("w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0", meta.color)}>
                       <Icon className="w-4.5 h-4.5" />
                     </div>
                   )})()}
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-white text-[15px] leading-tight">{SM[sel.type]?.label}</div>
+                    <div className="font-semibold text-white text-[15px] leading-tight">{getStudioSectionMeta(sel.type).label}</div>
                     <div className="text-[11px] text-white/35 mt-0.5">{sel.visible ? "Visible en la pÃ¡gina" : "Bloque oculto"}</div>
                   </div>
                 </div>
@@ -2864,17 +3686,17 @@ function TabSecciones({ config, onChange, fullscreen = false }: { config: CMSCon
           )}
         </div>
       ) : (
-        <div className="w-[380px] flex-shrink-0 flex flex-col bg-card overflow-hidden">
+        <div className="w-[clamp(320px,24vw,380px)] flex-shrink-0 flex flex-col bg-card overflow-hidden">
           {sel ? (
             <>
               <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border bg-secondary/10">
-                {(() => { const meta = SM[sel.type]; const Icon = meta.icon; return (
+                {(() => { const meta = getStudioSectionMeta(sel.type); const Icon = meta.icon; return (
                   <div className={cn("w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0", meta.color)}>
                     <Icon className="w-4 h-4" />
                   </div>
                 )})()}
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-foreground text-sm">{SM[sel.type]?.label}</div>
+                  <div className="font-semibold text-foreground text-sm">{getStudioSectionMeta(sel.type).label}</div>
                   <div className="text-xs text-muted-foreground">{sel.visible ? "Visible en la pagina" : "Bloque oculto"}</div>
                 </div>
                 <div className="flex gap-1 bg-secondary/30 rounded-xl p-1">
@@ -3113,7 +3935,7 @@ function TabPaginas({ config, onChange, fullscreen = false }: { config: CMSConfi
                 </div>
               )}
               {fullscreen ? sections.map((sec, idx) => {
-                const meta = SM[sec.type]
+                const meta = getStudioSectionMeta(sec.type)
                 const Icon = meta?.icon ?? LayoutTemplate
                 const isActive = sec.id === selId
                 return (
@@ -3238,19 +4060,19 @@ function TabPaginas({ config, onChange, fullscreen = false }: { config: CMSConfi
         </div>
       </div>
 
-      <div className={cn("flex-shrink-0 flex flex-col overflow-hidden", fullscreen ? "w-[340px] bg-[#08111b] border-l border-white/8" : "w-[380px] bg-card")}>
+      <div className={cn("flex-shrink-0 flex flex-col overflow-hidden", fullscreen ? "w-[clamp(300px,24vw,340px)] bg-[#08111b] border-l border-white/8" : "w-[clamp(320px,24vw,380px)] bg-card")}>
         {sel && page ? (
           <>
             {fullscreen ? (
               <div className="px-4 py-4 border-b border-white/8">
                 <div className="flex items-center gap-3 mb-3">
-                  {(() => { const meta = SM[sel.type]; if (!meta) return null; const Icon = meta.icon; return (
+                  {(() => { const meta = getStudioSectionMeta(sel.type); const Icon = meta.icon; return (
                     <div className={cn("w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0", meta.color)}>
                       <Icon className="w-4 h-4" />
                     </div>
                   )})()}
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-white text-[15px] leading-tight">{SM[sel.type]?.label ?? sel.type}</div>
+                    <div className="font-semibold text-white text-[15px] leading-tight">{getStudioSectionMeta(sel.type).label}</div>
                     <div className="text-[11px] text-white/35 mt-0.5 flex items-center gap-1">
                       <Globe className="w-2.5 h-2.5" />/{page.slug}
                     </div>
@@ -3267,11 +4089,11 @@ function TabPaginas({ config, onChange, fullscreen = false }: { config: CMSConfi
               </div>
             ) : (
               <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border bg-secondary/10">
-                {(() => { const meta = SM[sel.type]; if (!meta) return null; const Icon = meta.icon; return (
+                {(() => { const meta = getStudioSectionMeta(sel.type); const Icon = meta.icon; return (
                   <div className={cn("w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0", meta.color)}><Icon className="w-4 h-4" /></div>
                 )})()}
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm text-foreground">{SM[sel.type]?.label ?? sel.type}</div>
+                  <div className="font-semibold text-sm text-foreground">{getStudioSectionMeta(sel.type).label}</div>
                   <div className="text-xs text-muted-foreground flex items-center gap-1.5">
                     <Globe className="w-3 h-3" />/{page.slug}
                   </div>
@@ -3506,6 +4328,12 @@ const STUDIO_INSPECTOR_TABS = [
   { id: "advanced", label: "Avanzado", shortLabel: "Dev", icon: Code2 },
 ] as const
 
+const CUSTOM_CODE_INSPECTOR_TABS = [
+  { id: "content", label: "Editor visual", shortLabel: "Editor", icon: Pencil },
+  { id: "actions", label: "Acciones", shortLabel: "Acc.", icon: Zap },
+  { id: "advanced", label: "Desarrollo", shortLabel: "Dev", icon: Code2 },
+] as const
+
 const STUDIO_DEVICES = [
   { id: "desktop", label: "Desktop", icon: Monitor },
   { id: "tablet", label: "Tablet", icon: Tablet },
@@ -3560,6 +4388,8 @@ function getStudioEditingTips(section: CMSSection | null) {
       return ["Usa este bloque para dar aire entre secciones sin tocar codigo.", "Ajusta la altura desde Contenido o Estilo."]
     case "embed":
       return ["Pega una URL embebible o un iframe completo.", "Ideal para mapas, calendarios, dashboards, Loom, Canva o Figma."]
+    case "customCode":
+      return ["Haz clic sobre cualquier boton, texto o campo del HTML para editarlo visualmente.", "Usa Acciones para conectar botones y links del HTML sin tocar codigo."]
     case "faq":
       return ["Haz click en la pregunta o respuesta para editarla sobre la pagina.", "Puedes ocultar el bloque si aun no esta listo para publicar."]
     case "formBuilder":
@@ -3653,7 +4483,7 @@ function getStudioAssets(sections: CMSSection[]) {
 function getStudioSectionOptions(sections: CMSSection[]) {
   return sections.map((section, index) => ({
     id: section.id,
-    label: `${index + 1}. ${SM[section.type]?.label ?? section.type}`,
+    label: `${index + 1}. ${getStudioSectionMeta(section.type).label ?? section.type}`,
   }))
 }
 
@@ -4516,6 +5346,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const [zoomMode, setZoomMode] = useState<"fit" | 100 | 75 | 50>("fit")
   const [studioMode, setStudioMode] = useState<"edit" | "preview" | "review">("edit")
   const [focusMode, setFocusMode] = useState(false)
+  const [focusLeftOpen, setFocusLeftOpen] = useState(false)
+  const [focusRightOpen, setFocusRightOpen] = useState(false)
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false)
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false)
   const [selectedPageSlug, setSelectedPageSlug] = useState("inicio")
@@ -4542,6 +5374,9 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const [htmlEl, setHtmlEl] = useState<EditorElementInfo | null>(null)
   const [htmlEditing, setHtmlEditing] = useState(false)
   const htmlIframeRef = useRef<HTMLIFrameElement | null>(null)
+  const htmlSnapshotTimerRef = useRef<number | null>(null)
+  const lastHtmlSnapshotRef = useRef<string>("")
+  const selectedHtmlEidRef = useRef<string>("")
 
   const handleChange = (next: CMSConfig | ((current: CMSConfig) => CMSConfig), trackHistory = true) => {
     if (trackHistory) {
@@ -4647,6 +5482,11 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     simulatorInspectorTarget !== "item" && selectedSection && ["simulatorsFeed", "coursesFeed", "evaluationsFeed"].includes(selectedSection.type)
       ? selectedSection
       : null
+  const selectedHtmlActionBinding = useMemo(() => {
+    if (selectedSection?.type !== "customCode" || !htmlEl?.eid) return null
+    const bindings = ((selectedSection.data?.actionBindings as CMSCustomCodeActionBinding[] | undefined) ?? [])
+    return bindings.find((binding) => binding.eid === htmlEl.eid) ?? null
+  }, [selectedSection, htmlEl?.eid])
 
   useEffect(() => {
     if (!mountedRef.current) {
@@ -4677,17 +5517,73 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     }
   }, [currentSections, selectedSectionId])
 
-  // Listen for HTML editor bridge messages from the canvas iframe
   useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      if (!e.data || typeof e.data !== "object") return
-      if (e.data.__editor_select)      { setHtmlEl(e.data.info as EditorElementInfo); setHtmlEditing(false) }
-      if (e.data.__editor_editing)     { setHtmlEditing(true) }
-      if (e.data.__editor_text_change) { setHtmlEditing(false) }
+    return () => {
+      if (htmlSnapshotTimerRef.current) {
+        window.clearTimeout(htmlSnapshotTimerRef.current)
+      }
     }
-    window.addEventListener("message", onMsg)
-    return () => window.removeEventListener("message", onMsg)
   }, [])
+
+  useEffect(() => {
+    lastHtmlSnapshotRef.current = selectedSection?.type === "customCode" ? String(selectedSection.data?.html || "") : ""
+  }, [selectedSection?.id, selectedSection?.type, selectedSection?.data?.html])
+
+  useEffect(() => {
+    selectedHtmlEidRef.current = htmlEl?.eid || ""
+  }, [htmlEl?.eid])
+
+  useEffect(() => {
+    if (!focusMode || studioMode !== "edit") {
+      setFocusLeftOpen(false)
+      setFocusRightOpen(false)
+      return
+    }
+
+    setFocusRightOpen(true)
+  }, [focusMode, studioMode])
+
+  useEffect(() => {
+    if (!focusMode || studioMode !== "edit") return
+    if (selectedSectionId || htmlEl?.eid || htmlEditing) {
+      setFocusRightOpen(true)
+    }
+  }, [focusMode, studioMode, selectedSectionId, htmlEl?.eid, htmlEditing])
+
+  useEffect(() => {
+    if (selectedSection?.type !== "customCode" || !htmlEl) return
+    const html = String(htmlEl.html || "").toLowerCase()
+    const classes = String(htmlEl.classes || "").toLowerCase()
+    const text = String(htmlEl.text || "").trim()
+    const looksLikeIcon =
+      htmlEl.tag === "svg" ||
+      ["path", "rect", "circle", "line", "polyline", "polygon", "ellipse", "g", "use"].includes(htmlEl.tag) ||
+      !!htmlEl.attrs?.dataIcon ||
+      classes.includes("he-inline-icon") ||
+      classes.includes("lucide") ||
+      (html.includes("<svg") && text.length <= 2) ||
+      (/^\p{Emoji}+$/u.test(text) && text.length <= 8)
+
+    if (looksLikeIcon && inspectorTab !== "content") {
+      setInspectorTab("content")
+    }
+  }, [htmlEl, inspectorTab, selectedSection?.type])
+
+  useEffect(() => {
+    if (selectedSection?.type !== "customCode") return
+    if (!htmlEl && !htmlEditing) return
+    if (leftTab !== "layers") setLeftTab("layers")
+    if (rightPanelCollapsed) setRightPanelCollapsed(false)
+    if (inspectorTab === "style" || inspectorTab !== "content" && inspectorTab !== "actions" && inspectorTab !== "advanced") {
+      setInspectorTab("content")
+    }
+  }, [htmlEditing, htmlEl, inspectorTab, leftTab, rightPanelCollapsed, selectedSection?.type])
+
+  useEffect(() => {
+    if (selectedSection?.type === "customCode" && inspectorTab === "style") {
+      setInspectorTab("content")
+    }
+  }, [inspectorTab, selectedSection?.type])
 
   useEffect(() => {
     if (leftTab === "navigation" && inspectorTab !== "content") {
@@ -4698,6 +5594,12 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       setInspectorTab("content")
     }
   }, [leftTab, inspectorTab])
+
+  useEffect(() => {
+    if (!selectedSection && leftTab === "layers" && inspectorTab !== "advanced") {
+      setInspectorTab("advanced")
+    }
+  }, [inspectorTab, leftTab, selectedSection])
 
   useEffect(() => {
     if (!config.popups.length) {
@@ -4762,7 +5664,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     syncStudioRoute(slug)
   }
 
-  const updateActiveSections = (sections: CMSSection[] | ((sections: CMSSection[]) => CMSSection[])) => {
+  const updateActiveSections = (
+    sections: CMSSection[] | ((sections: CMSSection[]) => CMSSection[]),
+    trackHistory = true
+  ) => {
     handleChange((currentConfig) => {
       const activeSections = currentPage.home
         ? currentConfig.sections
@@ -4779,8 +5684,71 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           page.slug === currentPage.slug ? { ...page, sections: resolvedSections } : page
         ),
       }
-    })
+    }, trackHistory)
   }
+
+  const handleHtmlElementSelect = useCallback((info: EditorElementInfo | null) => {
+    const nextEid = info?.eid || ""
+    const didChangeTarget = nextEid !== selectedHtmlEidRef.current
+    selectedHtmlEidRef.current = nextEid
+    setHtmlEl(info)
+    setHtmlEditing(false)
+    setLeftTab("layers")
+    setRightPanelCollapsed(false)
+    if (info) {
+      if (didChangeTarget) {
+        setInspectorTab("content")
+      }
+    }
+  }, [])
+
+  const handleHtmlEditingChange = useCallback((editing: boolean) => {
+    setHtmlEditing(editing)
+    if (editing) {
+      setLeftTab("layers")
+      setRightPanelCollapsed(false)
+      setInspectorTab("content")
+    }
+  }, [])
+
+  const handleHtmlSnapshot = useCallback((nextHtml: string) => {
+    if (selectedSection?.type !== "customCode") return
+    const resolvedHtml = String(nextHtml || "")
+    if (!resolvedHtml) return
+    const currentHtml = String(selectedSection.data?.html || "")
+    if (resolvedHtml === currentHtml || resolvedHtml === lastHtmlSnapshotRef.current) return
+
+    if (htmlSnapshotTimerRef.current) {
+      window.clearTimeout(htmlSnapshotTimerRef.current)
+    }
+
+    const sectionId = selectedSection.id
+    htmlSnapshotTimerRef.current = window.setTimeout(() => {
+      lastHtmlSnapshotRef.current = resolvedHtml
+      updateActiveSections(
+        (sections) =>
+          sections.map((section) =>
+            section.id === sectionId
+              ? { ...section, data: { ...(section.data ?? {}), html: resolvedHtml } }
+              : section
+          ),
+        true
+      )
+    }, 280)
+  }, [selectedSection?.data, selectedSection?.id, selectedSection?.type, updateActiveSections])
+
+  useEffect(() => {
+    if (selectedSection?.type !== "customCode") return
+    const eid = selectedHtmlEidRef.current
+    const frameWindow = htmlIframeRef.current?.contentWindow
+    if (!eid || !frameWindow) return
+
+    const timer = window.setTimeout(() => {
+      frameWindow.postMessage({ __editor_cmd: true, cmd: "highlight", eid }, "*")
+    }, 80)
+
+    return () => window.clearTimeout(timer)
+  }, [selectedSection?.id, selectedSection?.type, selectedSection?.data?.html])
 
   const addSection = (type: CMSSectionType) => {
     const nextSection: CMSSection = {
@@ -4793,6 +5761,41 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
     const next = [...currentSections]
     const targetIndex = insertIndex == null ? next.length : Math.max(0, Math.min(insertIndex, next.length))
+    next.splice(targetIndex, 0, nextSection)
+    updateActiveSections(next)
+    setInsertIndex(null)
+    setShowAdd(false)
+    setLeftTab("layers")
+    setInspectorTab("content")
+    setRightPanelCollapsed(false)
+    setSelectedSectionId(nextSection.id)
+  }
+
+  const createImportedSection = (
+    type: CMSSectionType,
+    data: Record<string, any>,
+    options?: { afterSectionId?: string; targetIndex?: number }
+  ) => {
+    const nextSection: CMSSection = {
+      id: `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type,
+      visible: true,
+      data,
+      settings: getDefaultSectionSettings(type),
+    }
+
+    const next = [...currentSections]
+    const targetIndex = (() => {
+      if (typeof options?.targetIndex === "number") {
+        return Math.max(0, Math.min(options.targetIndex, next.length))
+      }
+      if (options?.afterSectionId) {
+        const afterIndex = next.findIndex((section) => section.id === options.afterSectionId)
+        if (afterIndex !== -1) return afterIndex + 1
+      }
+      return insertIndex == null ? next.length : Math.max(0, Math.min(insertIndex, next.length))
+    })()
+
     next.splice(targetIndex, 0, nextSection)
     updateActiveSections(next)
     setInsertIndex(null)
@@ -4861,7 +5864,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const deleteSection = (id: string) => {
     const target = currentSections.find((section) => section.id === id)
     if (!target) return
-    if (!confirm(`Eliminar el bloque "${SM[target.type]?.label ?? target.type}"?`)) return
+    if (!confirm(`Eliminar el bloque "${getStudioSectionMeta(target.type).label ?? target.type}"?`)) return
     const next = currentSections.filter((section) => section.id !== id)
     updateActiveSections(next)
     if (selectedSectionId === id) setSelectedSectionId(next[0]?.id ?? "")
@@ -4906,6 +5909,45 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     updateSelectedSectionData({
       ...(selectedSection.data ?? {}),
       [slot]: action,
+    })
+  }
+
+  const updateSelectedHtmlActionBinding = (action: CMSActionConfig) => {
+    if (selectedSection?.type !== "customCode" || !htmlEl?.eid) return
+
+    const currentBindings = ((selectedSection.data?.actionBindings as CMSCustomCodeActionBinding[] | undefined) ?? [])
+    const label = htmlEl.text?.trim() || htmlEl.attrs?.href || `${htmlEl.tag} ${currentBindings.length + 1}`
+    const href = htmlEl.attrs?.href || undefined
+    const nextBindings = currentBindings.some((binding) => binding.eid === htmlEl.eid)
+      ? currentBindings.map((binding) =>
+          binding.eid === htmlEl.eid
+            ? { ...binding, label, tag: htmlEl.tag, href, action }
+            : binding
+        )
+      : [
+          ...currentBindings,
+          {
+            id: `html_action_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            eid: htmlEl.eid,
+            label,
+            tag: htmlEl.tag,
+            href,
+            action,
+          },
+        ]
+
+    updateSelectedSectionData({
+      ...(selectedSection.data ?? {}),
+      actionBindings: nextBindings,
+    })
+  }
+
+  const removeSelectedHtmlActionBinding = () => {
+    if (selectedSection?.type !== "customCode" || !htmlEl?.eid) return
+    const currentBindings = ((selectedSection.data?.actionBindings as CMSCustomCodeActionBinding[] | undefined) ?? [])
+    updateSelectedSectionData({
+      ...(selectedSection.data ?? {}),
+      actionBindings: currentBindings.filter((binding) => binding.eid !== htmlEl.eid),
     })
   }
 
@@ -5204,18 +6246,30 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const currentPageTitle = currentPage?.title ?? "Studio"
   const currentRoute = currentPage?.route ?? "/"
-  const selectedSectionMeta = selectedSection ? SM[selectedSection.type] : null
+  const selectedSectionMeta = selectedSection ? getStudioSectionMeta(selectedSection.type) : null
   const SelectedSectionIcon = selectedSectionMeta?.icon
   const reviewModeActive = studioMode === "review"
+  const focusEditingMode = focusMode && studioMode === "edit"
   const canvasOnlyMode = reviewModeActive || focusMode
+  const inspectorTabs =
+    selectedSection?.type === "customCode"
+      ? CUSTOM_CODE_INSPECTOR_TABS
+      : STUDIO_INSPECTOR_TABS
+  const activeLeftTabMeta = STUDIO_LEFT_TABS.find((tabItem) => tabItem.id === leftTab) ?? STUDIO_LEFT_TABS[1]
 
   const renderInspectorCollapseAction = () => (
     <button
       type="button"
-      onClick={() => setRightPanelCollapsed(true)}
+      onClick={() => {
+        if (focusEditingMode) {
+          setFocusRightOpen(false)
+          return
+        }
+        setRightPanelCollapsed(true)
+      }}
       className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/45 transition-all hover:border-white/20 hover:text-white"
-      aria-label="Ocultar inspector"
-      title="Ocultar inspector"
+      aria-label={focusEditingMode ? "Ocultar inspector flotante" : "Ocultar inspector"}
+      title={focusEditingMode ? "Ocultar inspector flotante" : "Ocultar inspector"}
     >
       <ChevronRight className="h-4 w-4" />
     </button>
@@ -5224,13 +6278,15 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const renderInspectorTabsRow = ({
     disableAll = false,
     contentOnly = false,
+    onlyAdvanced = false,
   }: {
     disableAll?: boolean
     contentOnly?: boolean
+    onlyAdvanced?: boolean
   } = {}) => (
-    <div className="grid grid-cols-4 gap-1 border-b border-white/8 px-4 py-3">
-      {STUDIO_INSPECTOR_TABS.map((tabItem) => {
-        const disabled = disableAll || (contentOnly && tabItem.id !== "content")
+    <div className={cn("grid gap-1 border-b border-white/8 px-4 py-3", onlyAdvanced ? "grid-cols-1" : inspectorTabs.length === 3 ? "grid-cols-3" : "grid-cols-4")}>
+      {(onlyAdvanced ? inspectorTabs.filter((tabItem) => tabItem.id === "advanced") : inspectorTabs).map((tabItem) => {
+        const disabled = (disableAll && tabItem.id !== "advanced") || (contentOnly && tabItem.id !== "content")
         return (
           <button
             key={tabItem.id}
@@ -5271,7 +6327,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       </div>
 
       <div className="grid w-full gap-2">
-        {STUDIO_INSPECTOR_TABS.map((tabItem) => (
+        {(!selectedSection ? inspectorTabs.filter((tabItem) => tabItem.id === "advanced") : inspectorTabs).map((tabItem) => (
           <button
             key={tabItem.id}
             type="button"
@@ -5303,6 +6359,16 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       </div>
     </div>
   )
+
+  const openFocusLeftTab = (tab: StudioLeftTab) => {
+    setLeftTab(tab)
+    setFocusLeftOpen((current) => (leftTab === tab ? !current : true))
+  }
+
+  const openFocusInspectorTab = (tab: StudioInspectorTab) => {
+    setInspectorTab(tab)
+    setFocusRightOpen(true)
+  }
 
   const renderLeftIconRail = () => (
     <div className="flex h-full w-[64px] flex-shrink-0 flex-col items-center gap-2 border-r border-white/8 bg-[#050c16] px-2 py-3">
@@ -5437,7 +6503,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           </div>
         ) : (
           currentSections.map((section, index) => {
-            const meta = SM[section.type]
+            const meta = getStudioSectionMeta(section.type)
             const Icon = meta?.icon ?? LayoutTemplate
             const active = selectedSectionId === section.id
             const children = getStudioLayerChildren(section, config)
@@ -5646,6 +6712,21 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
         {inspectorTab === "advanced" && (
           <div className="space-y-5">
+            <Card title="Importar HTML inteligente">
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Carga un archivo `.html` en esta pagina y conviertelo en un bloque editable, libre y ordenable dentro del Studio.
+                </p>
+                <HtmlImporter
+                  onCreateSection={(type, data) => {
+                    createImportedSection(type, data)
+                  }}
+                />
+                <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-3 text-[11px] leading-5 text-white/45">
+                  Despues de importarlo puedes mover el bloque desde Capas, editar el HTML completo y ajustar elementos directamente sobre el canvas.
+                </div>
+              </div>
+            </Card>
             <Card title="Datos tecnicos">
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Slug</span><span className="font-medium text-foreground">{currentPage.slug}</span></div>
@@ -5676,7 +6757,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         types: group.types.filter((type) => {
           if (!addableList.includes(type)) return false
           if (!normalizedSearch) return true
-          const meta = SM[type]
+          const meta = getStudioSectionMeta(type)
           const haystack = `${meta.label} ${meta.desc ?? ""}`.toLowerCase()
           return haystack.includes(normalizedSearch)
         }),
@@ -5707,6 +6788,29 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           <div className="space-y-5">
+            <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] p-3">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <Code2 className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-white">Importar HTML</div>
+                  <div className="mt-1 text-xs leading-5 text-white/45">
+                    Sube un archivo `.html` y conviertelo en un bloque libre, editable y reordenable dentro del canvas.
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3">
+                <HtmlImporter
+                  onCreateSection={(type, data) => {
+                    createImportedSection(type, data)
+                  }}
+                />
+              </div>
+              <div className="mt-3 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] leading-5 text-white/45">
+                El bloque queda listo para editar codigo, tocar elementos desde el canvas y cambiar su posicion desde Capas.
+              </div>
+            </div>
             {groupedBlocks.length === 0 ? (
               <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
                 <LayoutTemplate className="h-8 w-8 text-white/20" />
@@ -5725,7 +6829,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   </div>
                   <div className="grid grid-cols-1 gap-3">
                     {group.types.map((type) => {
-                      const meta = SM[type]
+                      const meta = getStudioSectionMeta(type)
                       const Icon = meta.icon
                       const previewSection: CMSSection = {
                         id: `library-${type}`,
@@ -5997,7 +7101,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               currentSections
                 .filter((section) => ["simulatorsFeed", "coursesFeed", "evaluationsFeed"].includes(section.type))
                 .map((section) => {
-                  const meta = SM[section.type]
+                  const meta = getStudioSectionMeta(section.type)
                   const Icon = meta?.icon ?? Target
                   return (
                     <div
@@ -6460,17 +7564,17 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }
 
   const renderLayersInspector = () => (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-3 border-b border-white/8 px-5 py-4">
         {selectedSection ? (
           <>
             {(() => {
-              const meta = SM[selectedSection.type]
+              const meta = getStudioSectionMeta(selectedSection.type)
               const Icon = meta?.icon ?? LayoutTemplate
               return <div className={cn("flex h-10 w-10 items-center justify-center rounded-2xl", meta?.color ?? "bg-white/5 text-white/35")}><Icon className="h-4 w-4" /></div>
             })()}
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-white">{SM[selectedSection.type]?.label ?? selectedSection.type}</div>
+              <div className="text-sm font-semibold text-white">{getStudioSectionMeta(selectedSection.type).label ?? selectedSection.type}</div>
               <div className="text-xs text-white/40">{currentRoute}</div>
             </div>
           </>
@@ -6485,18 +7589,44 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         )}
         <div className="ml-auto">{renderInspectorCollapseAction()}</div>
       </div>
-      {renderInspectorTabsRow({ disableAll: !selectedSection })}
-      <div className="flex-1 overflow-y-auto">
+      {selectedSection
+        ? (selectedSection.type === "customCode" ? null : renderInspectorTabsRow())
+        : renderInspectorTabsRow({ onlyAdvanced: true })}
+      <div className="studio-scroll min-h-0 flex-1 overflow-y-scroll overscroll-contain pr-1">
         {!selectedSection ? (
-          <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-3 px-8 text-center">
-            <LayoutTemplate className="h-10 w-10 text-white/20" />
-            <div className="text-base font-semibold text-white">Editor del bloque</div>
-            <div className="max-w-xs text-sm text-white/45">Selecciona un bloque en la pagina real para editar su contenido, estilo y opciones avanzadas.</div>
-          </div>
-        ) : inspectorTab === "content" && selectedSection.type === "customCode" ? (
-          // ---- HTML Smart Editor: full panel, no mini iframe ----
-          <div className="flex flex-col gap-3 p-4">
-            {/* Status bar */}
+          inspectorTab === "advanced" ? (
+            <div className="space-y-5 p-5">
+              <Card title="Importar HTML">
+                <div className="space-y-3">
+                  <div className="text-sm leading-6 text-white/50">
+                    Sube tu archivo `.html` desde `Dev` y el Studio lo convierte automaticamente en un bloque editable dentro del canvas.
+                  </div>
+                  <HtmlImporter
+                    onCreateSection={(type, data) => {
+                      createImportedSection(type, data)
+                    }}
+                  />
+                  <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-3 text-[11px] leading-5 text-white/45">
+                    El bloque se agrega automaticamente a la pagina actual y luego puedes editarlo, moverlo y conectarle acciones.
+                  </div>
+                </div>
+              </Card>
+            </div>
+          ) : (
+            <div className="flex h-full min-h-[320px] flex-col gap-4 p-5">
+              <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-white/10 bg-white/[0.03] px-8 py-10 text-center">
+                <LayoutTemplate className="h-10 w-10 text-white/20" />
+                <div className="text-base font-semibold text-white">Editor del bloque</div>
+                <div className="max-w-xs text-sm text-white/45">Usa Dev para importar un archivo HTML editable o selecciona un bloque existente en el canvas.</div>
+                <button onClick={() => setInspectorTab("advanced")} className="mt-2 inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 px-4 text-sm font-semibold text-white/70 transition-all hover:border-primary/35 hover:text-white">
+                  <Code2 className="w-4 h-4" />
+                  Ir a Dev
+                </button>
+              </div>
+            </div>
+          )
+        ) : selectedSection.type === "customCode" ? (
+          <div className="flex min-h-0 min-w-0 flex-col gap-3 p-4 pb-8">
             <div className={cn("flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-medium",
               htmlEditing ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-400"
               : htmlEl    ? "border-primary/25 bg-primary/5 text-primary/80"
@@ -6507,23 +7637,23 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                : htmlEl   ? `<${htmlEl.tag}> seleccionado — edita propiedades abajo`
                :             "Haz clic en el bloque del canvas para seleccionar un elemento"}
             </div>
-            {/* Element inspector */}
             <HtmlElementInspector
+              key={htmlEl ? `${htmlEl.eid ?? htmlEl.tag}` : "html-inspector-empty"}
               element={htmlEl}
               isEditing={htmlEditing}
               iframeRef={htmlIframeRef as React.RefObject<HTMLIFrameElement>}
               onClose={() => { setHtmlEl(null); setHtmlEditing(false) }}
             />
-            {/* Nota interna */}
-            <div className="border-t border-white/8 pt-3">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-white/25 mb-1.5">Nota interna</div>
-              <input
-                className={iCls}
-                value={selectedSection.data?.nota as string || ""}
-                onChange={e => updateSelectedSectionData({ nota: e.target.value })}
-                placeholder="ej. Simulador de Pedagogia - importado"
-              />
-            </div>
+            {!htmlEl && !htmlEditing ? (
+              <div className="border-t border-white/8 pt-3">
+                <CustomCodeEditor
+                  data={selectedSection.data}
+                  onChange={updateSelectedSectionData}
+                  selectedHtmlElement={htmlEl}
+                  htmlIframeRef={htmlIframeRef as { current: HTMLIFrameElement | null }}
+                />
+              </div>
+            ) : null}
           </div>
         ) : inspectorTab === "content" ? (
           <div className="space-y-5 p-5">
@@ -6741,6 +7871,89 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 onUpdatePopup={updatePopup}
                 onSyncFlow={syncConnectedFlow}
               />
+            ) : (selectedSection as CMSSection).type === "customCode" ? (
+              <>
+                <Card title="Elemento HTML">
+                  {htmlEl?.eid ? (
+                    <div className="space-y-3">
+                      <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+                        <div className="text-sm font-semibold text-white">
+                          {htmlEl.tag}
+                          {htmlEl.isActionable ? " interactivo" : ""}
+                        </div>
+                        <div className="mt-1 text-xs text-white/45">
+                          {htmlEl.text?.trim() || htmlEl.attrs?.href || "Seleccionado desde el canvas"}
+                        </div>
+                      </div>
+                      {htmlEl.isActionable ? (
+                        <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] px-4 py-3 text-sm text-white/65">
+                          Conecta este boton o enlace sin tocar codigo. El destino se ejecutara desde el motor de acciones del sitio.
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/45">
+                          Este elemento no es un boton ni un link. Selecciona un CTA del HTML para configurarle una accion.
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45">
+                      Selecciona un boton o link dentro del HTML importado para conectarlo desde aqui.
+                    </div>
+                  )}
+                </Card>
+
+                {htmlEl?.eid && htmlEl.isActionable ? (
+                  <>
+                    <ActionConfigEditor
+                      title="Accion del elemento"
+                      action={selectedHtmlActionBinding?.action}
+                      onChange={updateSelectedHtmlActionBinding}
+                      sections={currentSections}
+                      pages={pages}
+                      popups={config.popups}
+                      simulators={simulatorActionOptions}
+                      onCreateFormPopup={createConnectedFormPopup}
+                      onEditFormPopup={openPopupFormEditor}
+                      onCreateFormSection={createConnectedFormSection}
+                      onEditFormSection={openSectionFormEditor}
+                      onUpdatePopup={updatePopup}
+                      onSyncFlow={syncConnectedFlow}
+                    />
+                    {selectedHtmlActionBinding ? (
+                      <Card title="Gestion">
+                        <Btn variant="danger" onClick={removeSelectedHtmlActionBinding}>
+                          <Trash2 className="h-4 w-4" />
+                          Quitar accion conectada
+                        </Btn>
+                      </Card>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {(((selectedSection.data?.actionBindings as CMSCustomCodeActionBinding[] | undefined) ?? []).length > 0) ? (
+                  <Card title="Acciones conectadas">
+                    <div className="space-y-3">
+                      {(((selectedSection.data?.actionBindings as CMSCustomCodeActionBinding[] | undefined) ?? [])).map((binding) => (
+                        <button
+                          key={binding.id}
+                          type="button"
+                          onClick={() => {
+                            htmlIframeRef.current?.contentWindow?.postMessage({ __editor_cmd: true, cmd: "highlight", eid: binding.eid }, "*")
+                            setInspectorTab("content")
+                          }}
+                          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3 text-left transition-all hover:border-primary/35 hover:bg-white/[0.05]"
+                        >
+                          <div>
+                            <div className="text-sm font-semibold text-white">{binding.label}</div>
+                            <div className="mt-1 text-xs text-white/40">{binding.tag || "elemento"} · {getActionSummary(binding.action || { type: "none" })}</div>
+                          </div>
+                          <Pencil className="h-4 w-4 text-white/35" />
+                        </button>
+                      ))}
+                    </div>
+                  </Card>
+                ) : null}
+              </>
             ) : (
               <Card title="Sin acciones configurables">
                 <p className="text-sm text-muted-foreground">Este bloque no expone acciones por ahora. Usa Contenido y Estilo para ajustar su presentacion.</p>
@@ -6752,14 +7965,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             <Card title="Importar HTML inteligente">
               <HtmlImporter
                 onCreateSection={(type, data) => {
-                  const id = `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-                  const newSection: CMSSection = { id, type, visible: true, data }
-                  const idx = currentSections.findIndex(s => s.id === selectedSection.id)
-                  const next = [...currentSections]
-                  next.splice(idx + 1, 0, newSection)
-                  updateActiveSections(next)
-                  setSelectedSectionId(id)
-                  setInspectorTab("content")
+                  createImportedSection(type, data, { afterSectionId: selectedSection.id })
                 }}
               />
             </Card>
@@ -6858,13 +8064,16 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 <Btn onClick={() => moveSection(selectedSection.id, -1)}><ArrowUp className="h-4 w-4" />Subir</Btn>
                 <Btn onClick={() => moveSection(selectedSection.id, 1)}><ArrowDown className="h-4 w-4" />Bajar</Btn>
               </div>
-              {SM[selectedSection.type]?.deletable && <div className="pt-3"><Btn variant="danger" onClick={() => deleteSection(selectedSection.id)} className="w-full justify-center"><Trash2 className="h-4 w-4" />Eliminar bloque</Btn></div>}
+              {getStudioSectionMeta(selectedSection.type)?.deletable && <div className="pt-3"><Btn variant="danger" onClick={() => deleteSection(selectedSection.id)} className="w-full justify-center"><Trash2 className="h-4 w-4" />Eliminar bloque</Btn></div>}
             </Card>
           </div>
         )}
       </div>
     </div>
   )
+
+  const forceHtmlInspector =
+    selectedSection?.type === "customCode" && (Boolean(htmlEl) || htmlEditing)
 
   const renderNavigationInspector = () => (
     <div className="flex h-full flex-col">
@@ -6899,13 +8108,189 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     </div>
   )
 
+  const renderActiveLeftSidebar = () => {
+    if (leftTab === "pages") return renderPagesSidebar()
+    if (leftTab === "layers") return renderLayersSidebar()
+    if (leftTab === "components") return renderComponentsSidebar()
+    if (leftTab === "popups") return renderPopupsSidebar()
+    if (leftTab === "forms") return renderFormsSidebar()
+    if (leftTab === "simulators") return renderSimulatorsSidebar()
+    if (leftTab === "assets") return renderAssetsSidebar()
+    if (leftTab === "navigation") return renderNavigationSidebar()
+    return renderSettingsSidebar()
+  }
+
+  const renderActiveInspectorPanel = () => {
+    if (forceHtmlInspector) return renderLayersInspector()
+    if (leftTab === "pages") return renderPagesInspector()
+    if (leftTab === "layers" || leftTab === "components" || leftTab === "assets") return renderLayersInspector()
+    if (leftTab === "popups") return renderPopupsInspector()
+    if (leftTab === "forms") return renderFormsInspector()
+    if (leftTab === "simulators") return renderSimulatorsInspector()
+    if (leftTab === "navigation") return renderNavigationInspector()
+    return renderSettingsInspector()
+  }
+
+  const renderFocusModeDock = () => {
+    if (!focusEditingMode) return null
+
+    const dockButtons = [
+      {
+        key: "layers",
+        label: "Capas",
+        icon: Layers,
+        active: focusLeftOpen && leftTab === "layers",
+        onClick: () => openFocusLeftTab("layers"),
+      },
+      {
+        key: "components",
+        label: "Bloques",
+        icon: LayoutTemplate,
+        active: focusLeftOpen && leftTab === "components",
+        onClick: () => openFocusLeftTab("components"),
+      },
+      {
+        key: "pages",
+        label: "Paginas",
+        icon: Globe,
+        active: focusLeftOpen && leftTab === "pages",
+        onClick: () => openFocusLeftTab("pages"),
+      },
+      {
+        key: "add",
+        label: "Agregar",
+        icon: Plus,
+        active: false,
+        onClick: () => {
+          setInsertIndex(null)
+          setShowAdd(true)
+        },
+      },
+      {
+        key: "inspector",
+        label: "Inspector",
+        icon: SelectedSectionIcon ?? Pencil,
+        active: focusRightOpen,
+        onClick: () => setFocusRightOpen((current) => !current),
+      },
+    ] as const
+
+    return (
+      <div className="pointer-events-none absolute inset-0 z-30">
+        <div className="pointer-events-auto absolute left-3 right-3 bottom-3 flex flex-wrap items-center gap-2 rounded-[26px] border border-white/10 bg-[#08111b]/92 p-2 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl md:left-3 md:right-auto md:top-3 md:bottom-auto md:w-[170px] md:flex-col">
+          <div className="w-full rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.22em] text-primary/85">
+            Modo enfoque
+          </div>
+          {dockButtons.map((button) => (
+            <button
+              key={button.key}
+              type="button"
+              onClick={button.onClick}
+              className={cn(
+                "inline-flex h-10 min-w-[126px] flex-1 items-center justify-center gap-2 rounded-2xl border px-3 text-sm font-medium transition-all md:w-full md:flex-none md:justify-start",
+                button.active
+                  ? "border-primary/40 bg-primary/12 text-primary shadow-[0_10px_30px_rgba(232,57,42,0.18)]"
+                  : "border-white/10 bg-white/[0.03] text-white/65 hover:border-white/20 hover:text-white"
+              )}
+            >
+              <button.icon className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate">{button.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const renderFocusLeftOverlay = () => {
+    if (!focusEditingMode || !focusLeftOpen) return null
+
+    return (
+      <div className="pointer-events-none absolute inset-0 z-20">
+        <div className="pointer-events-auto absolute inset-x-3 bottom-3 max-h-[78%] lg:inset-y-3 lg:left-3 lg:right-auto lg:w-[340px] xl:w-[360px]">
+          <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/10 bg-[#08111b]/96 shadow-[0_30px_90px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+            <button
+              type="button"
+              onClick={() => setFocusLeftOpen(false)}
+              className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-[#0b1220]/90 text-white/50 transition-all hover:border-white/20 hover:text-white"
+              aria-label={`Cerrar panel ${activeLeftTabMeta.label}`}
+              title={`Cerrar panel ${activeLeftTabMeta.label}`}
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="min-h-0 flex-1">{renderActiveLeftSidebar()}</div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const renderFocusRightOverlay = () => {
+    if (!focusEditingMode || !focusRightOpen) return null
+
+    return (
+      <div className="pointer-events-none absolute inset-0 z-20">
+        <div className="pointer-events-auto absolute inset-x-3 bottom-3 max-h-[82%] lg:inset-y-3 lg:right-3 lg:left-auto lg:w-[360px] xl:w-[390px]">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/10 bg-[#08111b]/96 shadow-[0_30px_90px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+            {renderActiveInspectorPanel()}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const renderFocusContextBar = () => {
+    if (!focusEditingMode) return null
+
+    const currentFocusTabs = selectedSection
+      ? inspectorTabs
+      : inspectorTabs.filter((tabItem) => tabItem.id === "advanced")
+
+    const focusTitle = htmlEl?.eid
+      ? `${htmlEl.tag}${htmlEl.eid ? ` [${htmlEl.eid}]` : ""}`
+      : selectedSectionMeta?.label ?? "Selecciona un bloque"
+
+    const focusSubtitle = htmlEl?.eid
+      ? "Elemento HTML activo"
+      : selectedSection
+        ? `Bloque ${selectedSection.type}`
+        : "Haz clic en el canvas para comenzar"
+
+    return (
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 hidden justify-center lg:flex">
+        <div className="studio-scroll pointer-events-auto flex max-w-[min(860px,calc(100%-220px))] items-center gap-2 overflow-x-auto rounded-[26px] border border-white/10 bg-[#08111b]/92 px-3 py-2 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+          <div className="shrink-0 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
+            <div className="text-xs font-semibold text-white">{focusTitle}</div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-white/35">{focusSubtitle}</div>
+          </div>
+          {currentFocusTabs.map((tabItem) => (
+            <button
+              key={tabItem.id}
+              type="button"
+              onClick={() => openFocusInspectorTab(tabItem.id)}
+              className={cn(
+                "inline-flex h-10 shrink-0 items-center gap-2 rounded-2xl border px-3.5 text-sm font-medium transition-all",
+                inspectorTab === tabItem.id && focusRightOpen
+                  ? "border-primary/40 bg-primary/12 text-primary"
+                  : "border-white/10 bg-white/[0.03] text-white/65 hover:border-white/20 hover:text-white"
+              )}
+            >
+              <tabItem.icon className="h-4 w-4" />
+              {tabItem.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#07111f] text-white">
-      <header className="flex flex-shrink-0 flex-col gap-3 border-b border-white/10 bg-[#08111f] px-4 py-3 xl:px-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="relative flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[#07111f] pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-white">
+      <header className="relative z-30 flex flex-shrink-0 flex-col gap-3 border-b border-white/10 bg-[#08111f] px-3 py-3 sm:px-4 xl:px-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
           <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-primary">Studio</div>
-          <div className="mt-1 flex min-w-0 items-center gap-2">
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
             <div className="truncate text-lg font-semibold text-white">{currentPageTitle}</div>
             <span className="truncate text-xs uppercase tracking-[0.18em] text-white/28">{currentRoute}</span>
           </div>
@@ -6917,28 +8302,28 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <a href={currentRoute} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 px-3.5 text-sm font-medium text-white/65 transition-all hover:border-white/20 hover:text-white whitespace-nowrap">
+        <div className="studio-scroll flex max-w-full items-center gap-2 overflow-x-auto pb-1 lg:justify-end lg:pb-0">
+          <a href={currentRoute} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-white/10 px-3.5 text-sm font-medium text-white/65 transition-all hover:border-white/20 hover:text-white whitespace-nowrap">
             <ExternalLink className="h-4 w-4" />
             Ver sitio
           </a>
-          <button onClick={handleSave} className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-3.5 text-sm font-semibold text-white transition-all hover:bg-primary/90 whitespace-nowrap">
+          <button onClick={handleSave} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-primary px-3.5 text-sm font-semibold text-white transition-all hover:bg-primary/90 whitespace-nowrap">
             <Save className="h-4 w-4" />
             Guardar
           </button>
-          <button onClick={handlePublish} className="inline-flex h-10 items-center gap-2 rounded-xl border border-primary/30 bg-primary/12 px-3.5 text-sm font-semibold text-primary transition-all hover:bg-primary/20 whitespace-nowrap">
+          <button onClick={handlePublish} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-primary/30 bg-primary/12 px-3.5 text-sm font-semibold text-primary transition-all hover:bg-primary/20 whitespace-nowrap">
             <Check className="h-4 w-4" />
             Publicar
           </button>
-          <a href="/admin" className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 px-3.5 text-sm font-medium text-white/65 transition-all hover:border-white/20 hover:text-white whitespace-nowrap">
+          <a href="/admin" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-white/10 px-3.5 text-sm font-medium text-white/65 transition-all hover:border-white/20 hover:text-white whitespace-nowrap">
             <ArrowLeft className="h-4 w-4" />
             Volver al admin
           </a>
         </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+        <div className="studio-scroll flex items-center gap-2 overflow-x-auto pb-1 lg:justify-center lg:pb-0">
+          <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
             <button
               type="button"
               onClick={handleUndo}
@@ -6958,7 +8343,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               <Redo2 className="h-4 w-4" />
             </button>
           </div>
-          <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+          <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
             {STUDIO_DEVICES.map((device) => (
               <button
                 key={device.id}
@@ -6974,7 +8359,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+          <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
             {(["fit", 100, 75, 50] as const).map((value) => (
               <button
                 key={String(value)}
@@ -6989,7 +8374,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+          <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
             {([
               { id: "edit", label: "Editar" },
               { id: "preview", label: "Vista previa" },
@@ -7012,7 +8397,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             type="button"
             onClick={() => setFocusMode((value) => !value)}
             className={cn(
-              "inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all whitespace-nowrap",
+              "inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all whitespace-nowrap",
               focusMode
                 ? "border-primary/35 bg-primary/12 text-primary"
                 : "border-white/10 text-white/60 hover:border-white/20 hover:text-white"
@@ -7022,7 +8407,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             {focusMode ? "Salir enfoque" : "Modo enfoque"}
           </button>
           {viewport === "desktop" && (
-            <div className="flex items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+            <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
               {([1440, 1280] as const).map((width) => (
                 <button
                   key={width}
@@ -7041,27 +8426,19 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1 w-full">
         {!canvasOnlyMode && (
-          <aside className={cn("flex flex-shrink-0 border-r border-white/10 bg-[#060d18] transition-all duration-200", leftPanelCollapsed ? "w-[64px]" : "w-[272px]")}>
+          <aside className={cn("flex min-h-0 flex-shrink-0 border-r border-white/10 bg-[#060d18] transition-all duration-200", leftPanelCollapsed ? "w-[64px]" : "w-[clamp(220px,18vw,272px)] max-[1200px]:w-[220px]")}>
             {renderLeftIconRail()}
             {!leftPanelCollapsed && (
               <div className="min-h-0 min-w-0 flex-1">
-                {leftTab === "pages" && renderPagesSidebar()}
-                {leftTab === "layers" && renderLayersSidebar()}
-                {leftTab === "components" && renderComponentsSidebar()}
-                {leftTab === "popups" && renderPopupsSidebar()}
-                {leftTab === "forms" && renderFormsSidebar()}
-                {leftTab === "simulators" && renderSimulatorsSidebar()}
-                {leftTab === "assets" && renderAssetsSidebar()}
-                {leftTab === "navigation" && renderNavigationSidebar()}
-                {leftTab === "settings" && renderSettingsSidebar()}
+                {renderActiveLeftSidebar()}
               </div>
             )}
           </aside>
         )}
 
-        <main className="flex min-w-0 flex-1 flex-col bg-[#060b12]">
+        <main className="min-w-0 min-h-0 flex-1 flex flex-col overflow-hidden bg-[#060b12]">
           <StudioViewport
             title={currentPageTitle}
             route={currentRoute}
@@ -7088,29 +8465,40 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               setInsertIndex(index ?? null)
               setShowAdd(true)
             }}
+            htmlIframeRef={htmlIframeRef}
+            onHtmlElementSelect={handleHtmlElementSelect}
+            onHtmlEditingChange={handleHtmlEditingChange}
+            onHtmlSnapshot={handleHtmlSnapshot}
           />
         </main>
 
         {!canvasOnlyMode && (
-          <aside className={cn("relative flex flex-shrink-0 flex-col border-l border-white/10 bg-[#08111b] transition-all duration-200", rightPanelCollapsed ? "w-[64px]" : "w-[304px]")}>
+          <aside className={cn("relative flex min-h-0 flex-shrink-0 flex-col border-l border-white/10 bg-[#08111b] transition-all duration-200", rightPanelCollapsed ? "w-[64px]" : "w-[clamp(240px,28vw,360px)] min-w-[240px] max-[1200px]:w-[280px]")}>
             {rightPanelCollapsed ? (
               renderCollapsedInspectorRail()
             ) : (
-              <>
-                {leftTab === "pages" && renderPagesInspector()}
-                {(leftTab === "layers" || leftTab === "components" || leftTab === "assets") && renderLayersInspector()}
-                {leftTab === "popups" && renderPopupsInspector()}
-                {leftTab === "forms" && renderFormsInspector()}
-                {leftTab === "simulators" && renderSimulatorsInspector()}
-                {leftTab === "navigation" && renderNavigationInspector()}
-                {leftTab === "settings" && renderSettingsInspector()}
-              </>
+              renderActiveInspectorPanel()
             )}
           </aside>
         )}
+
+        {focusEditingMode ? (
+          <>
+            {renderFocusModeDock()}
+            {renderFocusLeftOverlay()}
+            {renderFocusRightOverlay()}
+            {renderFocusContextBar()}
+          </>
+        ) : null}
       </div>
 
-      {showAdd && <AddModal onAdd={addSection} onClose={() => { setInsertIndex(null); setShowAdd(false) }} pageMode={!currentPage.home} />}
+      {showAdd && (
+        <AddModal
+          onAdd={addSection}
+          onClose={() => { setInsertIndex(null); setShowAdd(false) }}
+          pageMode={!currentPage.home}
+        />
+      )}
 
       {showNewPage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm" onClick={() => setShowNewPage(false)}>
@@ -7241,6 +8629,35 @@ export default function AdminCMSPage({ studioMode = false }: { studioMode?: bool
   const [config, setConfig] = useState<CMSConfig | null>(null)
 
   useEffect(() => { setConfig(getCMSConfig("draft")) }, [])
+
+  useEffect(() => {
+    if (!studioMode || typeof document === "undefined") return
+
+    const docEl = document.documentElement
+    const body = document.body
+    const previous = {
+      docOverflow: docEl.style.overflow,
+      docHeight: docEl.style.height,
+      bodyOverflow: body.style.overflow,
+      bodyHeight: body.style.height,
+      bodyOverscroll: body.style.overscrollBehavior,
+    }
+
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" })
+    docEl.style.overflow = "hidden"
+    docEl.style.height = "100%"
+    body.style.overflow = "hidden"
+    body.style.height = "100%"
+    body.style.overscrollBehavior = "none"
+
+    return () => {
+      docEl.style.overflow = previous.docOverflow
+      docEl.style.height = previous.docHeight
+      body.style.overflow = previous.bodyOverflow
+      body.style.height = previous.bodyHeight
+      body.style.overscrollBehavior = previous.bodyOverscroll
+    }
+  }, [studioMode])
 
   const handleChange: CMSChangeHandler = (next) => {
     setConfig((current) => {

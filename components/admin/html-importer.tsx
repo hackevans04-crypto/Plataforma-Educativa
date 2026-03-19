@@ -3,434 +3,301 @@
 import React from "react"
 import { Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { CMSSectionType } from "@/hooks/use-cms"
+import type { CMSCustomCodeThemeConfig, CMSSectionType, CMSHtmlImportMode } from "@/hooks/use-cms"
+import { buildImportedHtml, classifyHtml, parseHtml } from "@/lib/html-import-utils"
 
-// ============================================================
-// PHASE 1 — PARSER
-// ============================================================
+type ImportMode = CMSHtmlImportMode
 
-interface ParsedHtml {
-  styles: string[]
-  scripts: string[]
-  body: string
-  title: string
-  raw: string
+interface HtmlImporterProps {
+  onCreateSection: (type: CMSSectionType, data: Record<string, unknown>) => void
 }
-
-function parseHtml(raw: string): ParsedHtml {
-  const styles = (raw.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) ?? [])
-    .map((s) => s.replace(/<\/?style[^>]*>/gi, ""))
-
-  const scripts = (raw.match(/<script(?![^>]*\bsrc\b)[^>]*>([\s\S]*?)<\/script>/gi) ?? [])
-    .map((s) => s.replace(/<\/?script[^>]*>/gi, ""))
-
-  const bMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
-  const body = bMatch
-    ? bMatch[1]
-    : raw
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-        .replace(/<\/?html[^>]*>/gi, "")
-        .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
-
-  const h1Match =
-    raw.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) ??
-    raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
-  const title = h1Match
-    ? h1Match[1].replace(/<[^>]*>/g, "").trim().slice(0, 60)
-    : "Sin titulo"
-
-  return { styles, scripts, body, title, raw }
-}
-
-// ============================================================
-// PHASE 2 — CLASSIFIER
-// ============================================================
-
-type HtmlType = "simulator" | "form" | "landing" | "widget" | "content"
-type ImportMode = "sandbox" | "hybrid" | "adapted"
-
-interface HtmlElements {
-  buttons: number
-  inputs: number
-  cards: number
-  steps: number
-  scripts: number
-  styles: number
-  hasTimer: boolean
-  hasScore: boolean
-  hasForms: boolean
-  hasVideo: boolean
-}
-
-interface Detection {
-  label: string
-  type: HtmlType
-  title: string
-  elements: HtmlElements
-  recommendation: ImportMode
-}
-
-function classify(raw: string, parsed: ParsedHtml): Detection {
-  const lower = raw.toLowerCase()
-
-  const buttons = (raw.match(/<button/gi) ?? []).length
-  const inputs  = (raw.match(/<input/gi) ?? []).length + (raw.match(/<select/gi) ?? []).length
-  const forms   = (raw.match(/<form/gi) ?? []).length
-  const cards   = (raw.match(/class="[^"]*card[^"]*"/g) ?? []).length
-  const screens = (raw.match(/class="[^"]*screen[^"]*"/g) ?? []).length
-  const steps   = (raw.match(/class="[^"]*step[^"]*"/g) ?? []).length
-
-  const hasTimer = lower.includes("timer") || lower.includes("countdown") || lower.includes("tiempo")
-  const hasScore = lower.includes("score") || lower.includes("resultado") || lower.includes("puntaje")
-  const hasForms = forms > 0 || inputs > 2
-  const hasSteps = screens > 1 || steps > 1
-  const hasVideo = lower.includes("<video") || lower.includes("youtube") || lower.includes("vimeo")
-
-  let type: HtmlType = "content"
-  let label = "Contenido libre"
-
-  if (hasSteps && (hasScore || hasTimer)) { type = "simulator"; label = "Simulador / Quiz" }
-  else if (hasSteps)                       { type = "simulator"; label = "Flujo multi-paso" }
-  else if (hasForms)                       { type = "form";      label = "Formulario" }
-  else if (cards > 2)                      { type = "landing";   label = "Landing / Tarjetas" }
-
-  // Complex HTML with scripts → sandbox (don't touch); forms/buttons → hybrid; simple → adapted
-  const recommendation: ImportMode =
-    parsed.scripts.length > 0 || hasSteps || hasTimer ? "sandbox" :
-    hasForms || buttons > 0                            ? "hybrid"  : "adapted"
-
-  return {
-    label, type, title: parsed.title,
-    elements: {
-      buttons, inputs, cards,
-      steps: screens + steps,
-      scripts: parsed.scripts.length,
-      styles: parsed.styles.length,
-      hasTimer, hasScore, hasForms, hasVideo,
-    },
-    recommendation,
-  }
-}
-
-// ============================================================
-// PHASE 3 — CSS SCOPER (used only in adapted mode)
-// ============================================================
-
-const ELEMENT_RE = /^(html|body|\*|:root|button|input|select|textarea|h[1-6]|p|a\b|ul|ol|li|table|th|td|form|label)([\s,{:]|$)/i
-
-function scopeStylesheet(css: string, id: string): string {
-  const chunks = css.split(/(?<=\})/)
-  return chunks.map((chunk) => {
-    const trimmed = chunk.trim()
-    if (!trimmed) return ""
-    if (trimmed.startsWith("@keyframes") || trimmed.startsWith("@font-face")) return chunk
-    if (trimmed.startsWith("@")) return chunk
-
-    const braceIdx = trimmed.indexOf("{")
-    if (braceIdx === -1) return ""
-
-    const selPart  = trimmed.slice(0, braceIdx)
-    const declPart = trimmed.slice(braceIdx + 1).replace(/\}$/, "")
-
-    const scopedSels = selPart
-      .split(",")
-      .map((s) => {
-        const t = s.trim()
-        if (!t) return ""
-        if (/^(html|body|:root|\*)(\s|,|$)/i.test(t)) return "#" + id
-        if (ELEMENT_RE.test(t)) return "#" + id + " " + t
-        return "#" + id + " " + t
-      })
-      .filter(Boolean)
-      .join(", ")
-
-    return scopedSels + " {" + declPart + "}"
-  }).join("\n")
-}
-
-// ============================================================
-// PHASE 4 — VISUAL ADAPTER tokens (adapted mode only)
-// ============================================================
-
-function buildSystemStyles(id: string): string {
-  const s = "#" + id
-  return [
-    s + "{--p:var(--primary,#E8392A);--sf:rgba(255,255,255,.04);--sb:rgba(255,255,255,.10);--st:var(--foreground,#fff);--sm:rgba(255,255,255,.5);--sr:.75rem;--ff:var(--font-sans,system-ui,-apple-system,sans-serif);all:initial;display:block;box-sizing:border-box;font-family:var(--ff)!important;color:var(--st);}",
-    s + " *{box-sizing:border-box;font-family:var(--ff)!important;}",
-    s + " h1," + s + " h2," + s + " h3," + s + " h4," + s + " h5," + s + " h6{color:var(--st)!important;font-weight:700!important;line-height:1.2!important;}",
-    s + " p," + s + " span," + s + " li," + s + " label{color:var(--st)!important;}",
-    s + " button," + s + " [type=button]," + s + " [type=submit]{background:var(--p)!important;color:#fff!important;border:none!important;border-radius:var(--sr)!important;padding:.5rem 1.25rem!important;font-weight:600!important;font-size:.875rem!important;cursor:pointer!important;transition:opacity .15s!important;}",
-    s + " button:hover{opacity:.85!important;}",
-    s + " input," + s + " select," + s + " textarea{background:var(--sf)!important;border:1px solid var(--sb)!important;border-radius:var(--sr)!important;color:var(--st)!important;padding:.5rem .875rem!important;font-size:.875rem!important;width:100%!important;outline:none!important;}",
-    s + " input:focus," + s + " select:focus," + s + " textarea:focus{border-color:var(--p)!important;box-shadow:0 0 0 2px rgba(232,57,42,.2)!important;}",
-    s + " input::placeholder," + s + " textarea::placeholder{color:var(--sm)!important;}",
-    s + " [class*=card]{background:var(--sf)!important;border:1px solid var(--sb)!important;border-radius:var(--sr)!important;}",
-    s + " a{color:var(--p)!important;text-decoration:none!important;}",
-  ].join("\n")
-}
-
-// ============================================================
-// PHASE 5 — BUILDER
-// Sandbox: raw HTML untouched (iframe handles isolation)
-// Hybrid:  raw HTML + system override <style> injected at end
-// Adapted: strip original CSS, inject system tokens
-// ============================================================
-
-function buildHtml(parsed: ParsedHtml, mode: ImportMode): string {
-  const { raw, styles, scripts, body } = parsed
-
-  // ── SANDBOX: don't touch anything ──
-  if (mode === "sandbox") {
-    return raw
-  }
-
-  // ── HYBRID: inject override CSS into the original document ──
-  if (mode === "hybrid") {
-    const overrides = [
-      "<style>",
-      "  *, *::before, *::after { font-family: var(--font-sans, system-ui, -apple-system, sans-serif) !important; }",
-      "  button, [type=button], [type=submit] { background:var(--primary,#E8392A)!important; color:#fff!important; border:none!important; border-radius:.75rem!important; font-weight:600!important; cursor:pointer!important; }",
-      "  button:hover { opacity:.85!important; }",
-      "  input, select, textarea { background:rgba(255,255,255,.05)!important; border:1px solid rgba(255,255,255,.12)!important; border-radius:.75rem!important; color:inherit!important; }",
-      "  input:focus, select:focus, textarea:focus { border-color:var(--primary,#E8392A)!important; outline:none!important; }",
-      "</style>",
-    ].join("\n")
-
-    // If it's a full document, insert overrides before </head> or </body>
-    if (/<\/head>/i.test(raw)) {
-      return raw.replace(/<\/head>/i, overrides + "\n</head>")
-    }
-    if (/<\/body>/i.test(raw)) {
-      return raw.replace(/<\/body>/i, overrides + "\n</body>")
-    }
-    return overrides + "\n" + raw
-  }
-
-  // ── ADAPTED: strip original CSS, inject system tokens ──
-  const id = "hi_" + Date.now()
-
-  const strippedBody = body
-  const scopedCss    = styles.map((s) => scopeStylesheet(s, id)).join("\n")
-  const systemCss    = buildSystemStyles(id)
-  const scriptBlock  = scripts.join("\n").trim()
-    ? "<script>(function(){\n" + scripts.join("\n") + "\n})();<\/script>"
-    : ""
-
-  return (
-    "<style>\n" + systemCss + "\n/* scoped originals */\n" + scopedCss + "\n</style>\n" +
-    "<div id=\"" + id + "\">" + strippedBody + "</div>\n" +
-    scriptBlock
-  )
-}
-
-// ============================================================
-// COMPONENT
-// ============================================================
 
 const MODES: Array<{ val: ImportMode; lbl: string; badge?: string; desc: string }> = [
   {
-    val: "sandbox", lbl: "Sandbox", badge: "Recomendado",
-    desc: "HTML original sin modificar. CSS y JS funcionan exactamente como en el archivo. Maximo nivel de fidelidad.",
+    val: "adapted",
+    lbl: "Adaptado al sitio",
+    badge: "Recomendado",
+    desc: "Reaplica tipografia, botones, formularios y superficies al estilo visual de tu pagina principal.",
   },
   {
-    val: "hybrid", lbl: "Hibrido",
-    desc: "Conserva el HTML y JS originales. Sobreescribe solo botones, inputs y tipografia con el estilo del sistema.",
+    val: "hybrid",
+    lbl: "Hibrido",
+    desc: "Mantiene la estructura original del HTML y encima aplica el look general del sitio sin romper interacciones.",
   },
   {
-    val: "adapted", lbl: "Adaptado al sistema",
-    desc: "Elimina el CSS original. Aplica completamente el design system. Solo para HTML simples sin mucho JS.",
+    val: "sandbox",
+    lbl: "Original",
+    desc: "Mantiene el HTML tal cual llega. Util cuando quieres maxima fidelidad y luego editarlo manualmente.",
   },
 ]
 
-const TYPE_ICON: Record<HtmlType, string> = {
-  simulator: "🎮",
-  form:      "📋",
-  landing:   "🏠",
-  widget:    "🔧",
-  content:   "📄",
-}
+const TYPE_ICON = {
+  simulator: "SG",
+  form: "FM",
+  landing: "LD",
+  widget: "WG",
+  content: "HT",
+} as const
 
 const MODE_COLOR: Record<ImportMode, string> = {
-  sandbox: "border-emerald-500/20 bg-emerald-500/5 text-emerald-400/80",
-  hybrid:  "border-amber-500/20 bg-amber-500/5 text-amber-400/80",
-  adapted: "border-white/8 bg-white/3 text-white/40",
+  sandbox: "border-white/10 bg-white/[0.03] text-white/60",
+  hybrid: "border-amber-500/20 bg-amber-500/5 text-amber-300",
+  adapted: "border-primary/20 bg-primary/5 text-primary/90",
 }
 
 const MODE_INFO: Record<ImportMode, string> = {
-  sandbox: "HTML original intacto · CSS vivo · JS ejecuta · Scripts funcionan · Iframe aislado",
-  hybrid:  "HTML original intacto · JS ejecuta · Botones e inputs del sistema sobreescritos",
-  adapted: "CSS original eliminado · Tokens del sistema aplicados · Solo para HTML simples",
+  sandbox: "Conserva el archivo completo. Puedes editarlo luego desde el canvas y el panel visual.",
+  hybrid: "Usa el HTML original pero lo lleva al tono de Hack Evans con botones, inputs y navegacion alineados al sitio.",
+  adapted: "Prioriza el look de la pagina principal: nav del sitio, superficies, textos y CTAs coherentes desde el primer import.",
 }
 
-export function HtmlImporter({ onCreateSection }: {
-  onCreateSection: (type: CMSSectionType, data: Record<string, unknown>) => void
-}) {
-  const [uiMode, setUiMode]         = React.useState("idle")
-  const [detection, setDetection]   = React.useState<Detection | null>(null)
-  const [parsed, setParsed]         = React.useState<ParsedHtml | null>(null)
-  const [fileName, setFileName]     = React.useState("")
-  const [importMode, setImportMode] = React.useState<ImportMode>("sandbox")
+const DEFAULT_THEME: CMSCustomCodeThemeConfig = {
+  accentColor: "#E8392A",
+}
+
+export function HtmlImporter({ onCreateSection }: HtmlImporterProps) {
+  const [uiMode, setUiMode] = React.useState<"idle" | "detected" | "done">("idle")
+  const [detection, setDetection] = React.useState<ReturnType<typeof classifyHtml> | null>(null)
+  const [parsedTitle, setParsedTitle] = React.useState("Sin titulo")
+  const [rawHtml, setRawHtml] = React.useState("")
+  const [fileName, setFileName] = React.useState("")
+  const [importMode, setImportMode] = React.useState<ImportMode>("adapted")
+  const [stripNavigation, setStripNavigation] = React.useState(true)
+  const [stripFooter, setStripFooter] = React.useState(true)
   const fileRef = React.useRef<HTMLInputElement>(null)
 
-  const handleFile = (file: File) => {
+  const reset = React.useCallback(() => {
+    setUiMode("idle")
+    setDetection(null)
+    setParsedTitle("Sin titulo")
+    setRawHtml("")
+    setFileName("")
+    setImportMode("adapted")
+    setStripNavigation(true)
+    setStripFooter(true)
+  }, [])
+
+  const handleFile = React.useCallback((file: File) => {
     if (!file) return
+
     setFileName(file.name)
+
     const reader = new FileReader()
-    reader.onload = (e) => {
-      const html = (e.target?.result ?? "") as string
-      const p = parseHtml(html)
-      const d = classify(html, p)
-      setParsed(p)
-      setDetection(d)
-      setImportMode(d.recommendation)
+    reader.onload = (event) => {
+      const html = String(event.target?.result || "")
+      const parsed = parseHtml(html)
+      const nextDetection = classifyHtml(html, parsed)
+      setRawHtml(html)
+      setParsedTitle(parsed.title)
+      setDetection(nextDetection)
+      setImportMode(nextDetection.recommendation)
+      setStripNavigation(nextDetection.elements.hasNavigation)
+      setStripFooter(nextDetection.elements.hasFooter)
       setUiMode("detected")
     }
     reader.readAsText(file)
-  }
+  }, [])
 
-  const handleConfirm = () => {
-    if (!detection || !parsed) return
-    const html = buildHtml(parsed, importMode)
+  const handleConfirm = React.useCallback(() => {
+    if (!rawHtml || !detection) return
+
+    const { html } = buildImportedHtml(rawHtml, {
+      mode: importMode,
+      stripNavigation,
+      stripFooter,
+      theme: DEFAULT_THEME,
+    })
+
     onCreateSection("customCode", {
       html,
-      nota: "Importado: " + fileName + " [" + importMode + "] - " + detection.label,
+      sourceHtml: rawHtml,
+      importMode,
+      stripNavigation,
+      stripFooter,
+      themeOverrides: DEFAULT_THEME,
+      actionBindings: [],
+      nota: `Importado: ${fileName} [${importMode}] - ${detection.label}`,
+      importedTitle: parsedTitle,
     })
-    setUiMode("done")
-    setTimeout(() => {
-      setUiMode("idle"); setDetection(null); setParsed(null); setFileName("")
-    }, 2500)
-  }
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files[0]
+    setUiMode("done")
+    window.setTimeout(() => reset(), 2200)
+  }, [detection, fileName, importMode, onCreateSection, parsedTitle, rawHtml, reset, stripFooter, stripNavigation])
+
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault()
+    const file = event.dataTransfer.files[0]
     if (file) handleFile(file)
   }
 
-  // ---- Done ----
-  if (uiMode === "done") return (
-    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-center">
-      <div className="text-sm font-semibold text-emerald-400">Bloque creado</div>
-      <div className="text-xs text-white/45 mt-1">{fileName}</div>
-    </div>
-  )
+  if (uiMode === "done") {
+    return (
+      <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-center">
+        <div className="text-sm font-semibold text-emerald-400">Bloque HTML creado</div>
+        <div className="mt-1 text-xs text-white/45">{fileName}</div>
+      </div>
+    )
+  }
 
-  // ---- Detected ----
-  if (uiMode === "detected" && detection && parsed) return (
-    <div className="space-y-3">
+  if (uiMode === "detected" && detection) {
+    const stats = [
+      { value: detection.elements.buttons, label: "botones" },
+      { value: detection.elements.links, label: "links" },
+      { value: detection.elements.inputs, label: "campos" },
+      { value: detection.elements.cards, label: "cards" },
+      { value: detection.elements.scripts, label: "scripts" },
+      { value: detection.elements.styles, label: "estilos" },
+    ].filter((item) => item.value > 0)
 
-      {/* Detection card */}
-      <div className="rounded-2xl border border-primary/20 bg-primary/[0.05] p-3">
-        <div className="flex items-start gap-2 mb-2">
-          <span className="text-2xl leading-none mt-0.5">{TYPE_ICON[detection.type]}</span>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-white truncate">{detection.title}</div>
-            <div className="text-xs text-primary font-semibold">{detection.label}</div>
+    return (
+      <div className="space-y-3">
+        <div className="rounded-2xl border border-primary/20 bg-primary/[0.05] p-3">
+          <div className="mb-2 flex items-start gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/20 bg-[#0b1017] text-xs font-bold tracking-[0.18em] text-primary">
+              {TYPE_ICON[detection.type]}
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-white">{parsedTitle}</div>
+              <div className="text-xs font-semibold text-primary">{detection.label}</div>
+            </div>
           </div>
-        </div>
 
-        {(() => {
-          const el = detection.elements
-          const counts = [
-            { v: el.buttons, l: "botones" },
-            { v: el.inputs,  l: "campos" },
-            { v: el.cards,   l: "cards" },
-            { v: el.steps,   l: "pasos" },
-            { v: el.scripts, l: "scripts" },
-            { v: el.styles,  l: "estilos" },
-          ].filter((x) => x.v > 0)
-          return counts.length > 0 ? (
-            <div className="grid grid-cols-3 gap-1 mb-2">
-              {counts.map(({ v, l }) => (
-                <div key={l} className="rounded-lg bg-white/5 px-2 py-1 text-center">
-                  <div className="text-xs font-bold text-white">{v}</div>
-                  <div className="text-[10px] text-white/40">{l}</div>
+          {stats.length > 0 ? (
+            <div className="mb-2 grid grid-cols-3 gap-1.5">
+              {stats.map((stat) => (
+                <div key={stat.label} className="rounded-xl border border-white/8 bg-white/[0.03] px-2 py-2 text-center">
+                  <div className="text-xs font-bold text-white">{stat.value}</div>
+                  <div className="text-[10px] text-white/40">{stat.label}</div>
                 </div>
               ))}
             </div>
-          ) : null
-        })()}
+          ) : null}
 
-        <div className="flex flex-wrap gap-1">
-          {detection.elements.hasTimer && <span className="rounded-full bg-amber-500/15 border border-amber-500/20 px-2 py-0.5 text-[10px] text-amber-400">Temporizador</span>}
-          {detection.elements.hasScore && <span className="rounded-full bg-blue-500/15 border border-blue-500/20 px-2 py-0.5 text-[10px] text-blue-400">Resultados</span>}
-          {detection.elements.hasForms && <span className="rounded-full bg-green-500/15 border border-green-500/20 px-2 py-0.5 text-[10px] text-green-400">Formulario</span>}
-          {detection.elements.hasVideo && <span className="rounded-full bg-purple-500/15 border border-purple-500/20 px-2 py-0.5 text-[10px] text-purple-400">Video</span>}
+          <div className="flex flex-wrap gap-1.5">
+            {detection.elements.hasNavigation ? <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/55">Nav detectado</span> : null}
+            {detection.elements.hasFooter ? <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/55">Footer detectado</span> : null}
+            {detection.elements.hasForms ? <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300">Formulario</span> : null}
+            {detection.elements.hasTimer ? <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">Temporizador</span> : null}
+            {detection.elements.hasScore ? <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-300">Resultados</span> : null}
+            {detection.elements.hasVideo ? <span className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-300">Video</span> : null}
+          </div>
         </div>
-      </div>
 
-      {/* Mode selector */}
-      <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/30 mb-1.5">Motor de importacion</div>
-        <div className="space-y-1.5">
-          {MODES.map(({ val, lbl, badge, desc }) => (
-            <button key={val} onClick={() => setImportMode(val)}
-              className={cn("w-full text-left rounded-xl border p-2.5 transition-all",
-                importMode === val ? "border-primary bg-primary/10" : "border-white/8 hover:border-white/15")}>
-              <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                <span className={cn("text-sm font-semibold", importMode === val ? "text-primary" : "text-white")}>
-                  {lbl}
+        <div>
+          <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/30">Motor de importacion</div>
+          <div className="space-y-1.5">
+            {MODES.map(({ val, lbl, badge, desc }) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setImportMode(val)}
+                className={cn(
+                  "w-full rounded-xl border p-3 text-left transition-all",
+                  importMode === val ? "border-primary bg-primary/10" : "border-white/8 hover:border-white/15"
+                )}
+              >
+                <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                  <span className={cn("text-sm font-semibold", importMode === val ? "text-primary" : "text-white")}>{lbl}</span>
+                  {badge ? (
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                        val === detection.recommendation ? "bg-primary/20 text-primary" : "bg-white/8 text-white/35"
+                      )}
+                    >
+                      {badge}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="text-[11px] leading-4 text-white/40">{desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/30">Limpieza automatica</div>
+          <div className="mt-3 space-y-2">
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/8 bg-[#0b1017] px-3 py-3 text-sm text-white/70">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-white/20 bg-transparent accent-[var(--primary)]"
+                checked={stripNavigation}
+                onChange={(event) => setStripNavigation(event.target.checked)}
+              />
+              <span>
+                <span className="block font-semibold text-white">Usar la navegacion del sitio</span>
+                <span className="mt-1 block text-xs leading-5 text-white/45">
+                  Oculta el `nav/header` importado y deja visible el navbar principal de Hack Evans.
                 </span>
-                {badge && (
-                  <span className={cn(
-                    "rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
-                    val === detection.recommendation
-                      ? "bg-primary/20 text-primary"
-                      : "bg-white/8 text-white/30"
-                  )}>{badge}</span>
-                )}
-                {val === detection.recommendation && !badge && importMode !== val && (
-                  <span className="rounded-full bg-white/8 px-1.5 py-0.5 text-[9px] text-white/35 uppercase tracking-wide">
-                    sugerido
-                  </span>
-                )}
-              </div>
-              <div className="text-[11px] text-white/40 leading-4">{desc}</div>
-            </button>
-          ))}
+              </span>
+            </label>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/8 bg-[#0b1017] px-3 py-3 text-sm text-white/70">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-white/20 bg-transparent accent-[var(--primary)]"
+                checked={stripFooter}
+                onChange={(event) => setStripFooter(event.target.checked)}
+              />
+              <span>
+                <span className="block font-semibold text-white">Ocultar el footer del HTML</span>
+                <span className="mt-1 block text-xs leading-5 text-white/45">
+                  Evita duplicar el footer importado cuando la pagina ya usa el footer global del sitio.
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div className={cn("rounded-xl border p-2.5 text-[11px] leading-5", MODE_COLOR[importMode])}>
+          {MODE_INFO[importMode]}
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={reset}
+            className="h-10 flex-1 rounded-xl border border-white/10 text-sm text-white/55 transition-all hover:border-white/20 hover:text-white"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary text-sm font-semibold text-white transition-all hover:bg-primary/90"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Crear bloque
+          </button>
         </div>
       </div>
+    )
+  }
 
-      {/* Mode info */}
-      <div className={cn("rounded-xl border p-2.5 text-[11px] leading-5", MODE_COLOR[importMode])}>
-        {MODE_INFO[importMode]}
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-2">
-        <button onClick={() => setUiMode("idle")}
-          className="flex-1 h-9 rounded-xl border border-white/10 text-sm text-white/55 hover:text-white hover:border-white/20 transition-all">
-          Cancelar
-        </button>
-        <button onClick={handleConfirm}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 h-9 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-all">
-          <Plus className="w-3.5 h-3.5" />Crear bloque
-        </button>
-      </div>
-    </div>
-  )
-
-  // ---- Idle ----
   return (
     <div
       onDrop={handleDrop}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(event) => event.preventDefault()}
       onClick={() => fileRef.current?.click()}
-      className="rounded-2xl border-2 border-dashed border-white/10 hover:border-primary/40 transition-all p-5 text-center cursor-pointer group"
+      className="cursor-pointer rounded-2xl border-2 border-dashed border-white/10 p-5 text-center transition-all hover:border-primary/40"
     >
       <input
         ref={fileRef}
         type="file"
         accept=".html,text/html"
         className="hidden"
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) handleFile(file)
+        }}
       />
-      <div className="text-3xl mb-2 group-hover:scale-110 transition-transform select-none">&#128194;</div>
-      <div className="text-sm font-semibold text-white mb-1">HTML Smart Import</div>
-      <div className="text-[11px] text-white/35 leading-4">
-        Clic o arrastra un archivo .html<br />
-        Simuladores · Formularios · Landings · Widgets
+      <div className="mb-2 text-3xl select-none">{"</>"}</div>
+      <div className="mb-1 text-sm font-semibold text-white">HTML Smart Import</div>
+      <div className="text-[11px] leading-5 text-white/35">
+        Clic o arrastra un archivo `.html`
+        <br />
+        Lo adapto al look del sitio y luego puedes editarlo visualmente desde el admin.
       </div>
     </div>
   )

@@ -38,6 +38,53 @@ export interface CMSTextStyle {
   href?: string
 }
 
+export interface CMSHeroAppearance {
+  badgeColor?: string
+  titleColor?: string
+  descriptionColor?: string
+  primaryButtonBg?: string
+  primaryButtonText?: string
+  secondaryButtonText?: string
+  secondaryButtonBorder?: string
+  surfaceBg?: string
+  surfaceBorder?: string
+  sectionPaddingY?: number
+  sectionPaddingX?: number
+  titleSize?: number
+  titleWeight?: number
+  descriptionSize?: number
+}
+
+export type CMSHtmlImportMode = "sandbox" | "hybrid" | "adapted"
+
+export interface CMSCustomCodeThemeConfig {
+  accentColor?: string
+  textColor?: string
+  mutedColor?: string
+  surfaceColor?: string
+  borderColor?: string
+  backgroundColor?: string
+  navBackground?: string
+  navBorderColor?: string
+  radius?: number
+  fontFamily?: string
+}
+
+export interface CMSCustomCodeImportSettings {
+  mode?: CMSHtmlImportMode
+  stripNavigation?: boolean
+  stripFooter?: boolean
+}
+
+export interface CMSCustomCodeActionBinding {
+  id: string
+  eid: string
+  label: string
+  tag?: string
+  href?: string
+  action?: CMSActionConfig
+}
+
 export type CMSFormFieldType = "text" | "email" | "tel" | "number" | "textarea" | "select" | "checkbox"
 
 export interface CMSFormFieldConfig {
@@ -73,7 +120,7 @@ export type CMSSectionType =
   | "hero" | "benefits" | "testimonials" | "pricing" | "contact"
   | "cta" | "imageText" | "video" | "faq"
   | "textBanner" | "gallery" | "stats" | "customCode"
-  | "pageHero" | "featureCards"
+  | "pageHero" | "featureCards" | "richText" | "logoStrip" | "spacer" | "embed"
   | "simulatorsFeed" | "coursesFeed" | "evaluationsFeed"
   | "formBuilder"
 
@@ -127,6 +174,7 @@ export interface CMSHeroConfig {
   primaryAction?: CMSActionConfig
   secondaryAction?: CMSActionConfig
   textStyles?: Record<string, CMSTextStyle>
+  appearance?: CMSHeroAppearance
 }
 
 export interface CMSBenefitItem {
