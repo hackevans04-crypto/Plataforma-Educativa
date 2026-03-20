@@ -55,10 +55,11 @@ function copyParentStyles(targetDocument: Document, simulateViewport: boolean) {
     targetDocument.body.style.setProperty("height", "100%", "important")
     targetDocument.documentElement.style.setProperty("min-height", "100%", "important")
     targetDocument.body.style.setProperty("min-height", "100%", "important")
-    targetDocument.documentElement.style.setProperty("overflow-y", "auto", "important")
+    targetDocument.documentElement.style.setProperty("overflow-y", "hidden", "important")
     targetDocument.body.style.setProperty("overflow-y", "auto", "important")
     targetDocument.body.style.setProperty("overscroll-behavior-y", "contain", "important")
     targetDocument.body.style.setProperty("-webkit-overflow-scrolling", "touch", "important")
+    targetDocument.body.style.setProperty("position", "relative", "important")
   } else {
     // Prevent horizontal scrollbar inside the preview iframe.
     // Some embedded pages may still set overflow-x/width via their own styles.
@@ -87,7 +88,13 @@ function copyParentStyles(targetDocument: Document, simulateViewport: boolean) {
 
     html, body {
       height: ${simulateViewport ? "100%" : "auto"} !important;
+      overflow-y: ${simulateViewport ? "hidden" : "visible"} !important;
+    }
+
+    body {
       overflow-y: ${simulateViewport ? "auto" : "visible"} !important;
+      overscroll-behavior-y: ${simulateViewport ? "contain" : "auto"} !important;
+      -webkit-overflow-scrolling: ${simulateViewport ? "touch" : "auto"} !important;
     }
 
     /* Hide any horizontal scrollbar that might appear inside the iframe */

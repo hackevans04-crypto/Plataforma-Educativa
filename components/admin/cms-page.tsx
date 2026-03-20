@@ -2877,7 +2877,11 @@ function StudioViewport({
       const paddingX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
       const availableWidth = Math.max(workspace.clientWidth - paddingX, 320)
       if (mode === "mobile" && mobileShell) {
-        const nextViewportHeight = Math.max(320, Math.min(844, workspace.clientHeight - 136))
+        const workspaceRect = workspace.getBoundingClientRect()
+        const dockNode = document.querySelector("[data-he-mobile-dock='1']") as HTMLElement | null
+        const dockTop = dockNode ? dockNode.getBoundingClientRect().top : workspaceRect.bottom
+        const topInset = parseFloat(style.paddingTop) || 0
+        const nextViewportHeight = Math.max(320, Math.min(844, Math.floor(dockTop - workspaceRect.top - topInset - 12)))
         setMobileViewportHeight((current) => (current === nextViewportHeight ? current : nextViewportHeight))
       }
       const nextScale = Math.min(1, availableWidth / viewportWidth)
@@ -2948,7 +2952,7 @@ function StudioViewport({
             "radial-gradient(circle at 50% 0%, rgba(232,57,42,0.05) 0%, transparent 50%)",
           ].join(", "),
           backgroundSize: "24px 24px, 24px 24px, auto",
-          paddingBottom: isMobile && !previewMode ? `calc(env(safe-area-inset-bottom) + ${selectedId ? 152 : 132}px)` : undefined,
+          paddingBottom: isMobile && !previewMode ? `calc(env(safe-area-inset-bottom) + ${selectedId ? 180 : 148}px)` : undefined,
         }}
       >
         <div className={cn("flex min-h-full items-start justify-center", isMobile ? "px-2 py-3" : "px-4 py-6 sm:px-5 md:px-6 xl:px-10 2xl:px-14")}>
@@ -5537,6 +5541,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [shellWidth, setShellWidth] = useState(0)
+  const [mobileShellHeight, setMobileShellHeight] = useState<number | null>(null)
   const mountedRef = useRef(false)
   const reviewPanelStateRef = useRef<{ left: boolean; right: boolean } | null>(null)
   const mobileViewportAutoRef = useRef(false)
@@ -5721,11 +5726,22 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   useEffect(() => {
     if (typeof window === "undefined") return
 
-    const syncShellWidth = () => setShellWidth(window.innerWidth)
-    syncShellWidth()
-    window.addEventListener("resize", syncShellWidth)
+    const syncShellMetrics = () => {
+      setShellWidth(window.innerWidth)
+      const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || 0)
+      setMobileShellHeight(viewportHeight > 0 ? viewportHeight : null)
+    }
 
-    return () => window.removeEventListener("resize", syncShellWidth)
+    syncShellMetrics()
+    window.addEventListener("resize", syncShellMetrics)
+    window.visualViewport?.addEventListener("resize", syncShellMetrics)
+    window.visualViewport?.addEventListener("scroll", syncShellMetrics)
+
+    return () => {
+      window.removeEventListener("resize", syncShellMetrics)
+      window.visualViewport?.removeEventListener("resize", syncShellMetrics)
+      window.visualViewport?.removeEventListener("scroll", syncShellMetrics)
+    }
   }, [])
 
   useEffect(() => {
@@ -8805,7 +8821,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           ]
 
       return (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+10px)]">
+        <div data-he-mobile-dock="1" className="pointer-events-none absolute inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+10px)]">
           {selectedSection ? (
             <div className="pointer-events-auto mb-2 inline-flex max-w-full items-center gap-2 rounded-full border border-primary/15 bg-[#08111b]/94 px-3 py-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl">
               <span className="rounded-full bg-primary/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
@@ -9261,7 +9277,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   return (
       <div
-        className="relative flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-[#07111f] pt-[env(safe-area-inset-top)] text-white"
+        className="relative flex h-[100dvh] min-h-[100svh] w-full flex-col overflow-hidden bg-[#07111f] pt-[env(safe-area-inset-top)] text-white"
+        style={mobileShellHeight ? { height: `${mobileShellHeight}px`, minHeight: `${mobileShellHeight}px` } : undefined}
         onTouchStart={handleMobileRootTouchStart}
         onTouchEnd={handleMobileRootTouchEnd}
       >

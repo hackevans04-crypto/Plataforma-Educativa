@@ -134,6 +134,7 @@ export function buildEditorRuntime(): string {
   var resizeState = null;
   var snapshotTimer = null;
   var suppressSelectionClick = false;
+  var activeTouchId = null;
   var eidCounter = 1;
 
   function markRuntime(node, attr) {
@@ -242,6 +243,52 @@ export function buildEditorRuntime(): string {
     try {
       window.parent.postMessage(payload, "*");
     } catch (_err) {}
+  }
+
+  function getPrimaryTouch(event) {
+    if (!event) return null;
+    var list = null;
+    if (event.changedTouches && event.changedTouches.length) {
+      list = event.changedTouches;
+    } else if (event.touches && event.touches.length) {
+      list = event.touches;
+    }
+    if (!list || !list.length) return null;
+    if (activeTouchId != null) {
+      for (var index = 0; index < list.length; index += 1) {
+        if (list[index] && list[index].identifier === activeTouchId) {
+          return list[index];
+        }
+      }
+    }
+    return list[0];
+  }
+
+  function getEventClientPoint(event) {
+    var touch = getPrimaryTouch(event);
+    if (touch) {
+      return { x: touch.clientX, y: touch.clientY, id: touch.identifier };
+    }
+    if (typeof event.clientX === "number" && typeof event.clientY === "number") {
+      return { x: event.clientX, y: event.clientY, id: null };
+    }
+    return null;
+  }
+
+  function beginInteractionLock(cursor, touchIdentifier) {
+    if (touchIdentifier != null) {
+      activeTouchId = touchIdentifier;
+    }
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = cursor || "grabbing";
+    document.body.style.touchAction = "none";
+  }
+
+  function endInteractionLock() {
+    activeTouchId = null;
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    document.body.style.touchAction = "";
   }
 
   function place(overlay, el) {
@@ -1084,7 +1131,7 @@ export function buildEditorRuntime(): string {
     }
   }
 
-  function beginSingleFreeMove(el, clientX, clientY) {
+  function beginSingleFreeMove(el, clientX, clientY, touchIdentifier) {
     if (!el || !el.isConnected || !canUseFreeMove(el)) return false;
     ensureFreeMoveStyles(el);
     primeFreeMoveLayout(el);
@@ -1104,14 +1151,14 @@ export function buildEditorRuntime(): string {
       pointerOffsetY: clientY - rect.top,
       root: root
     };
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "grabbing";
+    beginInteractionLock("grabbing", touchIdentifier);
     return true;
   }
 
   function detachDirectFreeMoveHandle() {
     if (freeMoveDirectHandleEl && freeMoveDirectHandle) {
       freeMoveDirectHandleEl.removeEventListener("mousedown", freeMoveDirectHandle, true);
+      freeMoveDirectHandleEl.removeEventListener("touchstart", freeMoveDirectHandle, true);
     }
     freeMoveDirectHandleEl = null;
     freeMoveDirectHandle = null;
@@ -1122,16 +1169,19 @@ export function buildEditorRuntime(): string {
     if (!el || !canUseFreeMove(el)) return;
     freeMoveDirectHandleEl = el;
     freeMoveDirectHandle = function (event) {
-      if (event.button !== 0) return;
+      if (typeof event.button === "number" && event.button !== 0) return;
       if (editingEl || resizeState || freeMoveState) return;
       if (isRuntimeUiTarget(event.target)) return;
       if (!selectedEl || selectedEl !== el || freeMoveEl !== el || freeMoveIsGroup) return;
+      var point = getEventClientPoint(event);
+      if (!point) return;
       event.preventDefault();
       event.stopPropagation();
       suppressSelectionClick = true;
-      beginSingleFreeMove(el, event.clientX, event.clientY);
+      beginSingleFreeMove(el, point.x, point.y, point.id);
     };
     el.addEventListener("mousedown", freeMoveDirectHandle, true);
+    el.addEventListener("touchstart", freeMoveDirectHandle, { passive: false, capture: true });
   }
 
   function primeFreeMoveLayout(el) {
@@ -1163,6 +1213,63 @@ export function buildEditorRuntime(): string {
         resizeHandle.getBoundingClientRect();
       }
     } catch (_err) {}
+  }
+
+  function startGroupMove(clientX, clientY, touchIdentifier) {
+    if (!hasGroupedSelection() || !freeMoveEl || !freeMoveIsGroup) return false;
+    var selection = getUniqueEditableElements(multiSelectedEls);
+    if (!selection.length || !selection.every(function (node) { return canUseFreeMove(node); })) return false;
+    var items = selection.map(function (node) {
+      ensureFreeMoveStyles(node);
+      var currentOffset = getStoredMoveOffset(node);
+      var root = getFreeMoveRoot(node);
+      var anchorPosition = getElementAnchorWithinRoot(node, root, currentOffset);
+      var rect = node.getBoundingClientRect();
+      var bounds = getFreeMoveBounds(node);
+      return {
+        el: node,
+        startLeft: currentOffset.x,
+        startTop: currentOffset.y,
+        anchorLeft: anchorPosition.left,
+        anchorTop: anchorPosition.top,
+        width: Math.max(18, rect.width || getLengthValue(node, "width")),
+        height: Math.max(18, rect.height || getLengthValue(node, "height")),
+        bounds: bounds,
+        root: root
+      };
+    });
+    freeMoveState = {
+      isGroup: true,
+      startX: clientX,
+      startY: clientY,
+      items: items
+    };
+    beginInteractionLock("grabbing", touchIdentifier);
+    return true;
+  }
+
+  function startSelectedResize(clientX, clientY, touchIdentifier) {
+    if (!selectedEl || !selectedEl.isConnected || !canResizeFreely(selectedEl)) return false;
+    ensureFreeMoveStyles(selectedEl);
+    var rect = selectedEl.getBoundingClientRect();
+    var startOffset = getStoredMoveOffset(selectedEl);
+    var anchorPosition = getElementAnchorWithinRoot(selectedEl, getFreeMoveRoot(selectedEl), startOffset);
+    resizeState = {
+      el: selectedEl,
+      startX: clientX,
+      startY: clientY,
+      startWidth: rect.width,
+      startHeight: rect.height,
+      startLeft: startOffset.x,
+      startTop: startOffset.y,
+      anchorLeft: anchorPosition.left,
+      anchorTop: anchorPosition.top,
+      startFontSize: getNumericComputed(selectedEl, "fontSize", rect.height || rect.width || 18),
+      keepRatio: isImageLikeEl(selectedEl),
+      ratio: rect.height > 0 ? rect.width / rect.height : 1,
+    };
+    beginInteractionLock("nwse-resize", touchIdentifier);
+    return true;
   }
 
   function setMovePointerPassthrough(el, enabled) {
@@ -2402,79 +2509,60 @@ export function buildEditorRuntime(): string {
   }, true);
 
   groupBox.addEventListener("mousedown", function (event) {
-    if (!hasGroupedSelection() || !freeMoveEl || !freeMoveIsGroup) return;
     event.preventDefault();
     event.stopPropagation();
-    var selection = getUniqueEditableElements(multiSelectedEls);
-    if (!selection.length || !selection.every(function (node) { return canUseFreeMove(node); })) return;
-    var items = selection.map(function (node) {
-      ensureFreeMoveStyles(node);
-      var currentOffset = getStoredMoveOffset(node);
-      var root = getFreeMoveRoot(node);
-      var anchorPosition = getElementAnchorWithinRoot(node, root, currentOffset);
-      var rect = node.getBoundingClientRect();
-      var bounds = getFreeMoveBounds(node);
-      return {
-        el: node,
-        startLeft: currentOffset.x,
-        startTop: currentOffset.y,
-        anchorLeft: anchorPosition.left,
-        anchorTop: anchorPosition.top,
-        width: Math.max(18, rect.width || getLengthValue(node, "width")),
-        height: Math.max(18, rect.height || getLengthValue(node, "height")),
-        bounds: bounds,
-        root: root
-      };
-    });
-    freeMoveState = {
-      isGroup: true,
-      startX: event.clientX,
-      startY: event.clientY,
-      items: items
-    };
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "grabbing";
+    startGroupMove(event.clientX, event.clientY, null);
   }, true);
+  groupBox.addEventListener("touchstart", function (event) {
+    var point = getEventClientPoint(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    startGroupMove(point.x, point.y, point.id);
+  }, { passive: false, capture: true });
 
   selBox.addEventListener("mousedown", function (event) {
     if (!selectedEl || freeMoveEl !== selectedEl || !canUseFreeMove(selectedEl)) return;
     event.preventDefault();
     event.stopPropagation();
-    beginSingleFreeMove(selectedEl, event.clientX, event.clientY);
+    beginSingleFreeMove(selectedEl, event.clientX, event.clientY, null);
   }, true);
+  selBox.addEventListener("touchstart", function (event) {
+    if (!selectedEl || freeMoveEl !== selectedEl || !canUseFreeMove(selectedEl)) return;
+    var point = getEventClientPoint(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
+  }, { passive: false, capture: true });
 
   moveHitBox.addEventListener("mousedown", function (event) {
     if (!selectedEl || freeMoveEl !== selectedEl || !canUseFreeMove(selectedEl)) return;
     event.preventDefault();
     event.stopPropagation();
-    beginSingleFreeMove(selectedEl, event.clientX, event.clientY);
+    beginSingleFreeMove(selectedEl, event.clientX, event.clientY, null);
   }, true);
-
-  resizeHandle.addEventListener("mousedown", function (event) {
-    if (!selectedEl || !selectedEl.isConnected || !canResizeFreely(selectedEl)) return;
+  moveHitBox.addEventListener("touchstart", function (event) {
+    if (!selectedEl || freeMoveEl !== selectedEl || !canUseFreeMove(selectedEl)) return;
+    var point = getEventClientPoint(event);
+    if (!point) return;
     event.preventDefault();
     event.stopPropagation();
-    ensureFreeMoveStyles(selectedEl);
-    var rect = selectedEl.getBoundingClientRect();
-    var startOffset = getStoredMoveOffset(selectedEl);
-    var anchorPosition = getElementAnchorWithinRoot(selectedEl, getFreeMoveRoot(selectedEl), startOffset);
-    resizeState = {
-      el: selectedEl,
-      startX: event.clientX,
-      startY: event.clientY,
-      startWidth: rect.width,
-      startHeight: rect.height,
-      startLeft: startOffset.x,
-      startTop: startOffset.y,
-      anchorLeft: anchorPosition.left,
-      anchorTop: anchorPosition.top,
-      startFontSize: getNumericComputed(selectedEl, "fontSize", rect.height || rect.width || 18),
-      keepRatio: isImageLikeEl(selectedEl),
-      ratio: rect.height > 0 ? rect.width / rect.height : 1,
-    };
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "nwse-resize";
+    beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
+  }, { passive: false, capture: true });
+
+  resizeHandle.addEventListener("mousedown", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    startSelectedResize(event.clientX, event.clientY, null);
   }, true);
+  resizeHandle.addEventListener("touchstart", function (event) {
+    var point = getEventClientPoint(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    startSelectedResize(point.x, point.y, point.id);
+  }, { passive: false, capture: true });
 
   selToolbar.addEventListener("click", function (event) {
     var button = event.target && event.target.closest ? event.target.closest("button[data-tool]") : null;
@@ -2543,7 +2631,7 @@ export function buildEditorRuntime(): string {
         event.preventDefault();
         event.stopPropagation();
         suppressSelectionClick = true;
-        beginSingleFreeMove(selectedEl, event.clientX, event.clientY);
+        beginSingleFreeMove(selectedEl, event.clientX, event.clientY, null);
         return;
       }
     }
@@ -2572,6 +2660,56 @@ export function buildEditorRuntime(): string {
     selectElement(el);
   }, true);
 
+  document.addEventListener("touchstart", function (event) {
+    var point = getEventClientPoint(event);
+    if (!point) return;
+    if (editingEl || resizeState || freeMoveState) return;
+    if (isRuntimeUiTarget(event.target)) return;
+    var el = getSelectionTargetFromPoint(point.x, point.y, event.target);
+    if (!canEdit(el)) return;
+    if (!multiSelectMode && freeMoveEl && !freeMoveIsGroup && selectedEl && canUseFreeMove(selectedEl)) {
+      var dragTarget = event.target instanceof Element ? event.target : null;
+      var dragOwner = dragTarget ? getEditableOwner(dragTarget) : null;
+      var selectedRect = selectedEl.getBoundingClientRect ? selectedEl.getBoundingClientRect() : null;
+      var pointerInsideSelected = isPointInsideRect(point.x, point.y, selectedRect);
+      var isSelectedTarget =
+        el === selectedEl ||
+        dragOwner === selectedEl ||
+        !!(dragTarget && (dragTarget === selectedEl || selectedEl.contains(dragTarget))) ||
+        pointerInsideSelected;
+      if (isSelectedTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressSelectionClick = true;
+        beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
+        return;
+      }
+    }
+    var shouldCapture =
+      isNativeInteractiveTarget(event.target) ||
+      isNativeInteractiveTarget(el) ||
+      isFieldEl(el) ||
+      isActionableEl(el) ||
+      looksLikeButtonContainerEl(el) ||
+      isTextEl(el) ||
+      looksLikeTextContainerEl(el) ||
+      isIconCandidate(el) ||
+      isImageEl(el);
+    if (shouldCapture) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (multiSelectMode) {
+      toggleMultiSelection(el);
+      suppressSelectionClick = true;
+      refreshSelectionUi();
+      emitToParent({ __editor_select: true, info: selectedEl ? getInfo(selectedEl) : null });
+      return;
+    }
+    suppressSelectionClick = true;
+    selectElement(el);
+  }, { passive: false, capture: true });
+
   document.addEventListener("focusin", function (event) {
     if (editingEl) return;
     if (isRuntimeUiTarget(event.target)) return;
@@ -2586,8 +2724,9 @@ export function buildEditorRuntime(): string {
     }, 0);
   }, true);
 
-  document.addEventListener("mousemove", function (event) {
+  function handleCanvasPointerMove(clientX, clientY, target, buttonsMask, allowAutoStart, touchIdentifier) {
     if (
+      allowAutoStart &&
       !freeMoveState &&
       !resizeState &&
       !editingEl &&
@@ -2597,18 +2736,18 @@ export function buildEditorRuntime(): string {
       selectedEl &&
       freeMoveEl === selectedEl &&
       canUseFreeMove(selectedEl) &&
-      (event.buttons & 1) === 1
+      buttonsMask === 1
     ) {
-      var moveTarget = event.target instanceof Element ? event.target : null;
+      var moveTarget = target instanceof Element ? target : null;
       var moveOwner = moveTarget ? getEditableOwner(moveTarget) : null;
       var moveRect = selectedEl.getBoundingClientRect ? selectedEl.getBoundingClientRect() : null;
-      var pointerInsideMoveSelection = isPointInsideRect(event.clientX, event.clientY, moveRect);
+      var pointerInsideMoveSelection = isPointInsideRect(clientX, clientY, moveRect);
       var moveSelectionMatch =
         moveOwner === selectedEl ||
         !!(moveTarget && (moveTarget === selectedEl || selectedEl.contains(moveTarget))) ||
         pointerInsideMoveSelection;
       if (moveSelectionMatch) {
-        beginSingleFreeMove(selectedEl, event.clientX, event.clientY);
+        beginSingleFreeMove(selectedEl, clientX, clientY, touchIdentifier);
       }
     }
     if (
@@ -2619,22 +2758,21 @@ export function buildEditorRuntime(): string {
       freeMoveEl === selectedEl &&
       getNodeType(selectedEl) === "icon"
     ) {
-      var hoverTarget = event.target instanceof Element ? event.target : null;
+      var hoverTarget = target instanceof Element ? target : null;
       var hoverInsideSelected =
         !!(hoverTarget && (hoverTarget === selectedEl || selectedEl.contains(hoverTarget))) ||
-        isPointInsideRect(event.clientX, event.clientY, selectedEl.getBoundingClientRect());
+        isPointInsideRect(clientX, clientY, selectedEl.getBoundingClientRect());
       if (hoverInsideSelected) {
         primeFreeMoveLayout(selectedEl);
       }
     }
-    if (isRuntimeUiTarget(event.target)) {
+    if (isRuntimeUiTarget(target)) {
       hoverBox.style.display = "none";
-      return;
+      return false;
     }
     if (resizeState && resizeState.el && resizeState.el.isConnected) {
-      event.preventDefault();
-      var deltaX = event.clientX - resizeState.startX;
-      var deltaY = event.clientY - resizeState.startY;
+      var deltaX = clientX - resizeState.startX;
+      var deltaY = clientY - resizeState.startY;
       var nextWidth = Math.max(18, resizeState.startWidth + deltaX);
       var nextHeight = Math.max(18, resizeState.startHeight + deltaY);
       var resizeBounds = getFreeMoveBounds(resizeState.el);
@@ -2680,13 +2818,12 @@ export function buildEditorRuntime(): string {
       placeResizeHandle(resizeState.el);
       updateMoveFeedback(getFreeMoveRoot(resizeState.el), currentLeft, currentTop, nextWidth, nextHeight, null, null);
       syncMoveUi();
-      return;
+      return true;
     }
 
     if (freeMoveState && freeMoveState.isGroup && freeMoveState.items && freeMoveState.items.length) {
-      event.preventDefault();
-      var deltaX = event.clientX - freeMoveState.startX;
-      var deltaY = event.clientY - freeMoveState.startY;
+      var deltaX = clientX - freeMoveState.startX;
+      var deltaY = clientY - freeMoveState.startY;
       var minDeltaX = -Infinity;
       var maxDeltaX = Infinity;
       var minDeltaY = -Infinity;
@@ -2722,11 +2859,10 @@ export function buildEditorRuntime(): string {
         updateMoveFeedback(groupRoot, groupLeft, groupTop, groupedBounds.width, groupedBounds.height, null, null);
       }
       syncMoveUi();
-      return;
+      return true;
     }
 
     if (freeMoveState && freeMoveState.el && freeMoveState.el.isConnected) {
-      event.preventDefault();
       var moveBounds = getFreeMoveBounds(freeMoveState.el);
       var moveRoot = freeMoveState.root || moveBounds.parent;
       var rootRect = moveRoot.getBoundingClientRect();
@@ -2734,8 +2870,8 @@ export function buildEditorRuntime(): string {
       var rootScrollTop = moveRoot.scrollTop || 0;
       var moveWidth = Math.max(18, freeMoveState.el.getBoundingClientRect().width || getLengthValue(freeMoveState.el, "width"));
       var moveHeight = Math.max(18, freeMoveState.el.getBoundingClientRect().height || getLengthValue(freeMoveState.el, "height"));
-      var pointerLeftInRoot = event.clientX - rootRect.left + rootScrollLeft - freeMoveState.pointerOffsetX;
-      var pointerTopInRoot = event.clientY - rootRect.top + rootScrollTop - freeMoveState.pointerOffsetY;
+      var pointerLeftInRoot = clientX - rootRect.left + rootScrollLeft - freeMoveState.pointerOffsetX;
+      var pointerTopInRoot = clientY - rootRect.top + rootScrollTop - freeMoveState.pointerOffsetY;
       var nextLeft = pointerLeftInRoot - freeMoveState.anchorLeft;
       var nextTop = pointerTopInRoot - freeMoveState.anchorTop;
       var desiredLeft = freeMoveState.anchorLeft + nextLeft;
@@ -2772,57 +2908,90 @@ export function buildEditorRuntime(): string {
       placeResizeHandle(freeMoveState.el);
       updateMoveFeedback(moveRoot, actualLeft, actualTop, moveWidth, moveHeight, guideX, guideY);
       syncMoveUi();
-      return;
+      return true;
     }
     if (editingEl) return;
-    var el = getSelectionTargetFromPoint(event.clientX, event.clientY, event.target);
+    var el = getSelectionTargetFromPoint(clientX, clientY, target);
     if (!canEdit(el) || el === selectedEl) {
       hoverBox.style.display = "none";
-      return;
+      return false;
     }
     place(hoverBox, el);
     hoverTag.textContent = el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (el.dataset.eid ? " [" + el.dataset.eid + "]" : "");
+    return false;
+  }
+
+  document.addEventListener("mousemove", function (event) {
+    handleCanvasPointerMove(event.clientX, event.clientY, event.target, (event.buttons & 1) === 1 ? 1 : 0, true, null);
   });
+
+  document.addEventListener("touchmove", function (event) {
+    var point = getEventClientPoint(event);
+    if (!point) return;
+    var handled = handleCanvasPointerMove(point.x, point.y, event.target, 1, false, point.id);
+    if (handled) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, { passive: false, capture: true });
 
   document.addEventListener("mouseleave", function () {
     hoverBox.style.display = "none";
   });
 
-  document.addEventListener("mouseup", function () {
+  function finishCanvasPointerInteraction() {
     if (resizeState && resizeState.el) {
       var resizedEl = resizeState.el;
       resizeState = null;
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
+      endInteractionLock();
       hideMoveFeedback();
       recalculateRootMoveCapacity(getFreeMoveRoot(resizedEl));
       queueSnapshot();
       selectElement(resizedEl);
-      return;
+      return true;
     }
     if (freeMoveState && freeMoveState.isGroup && freeMoveState.items && freeMoveState.items.length) {
       var movedItems = freeMoveState.items.slice();
       freeMoveState = null;
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
+      endInteractionLock();
       hideMoveFeedback();
       movedItems.forEach(function (item) {
         recalculateRootMoveCapacity(getFreeMoveRoot(item.el));
       });
       queueSnapshot();
       refreshSelectionUi();
-      return;
+      return true;
     }
-    if (!freeMoveState || !freeMoveState.el) return;
+    if (!freeMoveState || !freeMoveState.el) return false;
     var movedEl = freeMoveState.el;
     freeMoveState = null;
-    document.body.style.userSelect = "";
-    document.body.style.cursor = "";
+    endInteractionLock();
     hideMoveFeedback();
     recalculateRootMoveCapacity(getFreeMoveRoot(movedEl));
     queueSnapshot();
     selectElement(movedEl);
+    return true;
+  }
+
+  document.addEventListener("mouseup", function () {
+    finishCanvasPointerInteraction();
   }, true);
+
+  document.addEventListener("touchend", function (event) {
+    if (resizeState || freeMoveState) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    finishCanvasPointerInteraction();
+  }, { passive: false, capture: true });
+
+  document.addEventListener("touchcancel", function (event) {
+    if (resizeState || freeMoveState) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    finishCanvasPointerInteraction();
+  }, { passive: false, capture: true });
 
   document.addEventListener("click", function (event) {
     if (editingEl) return;
@@ -2894,15 +3063,13 @@ export function buildEditorRuntime(): string {
     }
     if (event.key === "Escape" && freeMoveEl) {
       freeMoveState = null;
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
+      endInteractionLock();
       hideMoveFeedback();
       setFreeMove(null);
     }
     if (event.key === "Escape" && resizeState) {
       resizeState = null;
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
+      endInteractionLock();
       hideMoveFeedback();
     }
   }, true);
