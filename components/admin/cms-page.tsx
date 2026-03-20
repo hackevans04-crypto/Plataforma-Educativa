@@ -6990,7 +6990,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }, [dropTargetId, reorderSectionByDrop])
 
   const handleMobileRootTouchStart = (event: TouchEvent<HTMLDivElement>) => {
-    if (!mobileStudioLayout || !focusEditingMode || focusLeftOpen || focusRightOpen || mobileControlsOpen || showAdd) {
+    const htmlCanvasFocused =
+      selectedSection?.type === "customCode" && (Boolean(htmlEl) || htmlEditing || htmlInteractionLocked)
+
+    if (!mobileStudioLayout || !focusEditingMode || focusLeftOpen || focusRightOpen || mobileControlsOpen || showAdd || htmlCanvasFocused) {
       mobileEdgeGestureRef.current = { x: 0, y: 0, zone: null }
       return
     }
@@ -7007,7 +7010,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     const { x, y, zone } = mobileEdgeGestureRef.current
     mobileEdgeGestureRef.current = { x: 0, y: 0, zone: null }
 
-    if (!zone || !mobileStudioLayout || !focusEditingMode || focusLeftOpen || focusRightOpen || mobileControlsOpen || showAdd) return
+    const htmlCanvasFocused =
+      selectedSection?.type === "customCode" && (Boolean(htmlEl) || htmlEditing || htmlInteractionLocked)
+
+    if (!zone || !mobileStudioLayout || !focusEditingMode || focusLeftOpen || focusRightOpen || mobileControlsOpen || showAdd || htmlCanvasFocused) return
 
     const touch = event.changedTouches[0]
     const deltaX = touch.clientX - x

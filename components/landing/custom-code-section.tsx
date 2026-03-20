@@ -192,6 +192,61 @@ export default function CustomCodeSection({
       setHeight(Math.max(160, nextHeight))
     }
   }, [isIframeDocumentReady])
+  const scrollStudioCanvasBy = React.useCallback((deltaX: number, deltaY: number) => {
+    const scrollElement = (element: Element | null | undefined, dx: number, dy: number) => {
+      if (!element || !(element instanceof HTMLElement)) return false
+      const canScroll =
+        element.scrollHeight > element.clientHeight + 2 ||
+        element.scrollWidth > element.clientWidth + 2
+      if (!canScroll) return false
+      const startLeft = element.scrollLeft
+      const startTop = element.scrollTop
+      element.scrollLeft += dx
+      element.scrollTop += dy
+      return element.scrollLeft !== startLeft || element.scrollTop !== startTop
+    }
+
+    const scrollDocument = (doc: Document | null | undefined, dx: number, dy: number) => {
+      if (!doc) return false
+      const scrollingElement = doc.scrollingElement || doc.documentElement || doc.body
+      return scrollElement(scrollingElement, dx, dy)
+    }
+
+    const iframe = iframeRef.current
+    if (iframe) {
+      let current = iframe.parentElement
+      let depth = 0
+      while (current && depth < 8) {
+        if (scrollElement(current, deltaX, deltaY)) return
+        current = current.parentElement
+        depth += 1
+      }
+    }
+
+    if (scrollDocument(document, deltaX, deltaY)) return
+    if (!iframe) return
+
+    try {
+      const parentDoc = window.parent?.document
+      if (scrollDocument(parentDoc, deltaX, deltaY)) return
+      const parentScrollRoot = parentDoc?.querySelector?.("[data-he-studio-scroll-root='1']") as HTMLElement | null
+      if (parentScrollRoot) {
+        if (typeof parentScrollRoot.scrollBy === "function") {
+          parentScrollRoot.scrollBy({
+            top: deltaY,
+            left: deltaX,
+            behavior: "auto",
+          })
+        } else {
+          parentScrollRoot.scrollTop += deltaY
+          parentScrollRoot.scrollLeft += deltaX
+        }
+        return
+      }
+    } catch {
+      // fall back to the local preview only
+    }
+  }, [iframeRef])
 
   const handleEditorBridgeMessage = React.useCallback((data: any) => {
     if (!data || typeof data !== "object") return
@@ -230,10 +285,18 @@ export default function CustomCodeSection({
       onInteractionLockChange?.(nextLocked)
     }
 
+    if (data.__editor_autoscroll) {
+      const deltaX = Number(data.deltaX || 0)
+      const deltaY = Number(data.deltaY || 0)
+      if (deltaX || deltaY) {
+        scrollStudioCanvasBy(deltaX, deltaY)
+      }
+    }
+
     if (data.__editor_open_inspector) {
       onOpenInspector?.()
     }
-  }, [iframeRef, onEditorSnapshot, onEditingChange, onElementSelect, onOpenInspector, syncHeightFromDocument])
+  }, [iframeRef, onEditorSnapshot, onEditingChange, onElementSelect, onOpenInspector, scrollStudioCanvasBy, syncHeightFromDocument])
   const injectEditorRuntime = React.useCallback((doc: Document) => {
     if (!editMode || !doc.documentElement || !doc.head || !doc.body) return
 
@@ -368,29 +431,9 @@ export default function CustomCodeSection({
           const wheelEvent = event as WheelEvent
           if (!wheelEvent.deltaX && !wheelEvent.deltaY) return
 
-          const iframe = iframeRef.current
-          if (!iframe) return
-
-          const scrollRoot =
-            (iframe.closest?.("[data-he-studio-scroll-root='1']") as HTMLElement | null) ??
-            (iframe.parentElement?.closest?.("[data-he-studio-scroll-root='1']") as HTMLElement | null) ??
-            (document.querySelector("[data-he-studio-scroll-root='1']") as HTMLElement | null)
-
-          if (!scrollRoot) return
-
           wheelEvent.preventDefault()
           wheelEvent.stopPropagation()
-
-          if (typeof scrollRoot.scrollBy === "function") {
-            scrollRoot.scrollBy({
-              top: wheelEvent.deltaY,
-              left: wheelEvent.deltaX,
-              behavior: "auto",
-            })
-          } else {
-            scrollRoot.scrollTop += wheelEvent.deltaY
-            scrollRoot.scrollLeft += wheelEvent.deltaX
-          }
+          scrollStudioCanvasBy(wheelEvent.deltaX, wheelEvent.deltaY)
         } catch {
           // keep Studio usable even if the iframe wheel bridge fails
         }
@@ -401,7 +444,7 @@ export default function CustomCodeSection({
     } catch {
       // ignore bridge setup errors; scrolling should not crash the editor
     }
-  }, [editMode, iframeRef])
+  }, [editMode, scrollStudioCanvasBy])
 
   const wireHtmlActions = React.useCallback((doc: Document) => {
     if (!doc.documentElement || !doc.body) return
