@@ -20,9 +20,11 @@ interface StudioPreviewFrameProps {
   children: React.ReactNode
   title?: string
   className?: string
+  viewportHeight?: number | null
+  editorMode?: "edit" | "preview" | "review"
 }
 
-function copyParentStyles(targetDocument: Document) {
+function copyParentStyles(targetDocument: Document, simulateViewport: boolean) {
   const styleMountId = "he-studio-preview-styles"
   const parentDocument = window.document
   let styleMount = targetDocument.getElementById(styleMountId)
@@ -41,19 +43,30 @@ function copyParentStyles(targetDocument: Document) {
   targetDocument.body.style.margin = "0"
   targetDocument.body.style.background = "transparent"
 
-  // Prevent horizontal scrollbar inside the preview iframe.
-  // Some embedded pages may still set overflow-x/width via their own styles.
-  // Using !important ensures our editor frame stays constrained.
   targetDocument.body.style.setProperty("overflow-x", "hidden", "important")
-  targetDocument.body.style.setProperty("overflow-y", "visible", "important")
-  targetDocument.body.style.setProperty("min-height", "100%", "important")
-
   targetDocument.documentElement.style.setProperty("overflow-x", "hidden", "important")
-  targetDocument.documentElement.style.setProperty("overflow-y", "visible", "important")
   targetDocument.documentElement.style.setProperty("width", "100%", "important")
-
   targetDocument.body.style.setProperty("width", "100%", "important")
   targetDocument.body.style.setProperty("box-sizing", "border-box", "important")
+  targetDocument.documentElement.style.setProperty("box-sizing", "border-box", "important")
+
+  if (simulateViewport) {
+    targetDocument.documentElement.style.setProperty("height", "100%", "important")
+    targetDocument.body.style.setProperty("height", "100%", "important")
+    targetDocument.documentElement.style.setProperty("min-height", "100%", "important")
+    targetDocument.body.style.setProperty("min-height", "100%", "important")
+    targetDocument.documentElement.style.setProperty("overflow-y", "auto", "important")
+    targetDocument.body.style.setProperty("overflow-y", "auto", "important")
+    targetDocument.body.style.setProperty("overscroll-behavior-y", "contain", "important")
+    targetDocument.body.style.setProperty("-webkit-overflow-scrolling", "touch", "important")
+  } else {
+    // Prevent horizontal scrollbar inside the preview iframe.
+    // Some embedded pages may still set overflow-x/width via their own styles.
+    // Using !important ensures our editor frame stays constrained.
+    targetDocument.body.style.setProperty("overflow-y", "visible", "important")
+    targetDocument.body.style.setProperty("min-height", "0", "important")
+    targetDocument.documentElement.style.setProperty("overflow-y", "visible", "important")
+  }
 
   // Ensure preview root and all descendants cannot trigger horizontal scroll.
   const previewOverrideStyleId = "he-studio-preview-overrides"
@@ -69,6 +82,12 @@ function copyParentStyles(targetDocument: Document) {
       width: 100% !important;
       overflow-x: hidden !important;
       box-sizing: border-box !important;
+      min-height: ${simulateViewport ? "100%" : "0"} !important;
+    }
+
+    html, body {
+      height: ${simulateViewport ? "100%" : "auto"} !important;
+      overflow-y: ${simulateViewport ? "auto" : "visible"} !important;
     }
 
     /* Hide any horizontal scrollbar that might appear inside the iframe */
@@ -85,28 +104,40 @@ function copyParentStyles(targetDocument: Document) {
 }
 
 function getDocumentHeight(doc: Document) {
+  const previewRoot = doc.getElementById("he-studio-preview-root")
+  const rootRect = previewRoot ? Math.ceil(previewRoot.getBoundingClientRect().height || 0) : 0
+  const rootScrollHeight = previewRoot?.scrollHeight || 0
+  const bodyRect = Math.ceil(doc.body?.getBoundingClientRect().height || 0)
+  const bodyScrollHeight = doc.body?.scrollHeight || 0
+
   return Math.max(
-    doc.documentElement.scrollHeight || 0,
-    doc.body.scrollHeight || 0,
-    doc.documentElement.offsetHeight || 0,
-    doc.body.offsetHeight || 0,
-    Math.ceil(doc.documentElement.getBoundingClientRect().height || 0),
-    Math.ceil(doc.body.getBoundingClientRect().height || 0),
+    rootRect,
+    rootScrollHeight,
+    bodyRect,
+    bodyScrollHeight,
+    doc.body?.offsetHeight || 0,
     320
   )
 }
 
-export default function StudioPreviewFrame({ children, title = "Vista previa responsive", className }: StudioPreviewFrameProps) {
+export default function StudioPreviewFrame({
+  children,
+  title = "Vista previa responsive",
+  className,
+  viewportHeight = null,
+  editorMode = "preview",
+}: StudioPreviewFrameProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null)
   const [mountNode, setMountNode] = React.useState<HTMLElement | null>(null)
   const [frameHeight, setFrameHeight] = React.useState(640)
+  const simulateViewport = Boolean(viewportHeight && viewportHeight > 0)
 
   const syncFrameDocument = React.useCallback(() => {
     const iframe = iframeRef.current
     const doc = iframe?.contentDocument
     if (!doc?.head || !doc.body) return
 
-    copyParentStyles(doc)
+    copyParentStyles(doc, simulateViewport)
 
     let root = doc.getElementById("he-studio-preview-root")
     if (!root) {
@@ -116,13 +147,16 @@ export default function StudioPreviewFrame({ children, title = "Vista previa res
     }
 
     root.setAttribute("data-he-studio-preview-root", "1")
-    root.style.minHeight = "100%"
+    root.setAttribute("data-he-editor-mode", editorMode)
+    root.style.minHeight = simulateViewport ? "100%" : "0"
     root.style.width = "100%"
     root.style.position = "relative"
+    doc.documentElement.setAttribute("data-he-editor-mode", editorMode)
+    doc.body.setAttribute("data-he-editor-mode", editorMode)
 
     setMountNode(root)
-    setFrameHeight(getDocumentHeight(doc))
-  }, [])
+    setFrameHeight(simulateViewport ? viewportHeight ?? 640 : getDocumentHeight(doc))
+  }, [editorMode, simulateViewport, viewportHeight])
 
   React.useEffect(() => {
     const iframe = iframeRef.current
@@ -162,7 +196,7 @@ export default function StudioPreviewFrame({ children, title = "Vista previa res
     if (!iframe || !doc?.body) return
 
     const report = () => {
-      setFrameHeight(getDocumentHeight(doc))
+      setFrameHeight(simulateViewport ? viewportHeight ?? 640 : getDocumentHeight(doc))
     }
 
     report()
@@ -176,6 +210,7 @@ export default function StudioPreviewFrame({ children, title = "Vista previa res
     resizeObserver?.observe(doc.body)
 
     const handleWheel = (event: WheelEvent) => {
+      if (simulateViewport) return
       if (!event.deltaX && !event.deltaY) return
 
       const scrollRoot =
@@ -200,13 +235,17 @@ export default function StudioPreviewFrame({ children, title = "Vista previa res
       }
     }
 
-    doc.addEventListener("wheel", handleWheel, { passive: false, capture: true })
+    if (!simulateViewport) {
+      doc.addEventListener("wheel", handleWheel, { passive: false, capture: true })
+    }
 
     return () => {
       resizeObserver?.disconnect()
-      doc.removeEventListener("wheel", handleWheel, true)
+      if (!simulateViewport) {
+        doc.removeEventListener("wheel", handleWheel, true)
+      }
     }
-  }, [mountNode])
+  }, [mountNode, simulateViewport, viewportHeight])
 
   return (
     <>
@@ -215,10 +254,10 @@ export default function StudioPreviewFrame({ children, title = "Vista previa res
         title={title}
         srcDoc={FRAME_DOCUMENT}
         className={className}
-        scrolling="no"
+        scrolling={simulateViewport ? "yes" : "no"}
         style={{
           width: "100%",
-          height: `${frameHeight}px`,
+          height: `${simulateViewport ? viewportHeight ?? frameHeight : frameHeight}px`,
           border: "none",
           display: "block",
           background: "transparent",

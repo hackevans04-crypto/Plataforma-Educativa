@@ -12,6 +12,20 @@ export interface CMSNavItem {
   badge?: string
 }
 
+export interface CMSNavAppearance {
+  fontFamily?: string
+  surfaceColor?: string
+  borderColor?: string
+  brandColor?: string
+  taglineColor?: string
+  linkColor?: string
+  linkHoverColor?: string
+  primaryButtonColor?: string
+  primaryButtonTextColor?: string
+  secondaryButtonColor?: string
+  secondaryButtonTextColor?: string
+}
+
 export type CMSActionType = "none" | "section" | "page" | "popup" | "external" | "simulator"
 
 export interface CMSActionConfig {
@@ -234,6 +248,7 @@ export interface CMSConfig {
     tagline: string
     footerText: string
     footerLinks: { id: string; label: string; href: string }[]
+    navAppearance?: CMSNavAppearance
   }
   pages: CMSPage[]
   popups: CMSPopup[]
@@ -318,6 +333,19 @@ export const DEFAULT_CMS: CMSConfig = {
       { id: "fl2", label: "Terminos", href: "#" },
       { id: "fl3", label: "Contacto", href: "#contacto" },
     ],
+    navAppearance: {
+      fontFamily: "var(--font-barlow), system-ui, sans-serif",
+      surfaceColor: "#0b1220",
+      borderColor: "#1e293b",
+      brandColor: "#ffffff",
+      taglineColor: "#94a3b8",
+      linkColor: "#cbd5e1",
+      linkHoverColor: "#ffffff",
+      primaryButtonColor: "#E8392A",
+      primaryButtonTextColor: "#ffffff",
+      secondaryButtonColor: "#0f172a",
+      secondaryButtonTextColor: "#ffffff",
+    },
   },
   pages: [
     {

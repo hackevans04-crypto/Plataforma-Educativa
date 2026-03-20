@@ -1,29 +1,116 @@
 "use client"
 
 import Image from "next/image"
+import { useMemo } from "react"
+import { useRouter } from "next/navigation"
 import { Facebook, Mail } from "lucide-react"
+import { useCMS, type CMSConfig } from "@/hooks/use-cms"
 
-export default function Footer() {
+interface FooterProps {
+  previewMode?: boolean
+  onPreviewNavigate?: (href: string) => void
+  generalOverride?: CMSConfig["general"]
+  navOverride?: CMSConfig["nav"]
+  pageLinksOverride?: CMSConfig["pages"]
+}
+
+export default function Footer({
+  previewMode = false,
+  onPreviewNavigate,
+  generalOverride,
+  navOverride,
+  pageLinksOverride,
+}: FooterProps) {
+  const router = useRouter()
+  const { config } = useCMS()
+  const generalConfig = generalOverride ?? config.general
+  const navConfig = navOverride ?? config.nav
+  const pageLinks = pageLinksOverride ?? config.pages
+  const brandName = generalConfig.nombrePlataforma?.trim() || "Hack Evans"
+  const brandTagline = generalConfig.tagline?.trim() || "Consultoria Educativa"
+  const footerText = generalConfig.footerText?.trim() || `© ${new Date().getFullYear()} ${brandName}. Todos los derechos reservados.`
+  const legalLinks = generalConfig.footerLinks ?? []
+
+  const navigationLinks = useMemo(() => {
+    const pageRouteMap = new Map(
+      (pageLinks ?? []).map((page) => [
+        `/${page.slug}`,
+        page,
+      ])
+    )
+    const merged: CMSConfig["nav"]["items"] = []
+
+    for (const item of navConfig.items) {
+      const linkedPage = pageRouteMap.get(item.href)
+      if (linkedPage) {
+        if (linkedPage.showInNav === false) continue
+        merged.push({
+          ...item,
+          label: linkedPage.navLabel?.trim() || linkedPage.title || item.label,
+        })
+        continue
+      }
+
+      merged.push(item)
+    }
+
+    for (const page of pageLinks ?? []) {
+      if (page.showInNav === false) continue
+
+      const href = `/${page.slug}`
+      if (merged.some((item) => item.href === href)) continue
+
+      merged.push({
+        id: `footer-page-${page.slug}`,
+        label: page.navLabel?.trim() || page.title,
+        href,
+      })
+    }
+
+    return merged.slice(0, 6)
+  }, [navConfig.items, pageLinks])
+
+  const handleNavigate = (href: string) => {
+    if (previewMode) {
+      onPreviewNavigate?.(href)
+      return
+    }
+
+    if (/^https?:\/\//i.test(href)) {
+      window.location.href = href
+      return
+    }
+
+    if (href.startsWith("#")) {
+      const target = document.querySelector<HTMLElement>(href)
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" })
+      } else {
+        window.location.hash = href.slice(1)
+      }
+      return
+    }
+
+    router.push(href)
+  }
+
   return (
     <footer className="bg-transparent border-t border-border pt-16 pb-8 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
         <div className="grid md:grid-cols-3 gap-10 mb-12">
-          {/* Brand */}
           <div className="md:col-span-1">
             <div className="flex items-center gap-3 mb-4">
-              <Image src="/images/logo.png" alt="Hack Evans" width={44} height={44} />
+              <Image src="/images/logo.png" alt={brandName} width={44} height={44} />
               <div>
-                <div className="font-display text-2xl text-white">Hack Evans</div>
+                <div className="font-display text-2xl text-white">{brandName}</div>
                 <div className="text-[9px] text-muted-foreground tracking-widest uppercase">
-                  Consultoria Educativa
+                  {brandTagline}
                 </div>
               </div>
             </div>
             <p className="text-[13px] text-muted-foreground leading-relaxed mb-6">
-              Plataforma #1 para docentes ecuatorianos. Preparacion integral para QSM, 
-              evaluaciones y ascenso de categoria.
+              {brandTagline}
             </p>
-            {/* Social */}
             <div className="flex gap-3">
               <a
                 href="https://www.facebook.com/HackrEvans"
@@ -52,19 +139,19 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Links */}
           <div>
             <h4 className="text-sm font-bold text-white mb-4 uppercase tracking-wide">Navegacion</h4>
             <ul className="space-y-2.5">
-              {[
-                { label: "Inicio", href: "/" },
-                { label: "Beneficios", href: "#beneficios" },
-                { label: "Testimonios", href: "#testimonios" },
-                { label: "Precios", href: "#precios" },
-                { label: "Contacto", href: "#contacto" },
-              ].map((item) => (
-                <li key={item.label}>
-                  <a href={item.href} className="text-[13px] text-muted-foreground hover:text-white transition-colors">
+              {navigationLinks.map((item) => (
+                <li key={item.id}>
+                  <a
+                    href={item.href}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      handleNavigate(item.href)
+                    }}
+                    className="text-[13px] text-muted-foreground hover:text-white transition-colors"
+                  >
                     {item.label}
                   </a>
                 </li>
@@ -75,13 +162,16 @@ export default function Footer() {
           <div>
             <h4 className="text-sm font-bold text-white mb-4 uppercase tracking-wide">Legal</h4>
             <ul className="space-y-2.5">
-              {[
-                { label: "Terminos de Servicio", href: "#contacto" },
-                { label: "Politica de Privacidad", href: "#contacto" },
-                { label: "Politica de Cookies", href: "#contacto" },
-              ].map((item) => (
-                <li key={item.label}>
-                  <a href={item.href} className="text-[13px] text-muted-foreground hover:text-white transition-colors">
+              {legalLinks.map((item) => (
+                <li key={item.id}>
+                  <a
+                    href={item.href}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      handleNavigate(item.href)
+                    }}
+                    className="text-[13px] text-muted-foreground hover:text-white transition-colors"
+                  >
                     {item.label}
                   </a>
                 </li>
@@ -90,16 +180,10 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Bottom */}
         <div className="pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-muted-foreground">
-            (c) {new Date().getFullYear()} Hack Evans. Todos los derechos reservados.
-          </p>
-          
+          <p className="text-xs text-muted-foreground">{footerText}</p>
         </div>
       </div>
     </footer>
   )
 }
-
-

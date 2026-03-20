@@ -131,7 +131,7 @@ export default function StudioInlineText({
 
   if (editing && editable) {
     const toolbar = (
-      <div className="absolute -top-14 left-0 z-30 flex flex-wrap items-center gap-1 rounded-2xl border border-primary/20 bg-[#08111b]/96 px-2 py-1.5 shadow-[0_18px_40px_rgba(0,0,0,0.42)]">
+      <div data-he-editor-ui="true" className="absolute -top-14 left-0 z-30 flex flex-wrap items-center gap-1 rounded-2xl border border-primary/20 bg-[#08111b]/96 px-2 py-1.5 shadow-[0_18px_40px_rgba(0,0,0,0.42)]">
         <button
           type="button"
           onMouseDown={(event) => event.preventDefault()}
@@ -181,6 +181,7 @@ export default function StudioInlineText({
         ))}
         <div className="mx-1 h-5 w-px bg-white/8" />
         <select
+          data-he-editor-input="true"
           value={currentFormatting.size || "md"}
           onChange={(event) => updateFormatting({ size: event.target.value as CMSTextStyle["size"] })}
           onClick={(event) => event.stopPropagation()}
@@ -196,6 +197,7 @@ export default function StudioInlineText({
         <label className="ml-1 inline-flex h-8 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-2 text-xs text-white/70">
           <Palette className="h-3.5 w-3.5" />
           <input
+            data-he-editor-input="true"
             type="color"
             value={currentFormatting.color || "#ffffff"}
             onChange={(event) => updateFormatting({ color: event.target.value })}
@@ -221,6 +223,7 @@ export default function StudioInlineText({
             </button>
             {showLinkField ? (
               <input
+                data-he-editor-input="true"
                 value={currentFormatting.href || ""}
                 onChange={(event) => updateFormatting({ href: event.target.value })}
                 onClick={(event) => event.stopPropagation()}
@@ -238,6 +241,7 @@ export default function StudioInlineText({
         <div ref={wrapperRef} className="relative w-full">
           {toolbar}
           <textarea
+            data-he-editor-input="true"
             ref={inputRef as RefObject<HTMLTextAreaElement>}
             value={draft}
             rows={Math.max(3, draft.split("\n").length)}
@@ -266,9 +270,10 @@ export default function StudioInlineText({
     }
 
     return (
-        <div ref={wrapperRef} className="relative w-full">
+      <div ref={wrapperRef} className="relative w-full">
         {toolbar}
         <input
+          data-he-editor-input="true"
           ref={inputRef as RefObject<HTMLInputElement>}
           value={draft}
           placeholder={placeholder}

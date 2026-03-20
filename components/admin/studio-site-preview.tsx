@@ -109,6 +109,7 @@ function SectionShell({
   section,
   selected,
   editable,
+  compactToolbar = false,
   onSelect,
   onDuplicate,
   onToggleVisibility,
@@ -123,6 +124,7 @@ function SectionShell({
   section: CMSSection
   selected: boolean
   editable: boolean
+  compactToolbar?: boolean
   onSelect?: (id: string) => void
   onDuplicate?: (id: string) => void
   onToggleVisibility?: (id: string) => void
@@ -147,8 +149,18 @@ function SectionShell({
 
   return (
     <div
+      data-he-edit-id={section.id}
       className={cn("group/section relative", editable && "select-none", dragging && "opacity-45 scale-[0.985]")}
       draggable={editable}
+      onClickCapture={(event) => {
+        if (!editable || selected) return
+        const target = event.target as HTMLElement | null
+        if (!target) return
+        if (!target.closest("a, button, input, select, textarea, label, summary, [role='button']")) return
+        event.preventDefault()
+        event.stopPropagation()
+        onSelect?.(section.id)
+      }}
       onDragStart={(event) => {
         if (!editable) return
         event.dataTransfer.effectAllowed = "move"
@@ -187,24 +199,37 @@ function SectionShell({
 
           <div
             className={cn(
-              "pointer-events-none absolute right-4 top-4 flex items-center gap-1 rounded-2xl border border-white/10 bg-[#09111b]/90 p-1 shadow-lg transition-opacity",
+              "pointer-events-none absolute z-20 transition-opacity",
+              compactToolbar ? "inset-x-3 bottom-3 flex justify-center" : "right-4 top-4",
               selected ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"
             )}
           >
+            <div
+              data-he-editor-ui="true"
+              className={cn(
+                "pointer-events-auto flex items-center gap-1 border border-white/10 bg-[#09111b]/92 shadow-lg",
+                compactToolbar ? "rounded-[20px] px-2 py-2 shadow-[0_18px_48px_rgba(0,0,0,0.38)]" : "rounded-2xl p-1"
+              )}
+            >
             <button
               type="button"
               onClick={(event) => {
                 handleToolbarClick(event)
                 onSelect?.(section.id)
               }}
-              className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-xl text-white/45 transition-all hover:bg-white/5 hover:text-white"
+              className={cn(
+                "inline-flex items-center justify-center rounded-xl text-white/45 transition-all hover:bg-white/5 hover:text-white",
+                compactToolbar ? "h-9 w-9" : "h-7 w-7"
+              )}
               aria-label="Editar bloque"
             >
-              <Pencil className="h-3.5 w-3.5" />
+              <Pencil className={cn(compactToolbar ? "h-4 w-4" : "h-3.5 w-3.5")} />
             </button>
-            <div className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-xl text-white/25" aria-hidden="true">
-              <GripVertical className="h-3.5 w-3.5" />
-            </div>
+            {!compactToolbar ? (
+              <div className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-xl text-white/25" aria-hidden="true">
+                <GripVertical className="h-3.5 w-3.5" />
+              </div>
+            ) : null}
             {onDuplicate && (
               <button
                 type="button"
@@ -212,10 +237,13 @@ function SectionShell({
                   handleToolbarClick(event)
                   onDuplicate(section.id)
                 }}
-                className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-xl text-white/45 transition-all hover:bg-white/5 hover:text-white"
+                className={cn(
+                  "inline-flex items-center justify-center rounded-xl text-white/45 transition-all hover:bg-white/5 hover:text-white",
+                  compactToolbar ? "h-9 w-9" : "h-7 w-7"
+                )}
                 aria-label="Duplicar bloque"
               >
-                <Copy className="h-3.5 w-3.5" />
+                <Copy className={cn(compactToolbar ? "h-4 w-4" : "h-3.5 w-3.5")} />
               </button>
             )}
             <div className="pointer-events-none h-5 w-px bg-white/8" />
@@ -226,10 +254,13 @@ function SectionShell({
                   handleToolbarClick(event)
                   onToggleVisibility(section.id)
                 }}
-                className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-xl text-white/45 transition-all hover:bg-white/5 hover:text-white"
+                className={cn(
+                  "inline-flex items-center justify-center rounded-xl text-white/45 transition-all hover:bg-white/5 hover:text-white",
+                  compactToolbar ? "h-9 w-9" : "h-7 w-7"
+                )}
                 aria-label={section.visible ? "Ocultar bloque" : "Mostrar bloque"}
               >
-                {section.visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {section.visible ? <EyeOff className={cn(compactToolbar ? "h-4 w-4" : "h-3.5 w-3.5")} /> : <Eye className={cn(compactToolbar ? "h-4 w-4" : "h-3.5 w-3.5")} />}
               </button>
             )}
             {onMove && (
@@ -240,10 +271,13 @@ function SectionShell({
                     handleToolbarClick(event)
                     onMove(section.id, -1)
                   }}
-                  className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-xl text-white/45 transition-all hover:bg-white/5 hover:text-white"
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-xl text-white/45 transition-all hover:bg-white/5 hover:text-white",
+                    compactToolbar ? "h-9 w-9" : "h-7 w-7"
+                  )}
                   aria-label="Subir bloque"
                 >
-                  <ArrowUp className="h-3.5 w-3.5" />
+                  <ArrowUp className={cn(compactToolbar ? "h-4 w-4" : "h-3.5 w-3.5")} />
                 </button>
                 <button
                   type="button"
@@ -251,10 +285,13 @@ function SectionShell({
                     handleToolbarClick(event)
                     onMove(section.id, 1)
                   }}
-                  className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-xl text-white/45 transition-all hover:bg-white/5 hover:text-white"
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-xl text-white/45 transition-all hover:bg-white/5 hover:text-white",
+                    compactToolbar ? "h-9 w-9" : "h-7 w-7"
+                  )}
                   aria-label="Bajar bloque"
                 >
-                  <ArrowDown className="h-3.5 w-3.5" />
+                  <ArrowDown className={cn(compactToolbar ? "h-4 w-4" : "h-3.5 w-3.5")} />
                 </button>
               </>
             )}
@@ -265,12 +302,16 @@ function SectionShell({
                   handleToolbarClick(event)
                   onDelete(section.id)
                 }}
-                className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-xl text-white/45 transition-all hover:bg-red-500/10 hover:text-red-300"
+                className={cn(
+                  "inline-flex items-center justify-center rounded-xl text-white/45 transition-all hover:bg-red-500/10 hover:text-red-300",
+                  compactToolbar ? "h-9 w-9" : "h-7 w-7"
+                )}
                 aria-label="Eliminar bloque"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className={cn(compactToolbar ? "h-4 w-4" : "h-3.5 w-3.5")} />
               </button>
             )}
+            </div>
           </div>
         </div>
       )}
@@ -497,7 +538,10 @@ export default function StudioSitePreview({
   config,
   sections,
   selectedId,
+  viewportMode = "desktop",
+  editorMode,
   onSelect,
+  onPreviewNavigate,
   onInlineUpdate,
   onDuplicate,
   onToggleVisibility,
@@ -514,7 +558,10 @@ export default function StudioSitePreview({
   config: CMSConfig
   sections: CMSSection[]
   selectedId?: string
+  viewportMode?: "desktop" | "tablet" | "mobile"
+  editorMode?: "edit" | "preview" | "review"
   onSelect?: (id: string) => void
+  onPreviewNavigate?: (href: string) => void
   onInlineUpdate?: (sectionId: string, patch: Record<string, any>) => void
   onDuplicate?: (id: string) => void
   onToggleVisibility?: (id: string) => void
@@ -530,7 +577,9 @@ export default function StudioSitePreview({
 }) {
   const datasets = useLandingBuilderData()
   const rootRef = useRef<HTMLDivElement>(null)
-  const editable = !previewMode
+  const currentEditorMode = editorMode ?? (previewMode ? "preview" : "edit")
+  const editable = currentEditorMode === "edit"
+  const compactToolbar = viewportMode === "mobile"
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null)
@@ -541,7 +590,11 @@ export default function StudioSitePreview({
     () => sections.map((section, index) => ({ section, index })).filter((entry) => entry.section.visible),
     [sections]
   )
-  const contextSection = contextMenu ? sections.find((section) => section.id === contextMenu.id) ?? null : null
+  const contextSection = contextMenu ? (
+    contextMenu.id === "navbar" || contextMenu.id === "footer"
+      ? { id: contextMenu.id, type: contextMenu.id, visible: true, data: {} } as any
+      : sections.find((section) => section.id === contextMenu.id) ?? null
+  ) : null
   const activePopup = useMemo(
     () => config.popups.find((popup) => popup.id === activePopupId) ?? null,
     [activePopupId, config.popups]
@@ -567,7 +620,76 @@ export default function StudioSitePreview({
     return () => window.clearTimeout(timer)
   }, [previewNotice])
 
+  useEffect(() => {
+    if (!editable) return
+
+    const root = rootRef.current
+    if (!root) return
+
+    const resolveEditId = (target: EventTarget | null) => {
+      const element = target instanceof HTMLElement ? target : null
+      return element?.closest<HTMLElement>("[data-he-edit-id]")?.dataset.heEditId || ""
+    }
+
+    const isEditorUiTarget = (target: EventTarget | null) => {
+      const element = target instanceof HTMLElement ? target : null
+      return Boolean(element?.closest("[data-he-editor-ui='true'], [data-he-editor-input='true'], [data-studio-inline='true']"))
+    }
+
+    const handleClickCapture = (event: Event) => {
+      if (isEditorUiTarget(event.target)) return
+
+      const target = event.target instanceof HTMLElement ? event.target : null
+      if (!target) return
+
+      const editId = resolveEditId(target)
+      if (!editId) return
+
+      const interactiveTarget = target.closest("a, button, input, select, textarea, label, summary, [role='button'], [role='link']")
+      const insideForm = Boolean(target.closest("form"))
+      if (!interactiveTarget && !insideForm) return
+
+      const isSelected = selectedId === editId
+      const isChrome = editId === "navbar" || editId === "footer"
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (!isSelected || isChrome) {
+        onSelect?.(editId)
+      }
+
+      if (isChrome) {
+        setPreviewNotice(editId === "navbar" ? "Navbar seleccionado: edita sus links desde el panel." : "Footer seleccionado: edita sus links y texto desde el panel.")
+      }
+    }
+
+    const handleSubmitCapture = (event: Event) => {
+      if (isEditorUiTarget(event.target)) return
+
+      const editId = resolveEditId(event.target)
+      if (!editId) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      if (selectedId !== editId) onSelect?.(editId)
+    }
+
+    root.addEventListener("click", handleClickCapture, true)
+    root.addEventListener("submit", handleSubmitCapture, true)
+
+    return () => {
+      root.removeEventListener("click", handleClickCapture, true)
+      root.removeEventListener("submit", handleSubmitCapture, true)
+    }
+  }, [editable, onSelect, selectedId])
+
   const executePreviewAction = (action?: CMSActionConfig, fallbackHref?: string) => {
+    if (editable) {
+      setPreviewNotice("Modo edicion: selecciona el bloque y edita desde el panel.")
+      return
+    }
+
     const nextAction = action?.type && action.type !== "none"
       ? action
       : fallbackHref
@@ -595,6 +717,14 @@ export default function StudioSitePreview({
         return
       }
       case "page":
+        if (nextAction.href?.startsWith("/")) {
+          if (onPreviewNavigate) {
+            onPreviewNavigate(nextAction.href)
+            return
+          }
+        }
+        setPreviewNotice(`Destino configurado: ${nextAction.href || "sin enlace"}`)
+        return
       case "external":
         setPreviewNotice(`Destino configurado: ${nextAction.href || "sin enlace"}`)
         return
@@ -617,6 +747,12 @@ export default function StudioSitePreview({
           setPreviewNotice(`Flujo de simulador: redirigir a ${nextAction.formPageHref}`)
           return
         }
+        if (nextAction.href?.startsWith("/")) {
+          if (onPreviewNavigate) {
+            onPreviewNavigate(nextAction.href)
+            return
+          }
+        }
         setPreviewNotice(`Destino configurado: ${nextAction.href || "sin enlace"}`)
         return
       default:
@@ -624,9 +760,25 @@ export default function StudioSitePreview({
     }
   }
 
+  const handlePreviewChromeNavigation = (targetId: "navbar" | "footer", href: string) => {
+    if (editable) {
+      onSelect?.(targetId)
+      setPreviewNotice(targetId === "navbar" ? "Navbar seleccionado: edita sus links desde el panel." : "Footer seleccionado: edita sus links y texto desde el panel.")
+      return
+    }
+
+    if (href.startsWith("#")) {
+      executePreviewAction({ type: "section", sectionId: href.slice(1), href })
+      return
+    }
+
+    executePreviewAction({ type: /^https?:\/\//i.test(href) ? "external" : "page", href }, href)
+  }
+
   const renderInsertSlot = (index: number, key: string) => (
     <div
       key={key}
+      data-he-editor-ui="true"
       className="group relative flex items-center justify-center py-3"
       onDragOver={(event) => {
         if (!draggingId) return
@@ -669,10 +821,11 @@ export default function StudioSitePreview({
   )
 
   return (
-    <main ref={rootRef} className="relative min-h-full bg-transparent">
+    <main ref={rootRef} data-he-editor-mode={currentEditorMode} className="relative bg-transparent">
       <AnimatedBackground className="absolute inset-0 z-0" />
       {editable && contextMenu && contextSection ? (
         <div
+          data-he-editor-ui="true"
           className="fixed z-[80] min-w-[210px] rounded-2xl border border-white/10 bg-[#09111b]/96 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.45)]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(event) => event.stopPropagation()}
@@ -682,11 +835,11 @@ export default function StudioSitePreview({
           </div>
           <div className="grid gap-1">
             <button type="button" onClick={() => { onSelect?.(contextSection.id); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/75 transition-all hover:bg-white/5 hover:text-white"><Pencil className="h-4 w-4" />Editar</button>
-            {onDuplicate && <button type="button" onClick={() => { onDuplicate(contextSection.id); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/75 transition-all hover:bg-white/5 hover:text-white"><Copy className="h-4 w-4" />Duplicar</button>}
-            {onToggleVisibility && <button type="button" onClick={() => { onToggleVisibility(contextSection.id); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/75 transition-all hover:bg-white/5 hover:text-white">{contextSection.visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{contextSection.visible ? "Ocultar" : "Mostrar"}</button>}
-            {onMove && <button type="button" onClick={() => { onMove(contextSection.id, -1); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/75 transition-all hover:bg-white/5 hover:text-white"><ArrowUp className="h-4 w-4" />Subir</button>}
-            {onMove && <button type="button" onClick={() => { onMove(contextSection.id, 1); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/75 transition-all hover:bg-white/5 hover:text-white"><ArrowDown className="h-4 w-4" />Bajar</button>}
-            {onDelete && <button type="button" onClick={() => { onDelete(contextSection.id); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-red-300 transition-all hover:bg-red-500/10"><Trash2 className="h-4 w-4" />Eliminar</button>}
+            {contextSection.id !== "navbar" && contextSection.id !== "footer" && onDuplicate && <button type="button" onClick={() => { onDuplicate(contextSection.id); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/75 transition-all hover:bg-white/5 hover:text-white"><Copy className="h-4 w-4" />Duplicar</button>}
+            {contextSection.id !== "navbar" && contextSection.id !== "footer" && onToggleVisibility && <button type="button" onClick={() => { onToggleVisibility(contextSection.id); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/75 transition-all hover:bg-white/5 hover:text-white">{contextSection.visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{contextSection.visible ? "Ocultar" : "Mostrar"}</button>}
+            {contextSection.id !== "navbar" && contextSection.id !== "footer" && onMove && <button type="button" onClick={() => { onMove(contextSection.id, -1); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/75 transition-all hover:bg-white/5 hover:text-white"><ArrowUp className="h-4 w-4" />Subir</button>}
+            {contextSection.id !== "navbar" && contextSection.id !== "footer" && onMove && <button type="button" onClick={() => { onMove(contextSection.id, 1); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/75 transition-all hover:bg-white/5 hover:text-white"><ArrowDown className="h-4 w-4" />Bajar</button>}
+            {contextSection.id !== "navbar" && contextSection.id !== "footer" && onDelete && <button type="button" onClick={() => { onDelete(contextSection.id); setContextMenu(null) }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-red-300 transition-all hover:bg-red-500/10"><Trash2 className="h-4 w-4" />Eliminar</button>}
           </div>
         </div>
       ) : null}
@@ -695,12 +848,39 @@ export default function StudioSitePreview({
           {previewNotice}
         </div>
       ) : null}
-      <div className="relative z-10">
-        <div className="pointer-events-none">
+      <div className={cn("relative z-10", editable && viewportMode === "mobile" && "pb-24")}>
+        <div
+          data-he-edit-id="navbar"
+          className={cn(
+            editable && "group relative cursor-pointer transition-all",
+            editable && selectedId === "navbar" && "ring-2 ring-primary ring-inset"
+          )}
+          onClickCapture={(event) => {
+            if (!editable) return
+            event.preventDefault()
+            event.stopPropagation()
+            onSelect?.("navbar")
+          }}
+          onClick={() => editable && onSelect?.("navbar")}
+          onContextMenu={(e) => {
+            if (editable) {
+              e.preventDefault()
+              e.stopPropagation()
+              setContextMenu({ id: "navbar", x: e.clientX, y: e.clientY })
+            }
+          }}
+        >
+          {editable && selectedId === "navbar" && (
+            <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex items-center justify-between bg-primary/10 px-4 py-1.5">
+              <div className="text-[11px] font-bold text-primary">NAVEGACIÓN</div>
+            </div>
+          )}
           <Navbar
             previewMode
             navOverride={config.nav}
             pageLinksOverride={config.pages}
+            generalOverride={config.general}
+            onPreviewNavigate={(href) => handlePreviewChromeNavigation("navbar", href)}
             onLoginClick={() => {}}
             onRegisterClick={() => {}}
           />
@@ -738,6 +918,7 @@ export default function StudioSitePreview({
                     section={section}
                     selected={selectedId === section.id}
                     editable={editable}
+                    compactToolbar={compactToolbar}
                     onSelect={onSelect}
                     onDuplicate={onDuplicate}
                     onToggleVisibility={onToggleVisibility}
@@ -761,8 +942,38 @@ export default function StudioSitePreview({
             })}
           </>
         )}
-        <div className="pointer-events-none">
-          <Footer />
+        <div
+          data-he-edit-id="footer"
+          className={cn(
+            editable && "group relative cursor-pointer transition-all",
+            editable && selectedId === "footer" && "ring-2 ring-primary ring-inset"
+          )}
+          onClickCapture={(event) => {
+            if (!editable) return
+            event.preventDefault()
+            event.stopPropagation()
+            onSelect?.("footer")
+          }}
+          onClick={() => editable && onSelect?.("footer")}
+          onContextMenu={(event) => {
+            if (!editable) return
+            event.preventDefault()
+            event.stopPropagation()
+            setContextMenu({ id: "footer", x: event.clientX, y: event.clientY })
+          }}
+        >
+          {editable && selectedId === "footer" ? (
+            <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex items-center justify-between bg-primary/10 px-4 py-1.5">
+              <div className="text-[11px] font-bold text-primary">FOOTER</div>
+            </div>
+          ) : null}
+          <Footer
+            previewMode
+            generalOverride={config.general}
+            navOverride={config.nav}
+            pageLinksOverride={config.pages}
+            onPreviewNavigate={(href) => handlePreviewChromeNavigation("footer", href)}
+          />
         </div>
       </div>
       <LandingPopupHost popup={activePopup} onClose={() => { setActivePopupId(null); setPendingPopupSubmitAction(undefined) }} onAction={(action) => executePreviewAction(action)} fallbackSubmitAction={pendingPopupSubmitAction} />

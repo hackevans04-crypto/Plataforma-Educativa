@@ -16,18 +16,22 @@ interface NavbarProps {
   onLoginClick?: () => void
   onRegisterClick?: () => void
   onNavigate?: (section: string) => void
+  onPreviewNavigate?: (href: string) => void
   previewMode?: boolean
   navOverride?: CMSConfig["nav"]
   pageLinksOverride?: CMSConfig["pages"]
+  generalOverride?: CMSConfig["general"]
 }
 
 export default function Navbar({
   onLoginClick,
   onRegisterClick,
   onNavigate,
+  onPreviewNavigate,
   previewMode = false,
   navOverride,
   pageLinksOverride,
+  generalOverride,
 }: NavbarProps) {
   const router = useRouter()
   const { user, isAuthenticated, logout } = useAuth()
@@ -37,6 +41,21 @@ export default function Navbar({
   const { config } = useCMS()
   const navConfig = navOverride ?? config.nav
   const pageLinks = pageLinksOverride ?? config.pages
+  const generalConfig = generalOverride ?? config.general
+  const brandName = generalConfig.nombrePlataforma?.trim() || "Hack Evans"
+  const brandTagline = generalConfig.tagline?.trim() || "Consultoria Educativa"
+  const navAppearance = generalConfig.navAppearance ?? {}
+  const navFontFamily = navAppearance.fontFamily || "var(--font-barlow), system-ui, sans-serif"
+  const navSurfaceColor = navAppearance.surfaceColor || "rgba(10, 15, 28, 0.92)"
+  const navBorderColor = navAppearance.borderColor || "rgba(51, 65, 85, 0.7)"
+  const brandColor = navAppearance.brandColor || "#ffffff"
+  const taglineColor = navAppearance.taglineColor || "#94a3b8"
+  const linkColor = navAppearance.linkColor || "#cbd5e1"
+  const linkHoverColor = navAppearance.linkHoverColor || "#ffffff"
+  const primaryButtonColor = navAppearance.primaryButtonColor || "#E8392A"
+  const primaryButtonTextColor = navAppearance.primaryButtonTextColor || "#ffffff"
+  const secondaryButtonColor = navAppearance.secondaryButtonColor || "transparent"
+  const secondaryButtonTextColor = navAppearance.secondaryButtonTextColor || "#ffffff"
   const LINKS = useMemo(() => {
     const pageRouteMap = new Map(
       (pageLinks ?? []).map((page) => [
@@ -92,6 +111,14 @@ export default function Navbar({
 
   const handleNavClick = (href: string) => {
     setMobileOpen(false)
+    if (previewMode) {
+      onPreviewNavigate?.(href)
+      return
+    }
+    if (/^https?:\/\//i.test(href)) {
+      window.location.href = href
+      return
+    }
     if (href.startsWith("#") && onNavigate) {
       onNavigate(href.replace("#", ""))
       return
@@ -117,9 +144,24 @@ export default function Navbar({
           "sticky top-0 z-[100] flex items-center justify-between px-6 lg:px-12 h-[68px] bg-background/92 backdrop-blur-xl border-b border-border transition-all duration-300",
           scrolled && "bg-background/98 shadow-[0_4px_40px_rgba(0,0,0,0.65)]"
         )}
+        style={{
+          backgroundColor: scrolled ? navSurfaceColor : navSurfaceColor,
+          borderColor: navBorderColor,
+          fontFamily: navFontFamily,
+        }}
       >
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-3 group">
+        <Link
+          href="/"
+          onClick={(event) => {
+            if (previewMode && onPreviewNavigate) {
+              event.preventDefault()
+              setMobileOpen(false)
+              onPreviewNavigate("/")
+            }
+          }}
+          className="flex items-center gap-3 group"
+        >
           <Image
             src="/images/logo.png"
             alt="Hack Evans Logo"
@@ -128,11 +170,14 @@ export default function Navbar({
             className="transition-transform group-hover:scale-105"
           />
           <div>
-            <div className="font-display text-2xl tracking-wide text-white group-hover:text-primary transition-colors">
-              Hack Evans
+            <div
+              className="font-display text-2xl tracking-wide transition-colors group-hover:opacity-90"
+              style={{ color: brandColor }}
+            >
+              {brandName}
             </div>
-            <div className="text-[10px] text-muted-foreground tracking-[2px] uppercase">
-              Consultoria Educativa
+            <div className="text-[10px] tracking-[2px] uppercase" style={{ color: taglineColor }}>
+              {brandTagline}
             </div>
           </div>
         </Link>
@@ -153,14 +198,34 @@ export default function Navbar({
               }}
               className={cn(
                 isPill
-                  ? "mx-1 px-3.5 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-primary text-[11px] font-bold uppercase tracking-[0.18em] flex items-center gap-1.5 transition-all hover:bg-primary/20 hover:border-primary/60 hover:text-white"
-                  : "relative px-4 py-2 text-muted-foreground text-[13px] font-semibold uppercase tracking-wide flex items-center gap-1.5 transition-colors hover:text-white",
+                  ? "mx-1 flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] transition-all hover:opacity-95"
+                  : "relative flex items-center gap-1.5 px-4 py-2 text-[13px] font-semibold uppercase tracking-wide transition-colors",
                 !isPill && "after:absolute after:bottom-0 after:left-4 after:right-4 after:h-0.5 after:bg-primary after:scale-x-0 after:origin-left after:transition-transform hover:after:scale-x-100"
               )}
+              style={
+                isPill
+                  ? {
+                      color: primaryButtonTextColor,
+                      backgroundColor: primaryButtonColor,
+                      borderColor: primaryButtonColor,
+                    }
+                  : { color: linkColor }
+              }
+              onMouseEnter={(event) => {
+                if (isPill) return
+                event.currentTarget.style.color = linkHoverColor
+              }}
+              onMouseLeave={(event) => {
+                if (isPill) return
+                event.currentTarget.style.color = linkColor
+              }}
             >
               {link.label}
               {link.badge && (
-                <span className="text-[9px] font-bold bg-primary text-white px-1.5 py-0.5 rounded-full uppercase tracking-wide">
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide"
+                  style={{ backgroundColor: primaryButtonColor, color: primaryButtonTextColor }}
+                >
                   {link.badge}
                 </span>
               )}
@@ -232,13 +297,19 @@ export default function Navbar({
             <>
               <button
                 onClick={onLoginClick}
-                className="px-4 py-2 border border-border rounded-lg text-[13px] font-semibold text-foreground hover:border-primary hover:text-white transition-all"
+                className="rounded-lg border px-4 py-2 text-[13px] font-semibold transition-all hover:opacity-90"
+                style={{
+                  backgroundColor: secondaryButtonColor,
+                  borderColor: navBorderColor,
+                  color: secondaryButtonTextColor,
+                }}
               >
                 {navConfig.loginLabel}
               </button>
               <button
                 onClick={onRegisterClick}
-                className="px-5 py-2 bg-primary rounded-lg text-[13px] font-bold text-white hover:bg-[#ff4433] hover:-translate-y-0.5 hover:shadow-[0_6px_22px_rgba(232,57,42,0.45)] transition-all"
+                className="rounded-lg px-5 py-2 text-[13px] font-bold transition-all hover:-translate-y-0.5 hover:shadow-[0_6px_22px_rgba(232,57,42,0.45)]"
+                style={{ backgroundColor: primaryButtonColor, color: primaryButtonTextColor }}
               >
                 {navConfig.registerLabel}
               </button>
@@ -286,14 +357,22 @@ export default function Navbar({
                 handleNavClick(link.href)
               }}
               className={cn(
-                "flex items-center justify-between py-4 border-b border-border text-foreground text-lg font-semibold transition-colors",
-                isPill ? "text-primary border-primary/30 bg-primary/5 rounded-xl px-4 my-1" : "hover:text-primary"
+                "flex items-center justify-between border-b py-4 text-lg font-semibold transition-colors",
+                isPill ? "my-1 rounded-xl px-4" : ""
               )}
+              style={{
+                color: isPill ? primaryButtonTextColor : linkColor,
+                borderColor: navBorderColor,
+                backgroundColor: isPill ? primaryButtonColor : "transparent",
+              }}
             >
               <span className="flex items-center gap-2">
                 {link.label}
                 {link.badge && (
-                  <span className="text-[9px] font-bold bg-primary text-white px-1.5 py-0.5 rounded-full uppercase">
+                  <span
+                    className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase"
+                    style={{ backgroundColor: primaryButtonColor, color: primaryButtonTextColor }}
+                  >
                     {link.badge}
                   </span>
                 )}
@@ -340,7 +419,12 @@ export default function Navbar({
                     setMobileOpen(false)
                     onLoginClick?.()
                   }}
-                  className="w-full py-3.5 border border-border rounded-xl text-[15px] font-semibold text-foreground hover:border-primary transition-colors"
+                  className="w-full rounded-xl border py-3.5 text-[15px] font-semibold transition-colors"
+                  style={{
+                    backgroundColor: secondaryButtonColor,
+                    borderColor: navBorderColor,
+                    color: secondaryButtonTextColor,
+                  }}
                 >
                   {navConfig.loginLabel}
                 </button>
@@ -349,7 +433,8 @@ export default function Navbar({
                     setMobileOpen(false)
                     onRegisterClick?.()
                   }}
-                  className="w-full py-3.5 bg-primary rounded-xl text-[15px] font-bold text-white hover:bg-[#ff4433] transition-colors"
+                  className="w-full rounded-xl py-3.5 text-[15px] font-bold transition-colors"
+                  style={{ backgroundColor: primaryButtonColor, color: primaryButtonTextColor }}
                 >
                   {navConfig.registerLabel}
                 </button>
