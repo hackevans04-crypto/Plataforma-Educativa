@@ -311,6 +311,14 @@ export function buildEditorRuntime(): string {
     return !!(event && typeof event.pointerType === "string" && event.pointerType !== "mouse");
   }
 
+  function stopGestureEvent(event) {
+    if (!event) return;
+    if (event.cancelable) {
+      event.preventDefault();
+    }
+    event.stopPropagation();
+  }
+
   function beginInteractionLock(cursor, touchIdentifier) {
     if (touchIdentifier != null) {
       activeTouchId = touchIdentifier;
@@ -2596,8 +2604,7 @@ export function buildEditorRuntime(): string {
     event.stopPropagation();
   }, true);
   selToolbar.addEventListener("touchstart", function (event) {
-    event.preventDefault();
-    event.stopPropagation();
+    stopGestureEvent(event);
   }, { passive: false, capture: true });
   selToolbar.addEventListener("pointerdown", function (event) {
     if (!isNonMousePointerEvent(event)) return;
@@ -2613,8 +2620,7 @@ export function buildEditorRuntime(): string {
   groupBox.addEventListener("touchstart", function (event) {
     var point = getEventClientPoint(event);
     if (!point) return;
-    event.preventDefault();
-    event.stopPropagation();
+    stopGestureEvent(event);
     startGroupMove(point.x, point.y, point.id);
   }, { passive: false, capture: true });
   groupBox.addEventListener("pointerdown", function (event) {
@@ -2636,8 +2642,7 @@ export function buildEditorRuntime(): string {
     if (!selectedEl || freeMoveEl !== selectedEl || !canUseFreeMove(selectedEl)) return;
     var point = getEventClientPoint(event);
     if (!point) return;
-    event.preventDefault();
-    event.stopPropagation();
+    stopGestureEvent(event);
     beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
   }, { passive: false, capture: true });
   selBox.addEventListener("pointerdown", function (event) {
@@ -2660,8 +2665,7 @@ export function buildEditorRuntime(): string {
     if (!selectedEl || freeMoveEl !== selectedEl || !canUseFreeMove(selectedEl)) return;
     var point = getEventClientPoint(event);
     if (!point) return;
-    event.preventDefault();
-    event.stopPropagation();
+    stopGestureEvent(event);
     beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
   }, { passive: false, capture: true });
   moveHitBox.addEventListener("pointerdown", function (event) {
@@ -2682,8 +2686,7 @@ export function buildEditorRuntime(): string {
   resizeHandle.addEventListener("touchstart", function (event) {
     var point = getEventClientPoint(event);
     if (!point) return;
-    event.preventDefault();
-    event.stopPropagation();
+    stopGestureEvent(event);
     startSelectedResize(point.x, point.y, point.id);
   }, { passive: false, capture: true });
   resizeHandle.addEventListener("pointerdown", function (event) {
@@ -2699,8 +2702,7 @@ export function buildEditorRuntime(): string {
     var sourceType = typeof event.type === "string" ? event.type : "";
     var now = Date.now();
     if (sourceType === "click" && now - lastToolbarTouchTs < 450) {
-      event.preventDefault();
-      event.stopPropagation();
+      stopGestureEvent(event);
       return;
     }
     if (sourceType === "touchend" || sourceType === "pointerup") {
@@ -2708,8 +2710,7 @@ export function buildEditorRuntime(): string {
     }
     var button = event.target && event.target.closest ? event.target.closest("button[data-tool]") : null;
     if (!button) return;
-    event.preventDefault();
-    event.stopPropagation();
+    stopGestureEvent(event);
     var tool = button.getAttribute("data-tool");
 
     if (tool === "group") {
@@ -2830,8 +2831,7 @@ export function buildEditorRuntime(): string {
         !!(dragTarget && (dragTarget === selectedEl || selectedEl.contains(dragTarget))) ||
         pointerInsideSelected;
       if (isSelectedTarget) {
-        event.preventDefault();
-        event.stopPropagation();
+        stopGestureEvent(event);
         suppressSelectionClick = true;
         beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
         return;
@@ -2848,8 +2848,7 @@ export function buildEditorRuntime(): string {
       isIconCandidate(el) ||
       isImageEl(el);
     if (shouldCapture) {
-      event.preventDefault();
-      event.stopPropagation();
+      stopGestureEvent(event);
     }
     if (multiSelectMode) {
       toggleMultiSelection(el);
@@ -3088,20 +3087,18 @@ export function buildEditorRuntime(): string {
   document.addEventListener("touchmove", function (event) {
     var point = getEventClientPoint(event);
     if (!point) return;
-    var handled = handleCanvasPointerMove(point.x, point.y, event.target, 1, false, point.id);
+    var handled = handleCanvasPointerMove(point.x, point.y, event.target, 1, true, point.id);
     if (handled) {
-      event.preventDefault();
-      event.stopPropagation();
+      stopGestureEvent(event);
     }
   }, { passive: false, capture: true });
   document.addEventListener("pointermove", function (event) {
     if (!isNonMousePointerEvent(event)) return;
     var point = getEventClientPoint(event);
     if (!point) return;
-    var handled = handleCanvasPointerMove(point.x, point.y, event.target, 1, false, point.id);
+    var handled = handleCanvasPointerMove(point.x, point.y, event.target, 1, true, point.id);
     if (handled) {
-      event.preventDefault();
-      event.stopPropagation();
+      stopGestureEvent(event);
     }
   }, true);
 
@@ -3152,31 +3149,27 @@ export function buildEditorRuntime(): string {
 
   document.addEventListener("touchend", function (event) {
     if (resizeState || freeMoveState) {
-      event.preventDefault();
-      event.stopPropagation();
+      stopGestureEvent(event);
     }
     finishCanvasPointerInteraction();
   }, { passive: false, capture: true });
   document.addEventListener("touchcancel", function (event) {
     if (resizeState || freeMoveState) {
-      event.preventDefault();
-      event.stopPropagation();
+      stopGestureEvent(event);
     }
     finishCanvasPointerInteraction();
   }, { passive: false, capture: true });
   document.addEventListener("pointerup", function (event) {
     if (!isNonMousePointerEvent(event)) return;
     if (resizeState || freeMoveState) {
-      event.preventDefault();
-      event.stopPropagation();
+      stopGestureEvent(event);
     }
     finishCanvasPointerInteraction();
   }, true);
   document.addEventListener("pointercancel", function (event) {
     if (!isNonMousePointerEvent(event)) return;
     if (resizeState || freeMoveState) {
-      event.preventDefault();
-      event.stopPropagation();
+      stopGestureEvent(event);
     }
     finishCanvasPointerInteraction();
   }, true);
@@ -3187,22 +3180,6 @@ export function buildEditorRuntime(): string {
     if (document.visibilityState !== "visible") {
       abortActiveInteraction();
     }
-  }, true);
-
-  document.addEventListener("touchcancel", function (event) {
-    if (resizeState || freeMoveState) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    finishCanvasPointerInteraction();
-  }, { passive: false, capture: true });
-  document.addEventListener("pointercancel", function (event) {
-    if (!isNonMousePointerEvent(event)) return;
-    if (resizeState || freeMoveState) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    finishCanvasPointerInteraction();
   }, true);
 
   document.addEventListener("click", function (event) {

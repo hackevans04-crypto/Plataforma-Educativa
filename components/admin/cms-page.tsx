@@ -3013,7 +3013,7 @@ function StudioViewport({
       window.visualViewport?.removeEventListener("scroll", queueUpdateScale)
       document.removeEventListener("visibilitychange", handleVisibilitySync)
     }
-  }, [isDesktop, mobileDockHeight, mobileDockVisible, mobileHtmlSelectionActive, mobileShell, mobileViewportHeight, viewportWidth, mode, sections, selectedId, route, zoomMode, viewportHeight])
+  }, [isDesktop, mobileDockHeight, mobileDockVisible, mobileShell, mobileViewportHeight, viewportWidth, mode, sections, selectedId, route, zoomMode, viewportHeight])
 
   const appliedScale = zoomMode === "fit" ? fitScale : Math.min(zoomMode / 100, fitScale)
   const scaledViewportWidth = Math.max(220, Math.round(viewportWidth * appliedScale))
