@@ -10,7 +10,10 @@ html, body {
   padding: 0;
   min-height: 100%;
   height: auto;
-  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 body {
@@ -20,6 +23,7 @@ body {
 [data-he-import-root="1"] {
   position: relative;
   min-height: 100%;
+  height: auto;
   width: 100%;
   max-width: 100%;
   overflow: visible;
@@ -124,6 +128,28 @@ function buildFrameDocument(html: string, revision?: string | number) {
       ].join("\n")
 }
 
+function getIframeDocumentHeight(doc: Document) {
+  const importRoot = doc.querySelector<HTMLElement>("[data-he-import-root='1']")
+  const importRootRect = Math.ceil(importRoot?.getBoundingClientRect().height || 0)
+  const importRootScrollHeight = importRoot?.scrollHeight || 0
+  const bodyRect = Math.ceil(doc.body?.getBoundingClientRect().height || 0)
+  const bodyScrollHeight = doc.body?.scrollHeight || 0
+  const docRect = Math.ceil(doc.documentElement?.getBoundingClientRect().height || 0)
+  const docScrollHeight = doc.documentElement?.scrollHeight || 0
+
+  return Math.max(
+    importRootRect,
+    importRootScrollHeight,
+    bodyRect,
+    bodyScrollHeight,
+    docRect,
+    docScrollHeight,
+    doc.body?.offsetHeight || 0,
+    doc.documentElement?.offsetHeight || 0,
+    240
+  )
+}
+
 export default function CustomCodeSection({
   data,
   editMode = false,
@@ -152,12 +178,23 @@ export default function CustomCodeSection({
   const forceRuntimeReload = React.useCallback(() => {
     setIframeSrcDoc(buildFrameDocument(lastAppliedHtmlRef.current || html, `${EDITOR_RUNTIME_VERSION}-${Date.now()}`))
   }, [html])
+  const syncHeightFromDocument = React.useCallback((doc: Document | null | undefined) => {
+    if (!isIframeDocumentReady(doc)) return
+    const nextHeight = getIframeDocumentHeight(doc)
+    if (nextHeight > 0) {
+      setHeight(Math.max(160, nextHeight))
+    }
+  }, [isIframeDocumentReady])
 
   const handleEditorBridgeMessage = React.useCallback((data: any) => {
     if (!data || typeof data !== "object") return
 
     if (data.__hei_resize) {
-      setHeight(Math.max(120, Number(data.__hei_resize)))
+      const nextHeight = Number(data.__hei_resize)
+      if (Number.isFinite(nextHeight) && nextHeight > 0) {
+        setHeight(Math.max(160, nextHeight))
+      }
+      syncHeightFromDocument(iframeRef.current?.contentDocument)
     }
 
     if (data.__editor_select && onElementSelect) {
@@ -180,7 +217,7 @@ export default function CustomCodeSection({
         onEditorSnapshot?.(snapshotHtml)
       }
     }
-  }, [onEditorSnapshot, onEditingChange, onElementSelect])
+  }, [iframeRef, onEditorSnapshot, onEditingChange, onElementSelect, syncHeightFromDocument])
   const injectEditorRuntime = React.useCallback((doc: Document) => {
     if (!editMode || !doc.documentElement || !doc.head || !doc.body) return
 
@@ -435,11 +472,12 @@ export default function CustomCodeSection({
       syncIframeTheme(doc)
       wireHtmlActions(doc)
       wireEditorWheelBridge(doc)
+      syncHeightFromDocument(doc)
       injectEditorRuntime(doc)
     } catch {
       // Avoid breaking the Studio while the iframe document is still mounting.
     }
-  }, [actionBindings, editMode, forceRuntimeReload, html, iframeRef, injectEditorRuntime, isIframeDocumentReady, syncIframeTheme, wireEditorWheelBridge, wireHtmlActions])
+  }, [actionBindings, editMode, forceRuntimeReload, html, iframeRef, injectEditorRuntime, isIframeDocumentReady, syncHeightFromDocument, syncIframeTheme, wireEditorWheelBridge, wireHtmlActions])
 
   React.useEffect(() => {
     if (!editMode) {
@@ -472,34 +510,44 @@ export default function CustomCodeSection({
       }
 
       // Auto-height
-      const report = () => {
-        const h = Math.max(
-          doc.documentElement.scrollHeight || 0,
-          doc.body.scrollHeight || 0,
-          doc.documentElement.offsetHeight || 0,
-          doc.body.offsetHeight || 0,
-          Math.ceil(doc.documentElement.getBoundingClientRect().height || 0),
-          Math.ceil(doc.body.getBoundingClientRect().height || 0)
-        )
-        if (h > 0) setHeight(Math.max(120, h))
-      }
+      const report = () => syncHeightFromDocument(doc)
       report()
-      const win = iframe.contentWindow as unknown as { ResizeObserver?: new (cb: () => void) => { observe: (el: Element) => void } }
+      const win = iframe.contentWindow as unknown as { ResizeObserver?: new (cb: () => void) => { observe: (el: Element) => void; disconnect: () => void } }
+      let ro: { observe: (el: Element) => void; disconnect: () => void } | null = null
       if (win?.ResizeObserver) {
-        const ro = new win.ResizeObserver(report)
+        ro = new win.ResizeObserver(report)
         ro.observe(doc.body)
+        ro.observe(doc.documentElement)
       }
+      const mo = new MutationObserver(report)
+      mo.observe(doc.documentElement, { childList: true, subtree: true, characterData: true, attributes: true })
+      window.setTimeout(report, 0)
+      window.setTimeout(report, 120)
+      window.setTimeout(report, 360)
 
       injectEditorRuntime(doc)
+      ;(iframe as HTMLIFrameElement & { __heCleanupObservers?: () => void }).__heCleanupObservers?.()
+      ;(iframe as HTMLIFrameElement & { __heCleanupObservers?: () => void }).__heCleanupObservers = () => {
+        ro?.disconnect()
+        mo.disconnect()
+      }
     } catch {
       // sandboxed or cross-origin — silent
     }
   }
 
+  React.useEffect(() => {
+    return () => {
+      const iframe = iframeRef.current as (HTMLIFrameElement & { __heCleanupObservers?: () => void }) | null
+      iframe?.__heCleanupObservers?.()
+      if (iframe) delete iframe.__heCleanupObservers
+    }
+  }, [iframeRef])
+
   if (!html.trim()) return null
 
   return (
-    <section className={editMode ? "relative min-h-0 h-full w-full overflow-visible" : "relative w-full"}>
+    <section className={editMode ? "relative min-h-0 w-full overflow-visible" : "relative w-full"}>
       {!editMode && onActivate ? (
         <button
           type="button"
@@ -514,13 +562,13 @@ export default function CustomCodeSection({
         srcDoc={iframeSrcDoc}
         onLoad={handleLoad}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-        scrolling="no"
+        scrolling="auto"
         style={{
           width: "100%",
           height,
           border: "none",
           display: "block",
-          overflow: "hidden",
+          overflow: "auto",
           cursor: editMode ? "crosshair" : undefined,
         }}
         title="custom-block"

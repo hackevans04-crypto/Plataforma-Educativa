@@ -2816,6 +2816,7 @@ function StudioViewport({
   onReorder,
   previewMode,
   desktopWidth,
+  mobileShell,
   htmlIframeRef,
   onHtmlElementSelect,
   onHtmlEditingChange,
@@ -2840,6 +2841,7 @@ function StudioViewport({
   onReorder?: (sourceId: string, targetIndex: number) => void
   previewMode?: boolean
   desktopWidth?: 1440 | 1280
+  mobileShell?: boolean
   htmlIframeRef?: React.MutableRefObject<HTMLIFrameElement | null>
   onHtmlElementSelect?: (info: EditorElementInfo | null) => void
   onHtmlEditingChange?: (editing: boolean) => void
@@ -2850,6 +2852,7 @@ function StudioViewport({
   const [fitScale, setFitScale] = useState(1)
   const [previewHeight, setPreviewHeight] = useState<number | null>(null)
   const [showGuide, setShowGuide] = useState(true)
+  const [mobileViewportHeight, setMobileViewportHeight] = useState(844)
 
   const viewportWidth =
     mode === "mobile"
@@ -2857,7 +2860,7 @@ function StudioViewport({
       : mode === "tablet"
         ? 768
         : desktopWidth ?? 1440
-  const viewportHeight = mode === "mobile" ? 844 : mode === "tablet" ? 1024 : null
+  const viewportHeight = mode === "mobile" ? (mobileShell ? mobileViewportHeight : 844) : mode === "tablet" ? 1024 : null
 
   const isDesktop = mode === "desktop"
   const isTablet = mode === "tablet"
@@ -2873,6 +2876,10 @@ function StudioViewport({
       const style = window.getComputedStyle(workspace)
       const paddingX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
       const availableWidth = Math.max(workspace.clientWidth - paddingX, 320)
+      if (mode === "mobile" && mobileShell) {
+        const nextViewportHeight = Math.max(320, Math.min(844, workspace.clientHeight - 136))
+        setMobileViewportHeight((current) => (current === nextViewportHeight ? current : nextViewportHeight))
+      }
       const nextScale = Math.min(1, availableWidth / viewportWidth)
       const appliedScale = zoomMode === "fit" ? nextScale : Math.min(zoomMode / 100, nextScale)
       const nextHeight = preview.scrollHeight * nextScale
@@ -2892,7 +2899,7 @@ function StudioViewport({
       resizeObserver.disconnect()
       window.removeEventListener("resize", updateScale)
     }
-  }, [isDesktop, viewportWidth, mode, sections, selectedId, route, zoomMode])
+  }, [isDesktop, mobileShell, viewportWidth, mode, sections, selectedId, route, zoomMode])
 
   const appliedScale = zoomMode === "fit" ? fitScale : Math.min(zoomMode / 100, fitScale)
   const scaledViewportWidth = Math.max(220, Math.round(viewportWidth * appliedScale))
@@ -2933,7 +2940,6 @@ function StudioViewport({
         className={cn(
           "studio-scroll relative flex-1 min-h-0 overflow-y-scroll overscroll-contain bg-[#060b12]",
           mode === "desktop" ? "overflow-x-auto" : "overflow-x-hidden",
-          isMobile && !previewMode && "pb-[calc(env(safe-area-inset-bottom)+112px)]"
         )}
         style={{
           backgroundImage: [
@@ -2942,6 +2948,7 @@ function StudioViewport({
             "radial-gradient(circle at 50% 0%, rgba(232,57,42,0.05) 0%, transparent 50%)",
           ].join(", "),
           backgroundSize: "24px 24px, 24px 24px, auto",
+          paddingBottom: isMobile && !previewMode ? `calc(env(safe-area-inset-bottom) + ${selectedId ? 152 : 132}px)` : undefined,
         }}
       >
         <div className={cn("flex min-h-full items-start justify-center", isMobile ? "px-2 py-3" : "px-4 py-6 sm:px-5 md:px-6 xl:px-10 2xl:px-14")}>
@@ -3211,19 +3218,32 @@ function AddModal({
     })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-3" onClick={onClose}>
-      <div className="flex h-[min(92vh,980px)] w-full max-w-[min(1440px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-2 pt-[calc(env(safe-area-inset-top)+8px)] pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-3"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-full w-full max-w-[min(1440px,calc(100vw-16px))] flex-col overflow-hidden rounded-[28px] border border-border bg-card shadow-2xl sm:h-[min(92vh,980px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-xl"
+        style={{ maxHeight: "calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px)" }}
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-secondary/10">
-          <div>
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-secondary/10 px-4 py-4 sm:items-center sm:px-6">
+          <div className="min-w-0">
             <div className="text-xs font-bold uppercase tracking-widest text-primary mb-0.5">Biblioteca de bloques</div>
             <div className="font-semibold text-foreground">Combina bloques base, plantillas y bloques dinamicos para crear cualquier pagina</div>
           </div>
-          <button onClick={onClose} className="w-9 h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-all">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar biblioteca de bloques"
+            title="Cerrar biblioteca de bloques"
+            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-card/70 text-muted-foreground transition-all hover:bg-secondary hover:text-foreground"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="border-b border-border bg-secondary/5 px-5 py-4">
+        <div className="border-b border-border bg-secondary/5 px-4 py-4 sm:px-5">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
             <input
               className={iCls}
@@ -3231,7 +3251,7 @@ function AddModal({
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Buscar bloque, patron o integracion..."
             />
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:flex-wrap lg:overflow-visible lg:pb-0">
               <button
                 type="button"
                 onClick={() => setGroupFilter("all")}
@@ -3261,7 +3281,7 @@ function AddModal({
             Inspirado en el patron de editores visuales como Wix Studio, Webflow, Framer y Fluid Engine: mezcla elementos base, secciones listas y bloques conectados a datos.
           </div>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto p-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-[calc(env(safe-area-inset-bottom)+16px)] sm:p-4">
           <div className="space-y-5">
             {visibleTypes.length === 0 ? (
               <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
@@ -9523,6 +9543,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             desktopWidth={desktopWidth}
             zoomMode={zoomMode}
             previewMode={studioMode !== "edit"}
+            mobileShell={mobileStudioLayout}
             onInlineUpdate={updateSectionInlineContent}
             onDuplicate={duplicateSectionInPage}
             onToggleVisibility={toggleSectionVisibility}
