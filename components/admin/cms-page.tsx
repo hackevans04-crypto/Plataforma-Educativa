@@ -2883,6 +2883,7 @@ function StudioViewport({
   onHtmlEditingChange,
   onHtmlInteractionLockChange,
   onHtmlSnapshot,
+  onHtmlOpenInspector,
 }: {
   title: string
   route: string
@@ -2910,6 +2911,7 @@ function StudioViewport({
   onHtmlEditingChange?: (editing: boolean) => void
   onHtmlInteractionLockChange?: (locked: boolean) => void
   onHtmlSnapshot?: (html: string) => void
+  onHtmlOpenInspector?: () => void
 }) {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
@@ -3001,6 +3003,7 @@ function StudioViewport({
     onHtmlEditingChange,
     onHtmlInteractionLockChange,
     onHtmlSnapshot,
+    onHtmlOpenInspector,
   }
 
   useEffect(() => {
@@ -5949,9 +5952,11 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     if (!mobileStudioLayout || studioMode !== "edit") return
     if (selectedSection?.type !== "customCode") return
     if (!htmlEl && !htmlEditing) return
+    // Close side panels so the canvas is fully visible for iframe interaction.
+    // Do NOT auto-open the right panel here — that would overlay the canvas and
+    // block the iframe toolbar. The user can open the inspector via the dock.
     setFocusLeftOpen(false)
     setMobileControlsOpen(false)
-    setFocusRightOpen(true)
   }, [mobileStudioLayout, studioMode, selectedSection?.type, htmlEl, htmlEditing])
 
   useEffect(() => {
@@ -5990,7 +5995,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }, [inspectorTab, selectedSection?.type])
 
   useEffect(() => {
-    if (leftTab === "navigation" && inspectorTab !== "content") {
+    if (leftTab === "navigation" && inspectorTab !== "content" && inspectorTab !== "style") {
       setInspectorTab("content")
       return
     }
@@ -6170,6 +6175,15 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const handleHtmlInteractionLockChange = useCallback((locked: boolean) => {
     setHtmlInteractionLocked(locked)
   }, [])
+
+  const handleHtmlOpenInspector = useCallback(() => {
+    setInspectorTab("content")
+    setRightPanelCollapsed(false)
+    if (effectiveFocusMode && studioMode === "edit") {
+      setFocusLeftOpen(false)
+      setFocusRightOpen(true)
+    }
+  }, [effectiveFocusMode, studioMode])
 
   const handleHtmlSnapshot = useCallback((nextHtml: string) => {
     if (selectedSection?.type !== "customCode") return
@@ -8931,7 +8945,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         <button
           type="button"
           onClick={() => setInspectorTab("content")}
-          className={cn("inline-flex items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-all", inspectorTab === "content" ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
+          className={cn("inline-flex touch-manipulation items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-all", inspectorTab === "content" ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
         >
           <Link2 className="h-3.5 w-3.5 flex-shrink-0" />
           Links
@@ -8939,7 +8953,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         <button
           type="button"
           onClick={() => setInspectorTab("style")}
-          className={cn("inline-flex items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-all", inspectorTab === "style" ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
+          className={cn("inline-flex touch-manipulation items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-all", inspectorTab === "style" ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
         >
           <Type className="h-3.5 w-3.5 flex-shrink-0" />
           Tipografia y Colores
@@ -9068,9 +9082,9 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         ? [
             {
               key: "content",
-              label: "Contenido",
+              label: selectedSection.type === "customCode" && htmlEl ? "Propiedades" : "Contenido",
               icon: Pencil,
-              active: false,
+              active: !!(selectedSection.type === "customCode" && htmlEl),
               onClick: () => openMobileInspectorPanel("content"),
             },
             {
@@ -9160,7 +9174,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   key={button.key}
                   type="button"
                   onClick={button.onClick}
-                  className="flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[20px] border border-white/10 bg-white/[0.03] px-1.5 py-2 text-center text-[11px] font-medium text-white/72 transition-all hover:border-white/20 hover:text-white"
+                  className={cn("flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[20px] border px-1.5 py-2 text-center text-[11px] font-medium transition-all", button.active ? "border-primary/40 bg-primary/10 text-primary" : "border-white/10 bg-white/[0.03] text-white/72 hover:border-white/20 hover:text-white")}
                 >
                   <button.icon className="h-4 w-4 flex-shrink-0" />
                   <span className="leading-tight">{button.label}</span>
@@ -9897,6 +9911,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             onHtmlEditingChange={handleHtmlEditingChange}
             onHtmlInteractionLockChange={handleHtmlInteractionLockChange}
             onHtmlSnapshot={handleHtmlSnapshot}
+            onHtmlOpenInspector={handleHtmlOpenInspector}
           />
         </main>
 
