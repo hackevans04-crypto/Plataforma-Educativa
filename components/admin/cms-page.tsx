@@ -5658,6 +5658,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const [htmlEl, setHtmlEl] = useState<EditorElementInfo | null>(null)
   const [htmlEditing, setHtmlEditing] = useState(false)
   const [htmlInteractionLocked, setHtmlInteractionLocked] = useState(false)
+  const [selectedNavPageSlug, setSelectedNavPageSlug] = useState<string | null>(null)
   const htmlIframeRef = useRef<HTMLIFrameElement | null>(null)
   const htmlSnapshotTimerRef = useRef<number | null>(null)
   const lastHtmlSnapshotRef = useRef<string>("")
@@ -7153,9 +7154,9 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Paginas</div>
           <div className="text-sm font-semibold text-white">Sitio publicado</div>
         </div>
-        <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">{pages.length}</span>
+        <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/50">{pages.length}</span>
       </div>
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+      <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {pages.map((page) => (
           <div
             key={page.slug}
@@ -7164,36 +7165,36 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             onClick={() => activatePage(page.slug, "pages")}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") activatePage(page.slug, "pages") }}
             className={cn(
-              "group w-full rounded-2xl border px-3 py-3 text-left transition-all cursor-pointer",
+              "group w-full cursor-pointer rounded-[24px] border px-4 py-4 text-left transition-all",
               selectedPageSlug === page.slug
                 ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]"
                 : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]"
             )}
           >
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-[#0b1017] text-white/45">
+            <div className="flex items-start gap-3.5">
+              <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl border border-white/8 bg-[#0b1017] text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                 <Globe className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <div className="truncate text-sm font-semibold text-white">{page.title}</div>
+                <div className="flex flex-wrap items-start gap-2">
+                  <div className="min-w-0 flex-1 line-clamp-2 text-[15px] font-semibold leading-5 text-white">{page.title}</div>
                   {page.home && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Home</span>}
                   {!page.home && page.showInNav !== false && <span className="rounded-full bg-emerald-500/12 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Menu</span>}
                 </div>
-                <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/35">{page.route}</div>
+                <div className="mt-1 break-all text-[11px] leading-5 text-white/38">{page.route}</div>
               </div>
             </div>
-            <div className="mt-3 flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <a href={page.route} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-primary/30 hover:text-primary">
+            <div className="mt-4 flex flex-wrap items-center gap-2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+              <a href={page.route} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-primary/30 hover:text-primary">
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
               {!page.home && (
-                <button type="button" onClick={(event) => { event.stopPropagation(); duplicatePage(page.slug) }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-white/20 hover:text-white/70">
+                <button type="button" onClick={(event) => { event.stopPropagation(); duplicatePage(page.slug) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-white/20 hover:text-white/75">
                   <Copy className="h-3.5 w-3.5" />
                 </button>
               )}
               {!page.home && (
-                <button type="button" onClick={(event) => { event.stopPropagation(); deletePage(page.slug) }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-red-400/35 hover:text-red-400">
+                <button type="button" onClick={(event) => { event.stopPropagation(); deletePage(page.slug) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-red-400/35 hover:text-red-400">
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -7217,7 +7218,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Secciones</div>
             <div className="text-sm font-semibold text-white">{currentPageTitle}</div>
           </div>
-        <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">{currentSections.length}</span>
+        <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/50">{currentSections.length}</span>
       </div>
       <div className="border-b border-white/8 px-4 py-3">
         <button
@@ -7226,13 +7227,13 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             setInsertIndex(null)
             setShowAdd(true)
           }}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-semibold text-white transition-all hover:bg-primary/90"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-[20px] bg-primary text-sm font-semibold text-white transition-all hover:bg-primary/90 shadow-[0_14px_30px_rgba(232,57,42,0.18)]"
         >
           <Plus className="h-4 w-4" />
           Agregar bloque
         </button>
       </div>
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+      <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {currentSections.length === 0 ? (
           <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
             <LayoutTemplate className="h-8 w-8 text-white/20" />
@@ -7294,31 +7295,40 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   }
                 }}
                 className={cn(
-                  "group w-full rounded-2xl border px-3 py-3 text-left transition-all cursor-pointer",
+                  "group w-full cursor-pointer rounded-[24px] border px-4 py-4 text-left transition-all",
                   active ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]" : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]",
                   !section.visible && "opacity-60",
                   draggingSectionId === section.id && "opacity-40",
                   dropTargetId === section.id && draggingSectionId !== section.id && "border-primary/45 bg-primary/[0.08]"
                 )}
               >
-                <div className="flex items-start gap-3">
-                  <div className={cn("mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl", meta?.color ?? "bg-white/5 text-white/40")}>
+                <div className="flex items-start gap-3.5">
+                  <div className={cn("mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]", meta?.color ?? "bg-white/5 text-white/40")}>
                     <Icon className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <div className="truncate text-sm font-semibold text-white">{meta?.label ?? section.type}</div>
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="line-clamp-2 text-[15px] font-semibold leading-5 text-white">{meta?.label ?? section.type}</div>
+                        <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">Bloque {index + 1}</div>
+                      </div>
                       {!section.visible && <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] text-white/50">Oculto</span>}
                     </div>
-                    <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">Bloque {index + 1}</div>
                     {children.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {children.map((child, childIndex) => (
-                          <div key={`${section.id}-${childIndex}`} className="flex items-center gap-2 text-[11px] text-white/38">
-                            <span className="inline-block h-px w-3 bg-white/15" />
-                            <span className="truncate">{child}</span>
-                          </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {children.slice(0, 3).map((child, childIndex) => (
+                          <span
+                            key={`${section.id}-${childIndex}`}
+                            className="max-w-full rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[11px] leading-4 text-white/55"
+                          >
+                            <span className="line-clamp-1">{child}</span>
+                          </span>
                         ))}
+                        {children.length > 3 ? (
+                          <span className="rounded-full border border-primary/20 bg-primary/8 px-2.5 py-1 text-[11px] font-medium text-primary/85">
+                            +{children.length - 3} mas
+                          </span>
+                        ) : null}
                       </div>
                     )}
                   </div>
@@ -7371,12 +7381,12 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                     ) : null}
                   </div>
                 ) : (
-                  <div className={cn("mt-3 flex items-center justify-end gap-1 transition-opacity", active ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
-                    <button type="button" disabled={index === 0} onClick={(event) => { event.stopPropagation(); moveSection(section.id, -1) }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-white/20 hover:text-white/70 disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
-                    <button type="button" disabled={index === currentSections.length - 1} onClick={(event) => { event.stopPropagation(); moveSection(section.id, 1) }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-white/20 hover:text-white/70 disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
-                    <button type="button" onClick={(event) => { event.stopPropagation(); toggleSectionVisibility(section.id) }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-primary/30 hover:text-white/70">{section.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}</button>
-                    <button type="button" onClick={(event) => { event.stopPropagation(); duplicateSectionInPage(section.id) }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-white/20 hover:text-white/70"><Copy className="h-3.5 w-3.5" /></button>
-                    {meta?.deletable && <button type="button" onClick={(event) => { event.stopPropagation(); deleteSection(section.id) }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 text-white/35 transition-all hover:border-red-400/35 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>}
+                  <div className={cn("mt-4 flex flex-wrap items-center gap-2 transition-opacity", active ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100")}>
+                    <button type="button" title="Subir bloque" disabled={index === 0} onClick={(event) => { event.stopPropagation(); moveSection(section.id, -1) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-white/20 hover:text-white/75 disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
+                    <button type="button" title="Bajar bloque" disabled={index === currentSections.length - 1} onClick={(event) => { event.stopPropagation(); moveSection(section.id, 1) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-white/20 hover:text-white/75 disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
+                    <button type="button" title={section.visible ? "Ocultar bloque" : "Mostrar bloque"} onClick={(event) => { event.stopPropagation(); toggleSectionVisibility(section.id) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-primary/30 hover:text-white/75">{section.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}</button>
+                    <button type="button" title="Duplicar bloque" onClick={(event) => { event.stopPropagation(); duplicateSectionInPage(section.id) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-white/20 hover:text-white/75"><Copy className="h-3.5 w-3.5" /></button>
+                    {meta?.deletable && <button type="button" title="Eliminar bloque" onClick={(event) => { event.stopPropagation(); deleteSection(section.id) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-red-400/35 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>}
                   </div>
                 )}
               </div>
@@ -7389,74 +7399,147 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const renderNavigationSidebar = () => {
     const allPages = config.pages ?? []
-    const totalNavItems = config.nav.items.length + allPages.filter(p => p.showInNav !== false).length
+    const manualItems = config.nav.items
+    const normalizeNavHref = (href: string) => {
+      const raw = (href || "").trim()
+      if (!raw) return ""
+      if (/^https?:\/\//i.test(raw) || raw.startsWith("#")) return raw.toLowerCase()
+      if (raw === "/") return "/"
+      return `/${raw.replace(/^\/+/, "").replace(/\/+$/, "")}`.toLowerCase()
+    }
+    const navPages = allPages.filter(p => p.showInNav !== false)
+    const hiddenPages = allPages.filter(p => p.showInNav === false)
+    const manualHrefSet = new Set(manualItems.map((item) => normalizeNavHref(item.href)))
+    const autoNavPages = navPages.filter((page) => !manualHrefSet.has(normalizeNavHref(`/${page.slug}`)))
+    const combinedEntries = [
+      ...manualItems.map((item, index) => ({
+        key: item.id || `manual-${index}`,
+        label: item.label || `Link ${index + 1}`,
+        href: item.href,
+        badge: item.badge,
+        external: item.external,
+        kind: "Manual" as const,
+        icon: Link2,
+        onClick: () => {
+          setSelectedNavPageSlug(null)
+          setInspectorTab("content")
+          if (mobileStudioLayout) setFocusRightOpen(true)
+        },
+      })),
+      ...autoNavPages.map((page) => ({
+        key: `page-${page.slug}`,
+        label: page.navLabel || page.title,
+        href: `/${page.slug}`,
+        badge: undefined,
+        external: false,
+        kind: "En menu" as const,
+        icon: Globe,
+        onClick: () => {
+          setSelectedNavPageSlug(page.slug)
+          setInspectorTab("content")
+          if (mobileStudioLayout) setFocusRightOpen(true)
+        },
+      })),
+    ]
+    const totalInNav = combinedEntries.length
     return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Menu</div>
-            <div className="text-sm font-semibold text-white">Menu del sitio</div>
-          </div>
-        <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">{totalNavItems}</span>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Menu</div>
+          <div className="text-sm font-semibold text-white">Menu del sitio</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-0.5 text-[11px] font-semibold text-white/50">{totalInNav} en nav</span>
+          <button
+            type="button"
+            onClick={() => { setInspectorTab("style"); if (mobileStudioLayout) setFocusRightOpen(true) }}
+            className="flex h-7 w-7 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/40 hover:border-white/20 hover:text-white transition-all"
+            title="Tipografia y colores"
+          >
+            <Type className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
-        {config.nav.items.length > 0 && (
-          <div>
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Links manuales</div>
-            <div className="space-y-2">
-              {config.nav.items.map((item, index) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => { setLeftTab("navigation"); setInspectorTab("content"); if (mobileStudioLayout) setFocusRightOpen(true) }}
-                  className="flex w-full items-start gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3 text-left transition-all hover:border-primary/25 hover:bg-white/[0.05]"
-                >
-                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-[#0b1017] text-white/40"><Link2 className="h-4 w-4" /></div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <div className="truncate text-sm font-semibold text-white">{item.label || `Link ${index + 1}`}</div>
-                      {item.external && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Externo</span>}
-                    </div>
-                    <div className="mt-1 truncate text-[11px] uppercase tracking-[0.18em] text-white/30">{item.href}</div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Links en el menu (manuales + paginas visibles) */}
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">En el menu ({totalInNav})</div>
+            <button
+              type="button"
+              onClick={() => { setInspectorTab("content"); if (mobileStudioLayout) setFocusRightOpen(true) }}
+              className="flex items-center gap-1 rounded-lg border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-white/45 hover:border-primary/30 hover:text-white transition-all"
+            >
+              <Plus className="h-3 w-3" />
+              Agregar link
+            </button>
+          </div>
+          <div className="space-y-2.5">
+            {combinedEntries.map((entry, index) => {
+              const Icon = entry.icon
+              return (
+              <button
+                key={entry.key}
+                type="button"
+                onClick={entry.onClick}
+                className="flex w-full items-start gap-3 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-3.5 text-left transition-all hover:border-primary/30 hover:bg-white/[0.05]"
+              >
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-[#0b1017] text-white/35">
+                  <Icon className="h-3.5 w-3.5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-start gap-1.5">
+                    <span className="min-w-0 flex-1 line-clamp-2 text-[15px] font-semibold leading-5 text-white">{entry.label}</span>
+                    {entry.badge && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-primary">{entry.badge}</span>}
+                    {entry.external && <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-blue-300">ext</span>}
                   </div>
+                  <div className="mt-1 break-all text-[11px] leading-5 text-white/32">{entry.href}</div>
+                </div>
+                <span className={cn(
+                  "flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  entry.kind === "Manual" ? "bg-emerald-500/12 text-emerald-300" : "bg-primary/12 text-primary"
+                )}>{entry.kind}</span>
+              </button>
+            )})}
+            {combinedEntries.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/40 text-center">
+                Sin links en el menu.
+              </div>
+            )}
+          </div>
+        </div>
+        {/* Paginas ocultas del menu */}
+        {hiddenPages.length > 0 && (
+          <div>
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em] text-white/25">Ocultas del menu ({hiddenPages.length})</div>
+            <div className="space-y-2.5">
+              {hiddenPages.map((page) => (
+                <button
+                  key={`nav-hidden-${page.slug}`}
+                  type="button"
+                  onClick={() => {
+                    setSelectedNavPageSlug(page.slug)
+                    setInspectorTab("content")
+                    if (mobileStudioLayout) setFocusRightOpen(true)
+                  }}
+                  className="flex w-full items-start gap-3 rounded-[22px] border border-white/5 bg-white/[0.02] px-4 py-3.5 text-left transition-all hover:border-white/12 hover:bg-white/[0.04] opacity-55 hover:opacity-80"
+                >
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-[#0b1017] text-white/20">
+                    <Globe className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="line-clamp-2 text-[15px] font-semibold leading-5 text-white/60">{page.navLabel || page.title}</div>
+                    <div className="mt-1 break-all text-[11px] leading-5 text-white/25">/{page.slug}</div>
+                  </div>
+                  <span className="flex-shrink-0 rounded-full bg-white/8 px-2 py-0.5 text-[10px] font-semibold text-white/30">Oculta</span>
                 </button>
               ))}
             </div>
           </div>
         )}
-        <div>
-          <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Paginas del sitio</div>
-          <div className="space-y-2">
-            {allPages.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45">
-                No hay paginas creadas aun. Crea una desde "Pag".
-              </div>
-            ) : (
-              allPages.map((page) => {
-                const inNav = page.showInNav !== false
-                return (
-                  <button
-                    key={`nav-page-${page.slug}`}
-                    type="button"
-                    onClick={() => activatePage(page.slug, "pages")}
-                    className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3 text-left transition-all hover:border-primary/25 hover:bg-white/[0.05]"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold text-white">{page.navLabel || page.title}</div>
-                      <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">/{page.slug}</div>
-                    </div>
-                    {inNav
-                      ? <span className="flex-shrink-0 rounded-full bg-emerald-500/12 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">En menu</span>
-                      : <span className="flex-shrink-0 rounded-full bg-white/8 px-2 py-0.5 text-[10px] font-semibold text-white/35">Oculta</span>
-                    }
-                  </button>
-                )
-              })
-            )}
-          </div>
-        </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-xs text-white/40 leading-5">
-          Haz clic en un link para editarlo. Las paginas "Ocultas" no aparecen en el menu publico. Puedes cambiar esto desde el inspector de cada pagina.
+        <div className="rounded-2xl border border-white/6 bg-white/[0.02] px-3 py-2.5 text-[11px] text-white/35 leading-5">
+          Haz clic en un item para editarlo en el inspector. Las paginas ocultas no aparecen en el menu publico.
         </div>
       </div>
     </div>
@@ -8924,6 +9007,46 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     const appearance = general.navAppearance ?? {}
     const setAppearance = (patch: Record<string, any>) => sGeneral({ navAppearance: { ...appearance, ...patch } })
     const items = nav.items
+    const allPages = config.pages ?? []
+    const normalizeNavHref = (href: string) => {
+      const raw = (href || "").trim()
+      if (!raw) return ""
+      if (/^https?:\/\//i.test(raw) || raw.startsWith("#")) return raw.toLowerCase()
+      if (raw === "/") return "/"
+      return `/${raw.replace(/^\/+/, "").replace(/\/+$/, "")}`.toLowerCase()
+    }
+    const visiblePages = allPages.filter((page) => page.showInNav !== false)
+    const manualHrefSet = new Set(items.map((item) => normalizeNavHref(item.href)))
+    const autoNavPages = visiblePages.filter((page) => !manualHrefSet.has(normalizeNavHref(`/${page.slug}`)))
+    const managedPages = allPages.filter((page) => !manualHrefSet.has(normalizeNavHref(`/${page.slug}`)))
+    const combinedEntries = [
+      ...items.map((item, index) => ({
+        key: item.id || `manual-${index}`,
+        kind: "manual" as const,
+        label: item.label || `Link ${index + 1}`,
+        href: item.href,
+        badge: item.badge,
+        external: item.external,
+      })),
+      ...autoNavPages.map((page) => ({
+        key: `page-${page.slug}`,
+        kind: "page" as const,
+        slug: page.slug,
+        label: page.navLabel || page.title,
+        href: `/${page.slug}`,
+        badge: undefined,
+        external: false,
+      })),
+    ]
+    const previewEntries = combinedEntries.slice(0, 4)
+    const selectedPage = selectedNavPageSlug ? allPages.find(p => p.slug === selectedNavPageSlug) : null
+    const updatePageMeta = (patch: Partial<typeof allPages[0]>) => {
+      if (!selectedPage) return
+      handleChange({
+        ...config,
+        pages: allPages.map(p => p.slug === selectedNavPageSlug ? { ...p, ...patch } : p)
+      })
+    }
     const moveItem = (index: number, direction: -1 | 1) => {
       const nextIndex = index + direction
       if (nextIndex < 0 || nextIndex >= items.length) return
@@ -8931,6 +9054,31 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       ;[next[index], next[nextIndex]] = [next[nextIndex], next[index]]
       sNav({ items: next })
     }
+
+    const NAV_FONT_WEIGHT_OPTIONS = [
+      { value: "400", label: "Regular" },
+      { value: "500", label: "Medium" },
+      { value: "600", label: "Semibold" },
+      { value: "700", label: "Bold" },
+      { value: "800", label: "Extrabold" },
+    ]
+    const NAV_FONT_SIZE_OPTIONS = [
+      { value: "11px", label: "XS · 11px" },
+      { value: "12px", label: "Pequeño · 12px" },
+      { value: "13px", label: "Normal · 13px" },
+      { value: "14px", label: "Medio · 14px" },
+      { value: "15px", label: "Grande · 15px" },
+      { value: "16px", label: "XL · 16px" },
+    ]
+    const NAV_LETTER_SPACING_OPTIONS = [
+      { value: "0em", label: "Sin separacion" },
+      { value: "0.04em", label: "Compacto" },
+      { value: "0.06em", label: "Normal" },
+      { value: "0.1em", label: "Amplio" },
+      { value: "0.15em", label: "Muy amplio" },
+      { value: "0.2em", label: "Espaciado" },
+    ]
+
     return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-white/8 px-5 py-4">
@@ -8944,7 +9092,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       <div className="flex-shrink-0 grid grid-cols-2 gap-1 border-b border-white/8 px-4 py-3">
         <button
           type="button"
-          onClick={() => setInspectorTab("content")}
+          onClick={() => { setInspectorTab("content"); setSelectedNavPageSlug(null) }}
           className={cn("inline-flex touch-manipulation items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-all", inspectorTab === "content" ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
         >
           <Link2 className="h-3.5 w-3.5 flex-shrink-0" />
@@ -8962,60 +9110,335 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       <div className="flex-1 overflow-y-auto p-4">
         {inspectorTab !== "style" ? (
           <div className="space-y-4">
-            <Card title="Links del menu" action={
-              <Btn size="sm" variant="ghost" onClick={() => sNav({ items: [...items, { id: `n${Date.now()}`, label: "Nuevo link", href: "/" }] })}>
-                <Plus className="w-3.5 h-3.5" />Agregar
-              </Btn>
-            }>
-              <div className="space-y-3">
-                {items.map((item, index) => (
-                  <div key={item.id} className="rounded-2xl border border-border bg-secondary/10 p-3 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 min-w-0 text-sm font-semibold text-foreground truncate">{item.label || `Link ${index + 1}`}</div>
-                      <button type="button" disabled={index === 0} onClick={() => moveItem(index, -1)} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-primary disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
-                      <button type="button" disabled={index === items.length - 1} onClick={() => moveItem(index, 1)} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-primary disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
-                      <button type="button" onClick={() => sNav({ items: items.filter((_, i) => i !== index) })} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/40"><Trash2 className="h-3.5 w-3.5" /></button>
+            {selectedPage ? (
+              <Card title={`Pagina: ${selectedPage.title}`} action={
+                <button type="button" onClick={() => setSelectedNavPageSlug(null)} className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/8 text-white/40 hover:text-white transition-colors"><ChevronLeft className="h-3.5 w-3.5" /></button>
+              }>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                    <div>
+                      <div className="text-sm font-semibold text-white">Mostrar en menu</div>
+                      <div className="text-xs text-white/40">Aparece en la barra de navegacion publica</div>
                     </div>
-                    <F label="Texto">
-                      <input className={iCls} value={item.label} placeholder="Texto del link" onChange={(e) => sNav({ items: items.map((x, i) => i === index ? { ...x, label: e.target.value } : x) })} />
-                    </F>
-                    <F label="URL">
-                      <input className={iCls} value={item.href} placeholder="/pagina o https://..." onChange={(e) => sNav({ items: items.map((x, i) => i === index ? { ...x, href: e.target.value } : x) })} />
-                    </F>
-                    <F label="Badge (opcional)">
-                      <input className={iCls} value={item.badge || ""} placeholder="Opcional" onChange={(e) => sNav({ items: items.map((x, i) => i === index ? { ...x, badge: e.target.value || undefined } : x) })} />
-                    </F>
-                    <button type="button" onClick={() => sNav({ items: items.map((x, i) => i === index ? { ...x, external: !x.external } : x) })} className={cn("flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-all w-full", item.external ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/35")}>
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      {item.external ? "Abre en nueva pestana" : "Abrir en misma pestana"}
+                    <button
+                      type="button"
+                      onClick={() => updatePageMeta({ showInNav: selectedPage.showInNav === false })}
+                      className={cn(
+                        "relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full border transition-all",
+                        selectedPage.showInNav === false ? "border-white/10 bg-white/5" : "border-emerald-400/35 bg-emerald-500/20"
+                      )}
+                    >
+                      <span className={cn("inline-block h-5 w-5 rounded-full bg-white transition-all", selectedPage.showInNav === false ? "translate-x-1" : "translate-x-6")} />
                     </button>
                   </div>
-                ))}
-                {items.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Sin links. Agrega el primero.</p>}
-              </div>
-            </Card>
-            <Card title="Botones">
-              <F label="Texto Iniciar sesion"><input className={iCls} value={nav.loginLabel} onChange={(e) => sNav({ loginLabel: e.target.value })} /></F>
-              <F label="Texto Registrarse"><input className={iCls} value={nav.registerLabel} onChange={(e) => sNav({ registerLabel: e.target.value })} /></F>
-            </Card>
+                  <F label="Texto en el menu">
+                    <input
+                      className={iCls}
+                      value={selectedPage.navLabel ?? selectedPage.title}
+                      disabled={selectedPage.showInNav === false}
+                      placeholder="Texto que aparece en el menu"
+                      onChange={(e) => updatePageMeta({ navLabel: e.target.value })}
+                    />
+                  </F>
+                  <div className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-2 text-[11px] text-white/35">
+                    Ruta: /{selectedPage.slug}
+                  </div>
+                </div>
+              </Card>
+            ) : (
+              <>
+                <Card title="Entradas del menu" action={
+                  <Btn size="sm" variant="ghost" onClick={() => sNav({ items: [...items, { id: `n${Date.now()}`, label: "Nuevo link", href: "/" }] })}>
+                    <Plus className="w-3.5 h-3.5" />Agregar
+                  </Btn>
+                }>
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3 text-[11px] leading-5 text-white/45">
+                      El menu final combina tus links manuales con las paginas visibles del sitio. Las rutas repetidas se unifican para que `IA`, `Simulador` o cualquier pagina no aparezcan duplicadas.
+                    </div>
+
+                    {items.length > 0 ? (
+                      <div className="space-y-3">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Links manuales</div>
+                        {items.map((item, index) => (
+                          <div key={item.id} className="rounded-2xl border border-border bg-secondary/10 p-3 space-y-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 min-w-0 text-sm font-semibold text-foreground">{item.label || `Link ${index + 1}`}</div>
+                              <button type="button" disabled={index === 0} onClick={() => moveItem(index, -1)} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-primary disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
+                              <button type="button" disabled={index === items.length - 1} onClick={() => moveItem(index, 1)} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-primary disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => sNav({ items: items.filter((_, i) => i !== index) })} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/40"><Trash2 className="h-3.5 w-3.5" /></button>
+                            </div>
+                            <F label="Texto">
+                              <input className={iCls} value={item.label} placeholder="Texto del link" onChange={(e) => sNav({ items: items.map((x, i) => i === index ? { ...x, label: e.target.value } : x) })} />
+                            </F>
+                            <F label="URL">
+                              <input className={iCls} value={item.href} placeholder="/pagina o https://..." onChange={(e) => sNav({ items: items.map((x, i) => i === index ? { ...x, href: e.target.value } : x) })} />
+                            </F>
+                            <F label="Badge (opcional)">
+                              <input className={iCls} value={item.badge || ""} placeholder="Opcional" onChange={(e) => sNav({ items: items.map((x, i) => i === index ? { ...x, badge: e.target.value || undefined } : x) })} />
+                            </F>
+                            <button type="button" onClick={() => sNav({ items: items.map((x, i) => i === index ? { ...x, external: !x.external } : x) })} className={cn("flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-all w-full", item.external ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/35")}>
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              {item.external ? "Abre en nueva pestana" : "Abrir en misma pestana"}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-white/8 bg-white/[0.03] px-4 py-5 text-sm text-white/40 text-center">
+                        Sin links manuales. Agrega uno para anclar una ruta externa o forzar el orden del menu.
+                      </div>
+                    )}
+
+                    {autoNavPages.length > 0 ? (
+                      <div className="space-y-3">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Paginas automaticas visibles</div>
+                        {autoNavPages.map((page) => (
+                          <div key={`auto-page-${page.slug}`} className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+                            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-[#0b1017] text-white/35">
+                              <Globe className="h-3.5 w-3.5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-white">{page.navLabel || page.title}</div>
+                              <div className="mt-1 text-[11px] text-white/35">/{page.slug}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedNavPageSlug(page.slug)}
+                              className="flex-shrink-0 rounded-xl border border-white/8 px-2.5 py-1.5 text-[11px] font-medium text-white/55 transition-all hover:border-primary/30 hover:text-white"
+                            >
+                              Editar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-2xl border border-white/8 bg-[#0b1017] p-3">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Preview de orden final</div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {combinedEntries.map((entry) => (
+                          <span key={`entry-chip-${entry.key}`} className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/62">
+                            {entry.label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                {managedPages.length > 0 && (
+                  <Card title="Paginas del sitio">
+                    <div className="space-y-2.5">
+                      {managedPages.map((page) => {
+                        const inNav = page.showInNav !== false
+                        return (
+                          <div key={`insp-page-${page.slug}`} className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+                            <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-white/8 bg-[#0b1017] text-white/30">
+                              <Globe className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-white">{page.navLabel || page.title}</div>
+                              <div className="mt-1 text-[11px] text-white/30">/{page.slug}</div>
+                            </div>
+                            <div className="flex flex-col items-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedNavPageSlug(page.slug)
+                                }}
+                                className="flex-shrink-0 rounded-xl border border-white/8 px-2.5 py-1.5 text-[11px] font-medium text-white/50 hover:border-primary/30 hover:text-white transition-all"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleChange({
+                                    ...config,
+                                    pages: (config.pages ?? []).map(p => p.slug === page.slug ? { ...p, showInNav: inNav ? false : undefined } : p)
+                                  })
+                                }}
+                                className={cn("flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-all cursor-pointer", inNav ? "bg-emerald-500/12 text-emerald-300 hover:bg-red-500/12 hover:text-red-300" : "bg-white/8 text-white/30 hover:bg-emerald-500/12 hover:text-emerald-300")}
+                                title={inNav ? "Clic para ocultar del menu" : "Clic para mostrar en menu"}
+                              >
+                                {inNav ? "En menu" : "Oculta"}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </Card>
+                )}
+                <Card title="Botones">
+                  <F label="Texto Iniciar sesion"><input className={iCls} value={nav.loginLabel} onChange={(e) => sNav({ loginLabel: e.target.value })} /></F>
+                  <F label="Texto Registrarse"><input className={iCls} value={nav.registerLabel} onChange={(e) => sNav({ registerLabel: e.target.value })} /></F>
+                </Card>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
+            <Card title="Vista previa del header">
+              <div className="rounded-[28px] border border-white/8 bg-[#08111b] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.25)]">
+                <div
+                  className="rounded-[24px] border px-4 py-4"
+                  style={{
+                    backgroundColor: appearance.surfaceColor || "#0b1220",
+                    borderColor: appearance.borderColor || "#1e293b",
+                    fontFamily: appearance.fontFamily || NAV_FONT_OPTIONS[0].value,
+                  }}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-lg font-bold" style={{ color: appearance.brandColor || "#ffffff" }}>
+                        {general.nombrePlataforma || "Hack Evans"}
+                      </div>
+                      <div className="mt-1 text-[10px] uppercase tracking-[0.18em]" style={{ color: appearance.taglineColor || "#94a3b8" }}>
+                        {general.tagline || "La plataforma #1 para docentes en Ecuador"}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      {previewEntries.length > 0 ? previewEntries.map((entry) => (
+                        <span
+                          key={`preview-nav-${entry.key}`}
+                          className="text-xs font-semibold uppercase"
+                          style={{
+                            color: appearance.linkColor || "#cbd5e1",
+                            fontSize: appearance.fontSize || "13px",
+                            fontWeight: appearance.fontWeight || "600",
+                            letterSpacing: appearance.letterSpacing || "0.06em",
+                          }}
+                        >
+                          {entry.label}
+                        </span>
+                      )) : (
+                        <span className="text-xs text-white/40">Sin links todavia</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span
+                      className="rounded-xl border px-3 py-2 text-xs font-semibold"
+                      style={{
+                        borderColor: appearance.borderColor || "#1e293b",
+                        backgroundColor: appearance.secondaryButtonColor || "#0f172a",
+                        color: appearance.secondaryButtonTextColor || "#ffffff",
+                      }}
+                    >
+                      {nav.loginLabel}
+                    </span>
+                    <span
+                      className="rounded-xl px-3 py-2 text-xs font-bold"
+                      style={{
+                        backgroundColor: appearance.primaryButtonColor || "#E8392A",
+                        color: appearance.primaryButtonTextColor || "#ffffff",
+                      }}
+                    >
+                      {nav.registerLabel}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card title="Barra de formato">
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <F label="Fuente">
+                    <select className={iCls} value={appearance.fontFamily || NAV_FONT_OPTIONS[0].value} onChange={(e) => setAppearance({ fontFamily: e.target.value })}>
+                      {NAV_FONT_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                  </F>
+                  <F label="Tamano visible">
+                    <select className={iCls} value={appearance.fontSize || "13px"} onChange={(e) => setAppearance({ fontSize: e.target.value })}>
+                      {NAV_FONT_SIZE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                  </F>
+                </div>
+
+                <div className="rounded-2xl border border-white/8 bg-[#0b1017] p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Tamano</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {NAV_FONT_SIZE_OPTIONS.map((opt) => (
+                      <button
+                        key={`nav-size-${opt.value}`}
+                        type="button"
+                        onClick={() => setAppearance({ fontSize: opt.value })}
+                        className={cn(
+                          "rounded-xl border px-3 py-2 text-xs font-semibold transition-all",
+                          (appearance.fontSize || "13px") === opt.value
+                            ? "border-primary/45 bg-primary/12 text-primary"
+                            : "border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:text-white"
+                        )}
+                      >
+                        {opt.value}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/8 bg-[#0b1017] p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Peso tipo Word</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {NAV_FONT_WEIGHT_OPTIONS.map((opt) => (
+                      <button
+                        key={`nav-weight-${opt.value}`}
+                        type="button"
+                        onClick={() => setAppearance({ fontWeight: opt.value })}
+                        className={cn(
+                          "rounded-xl border px-3 py-2 text-xs font-semibold transition-all",
+                          (appearance.fontWeight || "600") === opt.value
+                            ? "border-primary/45 bg-primary/12 text-primary"
+                            : "border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:text-white"
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/8 bg-[#0b1017] p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Espaciado</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {NAV_LETTER_SPACING_OPTIONS.map((opt) => (
+                      <button
+                        key={`nav-spacing-${opt.value}`}
+                        type="button"
+                        onClick={() => setAppearance({ letterSpacing: opt.value })}
+                        className={cn(
+                          "rounded-xl border px-3 py-2 text-xs font-semibold transition-all",
+                          (appearance.letterSpacing || "0.06em") === opt.value
+                            ? "border-primary/45 bg-primary/12 text-primary"
+                            : "border-white/10 bg-white/[0.03] text-white/60 hover:border-white/20 hover:text-white"
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
             <Card title="Identidad">
-              <F label="Nombre de la plataforma"><input className={iCls} value={general.nombrePlataforma} onChange={(e) => sGeneral({ nombrePlataforma: e.target.value })} /></F>
-              <F label="Tagline / eslogan"><input className={iCls} value={general.tagline} onChange={(e) => sGeneral({ tagline: e.target.value })} /></F>
-              <F label="Tipografia del menu">
-                <select className={iCls} value={appearance.fontFamily || NAV_FONT_OPTIONS[0].value} onChange={(e) => setAppearance({ fontFamily: e.target.value })}>
-                  {NAV_FONT_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                </select>
-              </F>
+              <div className="space-y-4">
+                <F label="Nombre de la plataforma"><input className={iCls} value={general.nombrePlataforma} onChange={(e) => sGeneral({ nombrePlataforma: e.target.value })} /></F>
+                <F label="Tagline / eslogan"><input className={iCls} value={general.tagline} onChange={(e) => sGeneral({ tagline: e.target.value })} /></F>
+              </div>
             </Card>
             <Card title="Colores del header">
-              <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <StudioColorField label="Fondo del header" value={appearance.surfaceColor} onChange={(v) => setAppearance({ surfaceColor: v })} fallback="#0b1220" />
                 <StudioColorField label="Borde del header" value={appearance.borderColor} onChange={(v) => setAppearance({ borderColor: v })} fallback="#1e293b" />
                 <StudioColorField label="Color marca" value={appearance.brandColor} onChange={(v) => setAppearance({ brandColor: v })} fallback="#ffffff" />
                 <StudioColorField label="Color tagline" value={appearance.taglineColor} onChange={(v) => setAppearance({ taglineColor: v })} fallback="#94a3b8" />
+              </div>
+            </Card>
+            <Card title="Colores de links y botones">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <StudioColorField label="Color links" value={appearance.linkColor} onChange={(v) => setAppearance({ linkColor: v })} fallback="#cbd5e1" />
                 <StudioColorField label="Hover links" value={appearance.linkHoverColor} onChange={(v) => setAppearance({ linkHoverColor: v })} fallback="#ffffff" />
                 <StudioColorField label="Boton primario" value={appearance.primaryButtonColor} onChange={(v) => setAppearance({ primaryButtonColor: v })} fallback="#E8392A" />
@@ -9261,7 +9684,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       return (
         <div className="pointer-events-auto absolute inset-0 z-40 bg-[#02050b]/76 backdrop-blur-sm" onClick={() => setFocusLeftOpen(false)}>
           <div
-            className="absolute inset-x-0 bottom-0 top-[16%] flex flex-col overflow-hidden rounded-t-[32px] border border-white/10 bg-[#08111b]/98 shadow-[0_30px_90px_rgba(0,0,0,0.5)]"
+            className="absolute inset-x-0 bottom-0 top-[10%] flex flex-col overflow-hidden rounded-t-[32px] border border-white/10 bg-[#08111b]/98 shadow-[0_30px_90px_rgba(0,0,0,0.5)]"
             onClick={(event) => event.stopPropagation()}
             onTouchStart={handleMobileDrawerTouchStart("left")}
             onTouchEnd={handleMobileDrawerTouchEnd}
@@ -9841,7 +10264,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
       <div className="relative flex min-h-0 flex-1 w-full">
         {!canvasOnlyMode && (
-          <aside className={cn("flex min-h-0 flex-shrink-0 border-r border-white/10 bg-[#060d18] transition-all duration-200", leftPanelCollapsed ? "w-[64px]" : "w-[clamp(220px,18vw,272px)] max-[1200px]:w-[220px]")}>
+          <aside className={cn("flex min-h-0 flex-shrink-0 border-r border-white/10 bg-[#060d18] transition-all duration-200", leftPanelCollapsed ? "w-[64px]" : "w-[clamp(248px,20vw,312px)] max-[1200px]:w-[248px]")}>
             {renderLeftIconRail()}
             {!leftPanelCollapsed && (
               <div className="min-h-0 min-w-0 flex-1">

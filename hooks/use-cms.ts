@@ -14,6 +14,9 @@ export interface CMSNavItem {
 
 export interface CMSNavAppearance {
   fontFamily?: string
+  fontSize?: string
+  fontWeight?: string
+  letterSpacing?: string
   surfaceColor?: string
   borderColor?: string
   brandColor?: string
@@ -335,6 +338,9 @@ export const DEFAULT_CMS: CMSConfig = {
     ],
     navAppearance: {
       fontFamily: "var(--font-barlow), system-ui, sans-serif",
+      fontSize: "13px",
+      fontWeight: "600",
+      letterSpacing: "0.06em",
       surfaceColor: "#0b1220",
       borderColor: "#1e293b",
       brandColor: "#ffffff",
