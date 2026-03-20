@@ -333,7 +333,8 @@ function renderSectionContent(
   onAction?: (action?: CMSActionConfig, fallbackHref?: string) => void,
   onHtmlElementSelect?: (info: EditorElementInfo | null) => void,
   onHtmlEditingChange?: (editing: boolean) => void,
-  onHtmlSnapshot?: (html: string) => void
+  onHtmlSnapshot?: (html: string) => void,
+  onHtmlInteractionLockChange?: (locked: boolean) => void
 ) {
   switch (section.type) {
     case "hero":
@@ -397,22 +398,24 @@ function renderSectionContent(
     case "stats":
       return <StatsSection data={section.data} />
     case "customCode":
+      const htmlRuntimeEnabled = Boolean(onSelect)
       return (
         <CustomCodeSection
           data={section.data}
-          editMode={selected}
-          iframeRef={selected && htmlIframeRef ? htmlIframeRef as React.RefObject<HTMLIFrameElement> : undefined}
-          onActivate={!selected ? () => onSelect?.(section.id) : undefined}
-          onElementSelect={selected ? (info) => {
+          editMode={htmlRuntimeEnabled}
+          iframeRef={htmlRuntimeEnabled && htmlIframeRef ? htmlIframeRef as React.RefObject<HTMLIFrameElement> : undefined}
+          onActivate={!htmlRuntimeEnabled && !selected ? () => onSelect?.(section.id) : undefined}
+          onElementSelect={htmlRuntimeEnabled ? (info) => {
             onSelect?.(section.id)
             onHtmlElementSelect?.(info)
           } : undefined}
-          onEditingChange={selected ? (editing) => {
+          onEditingChange={htmlRuntimeEnabled ? (editing) => {
             if (editing) onSelect?.(section.id)
             onHtmlEditingChange?.(editing)
           } : undefined}
-          onEditorSnapshot={selected ? onHtmlSnapshot : undefined}
+          onEditorSnapshot={htmlRuntimeEnabled ? onHtmlSnapshot : undefined}
           onAction={(action, fallbackHref) => onAction?.(action, fallbackHref)}
+          onInteractionLockChange={htmlRuntimeEnabled ? onHtmlInteractionLockChange : undefined}
         />
       )
     case "pageHero":
@@ -554,6 +557,7 @@ export default function StudioSitePreview({
   onHtmlElementSelect,
   onHtmlEditingChange,
   onHtmlSnapshot,
+  onHtmlInteractionLockChange,
 }: {
   config: CMSConfig
   sections: CMSSection[]
@@ -574,6 +578,7 @@ export default function StudioSitePreview({
   onHtmlElementSelect?: (info: EditorElementInfo | null) => void
   onHtmlEditingChange?: (editing: boolean) => void
   onHtmlSnapshot?: (html: string) => void
+  onHtmlInteractionLockChange?: (locked: boolean) => void
 }) {
   const datasets = useLandingBuilderData()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -779,7 +784,7 @@ export default function StudioSitePreview({
     <div
       key={key}
       data-he-editor-ui="true"
-      className="group relative flex items-center justify-center py-3"
+      className={cn("group relative flex items-center justify-center py-3", draggingId ? "pointer-events-auto" : "pointer-events-none")}
       onDragOver={(event) => {
         if (!draggingId) return
         event.preventDefault()
@@ -806,8 +811,9 @@ export default function StudioSitePreview({
       <button
         type="button"
         onClick={() => onAddBlock?.(index)}
+        aria-label={`Agregar bloque en posicion ${index + 1}`}
         className={cn(
-          "absolute inline-flex h-8 items-center gap-1 rounded-full border px-2.5 text-[10px] font-semibold transition-all focus:opacity-100 focus:scale-100",
+          "pointer-events-auto absolute inline-flex h-8 items-center gap-1 rounded-full border px-2.5 text-[10px] font-semibold transition-all focus:opacity-100 focus:scale-100",
           draggingId && dropIndex === index
             ? "border-primary bg-primary text-white shadow-[0_10px_30px_rgba(232,57,42,0.18)]"
             : "border-white/10 bg-[#09111b]/96 text-white/45 opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 hover:border-primary/35 hover:text-white"
@@ -933,7 +939,7 @@ export default function StudioSitePreview({
                     dragging={draggingId === section.id}
                   >
                     <div id={getLandingSectionDomId(section.id)}>
-                      {renderSectionContent(section, config, datasets, editable && selectedId === section.id, htmlIframeRef, onSelect, onInlineUpdate, executePreviewAction, onHtmlElementSelect, onHtmlEditingChange, onHtmlSnapshot)}
+                      {renderSectionContent(section, config, datasets, editable && selectedId === section.id, htmlIframeRef, onSelect, onInlineUpdate, executePreviewAction, onHtmlElementSelect, onHtmlEditingChange, onHtmlSnapshot, onHtmlInteractionLockChange)}
                     </div>
                   </SectionShell>
                   {editable && renderInsertSlot(trailingInsertIndex, `slot-after-${section.id}`)}

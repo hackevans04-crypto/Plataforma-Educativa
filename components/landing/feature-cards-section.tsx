@@ -33,6 +33,21 @@ export default function FeatureCardsSection({
   const descripcion = data.descripcion || ""
   const items      = (data.items as FeatureCardItem[]) || []
   const columns    = data.columns || 3
+  const appearance = (data.appearance as Record<string, any>) || {}
+  const headingTitleColor = appearance.headingTitleColor
+  const headingDescriptionColor = appearance.headingDescriptionColor
+  const headingFontFamily = appearance.headingFontFamily
+  const headingFontWeight = appearance.headingFontWeight
+  const cardBg = appearance.cardBg
+  const cardBorder = appearance.cardBorder
+  const titleColor = appearance.titleColor
+  const descriptionColor = appearance.descriptionColor
+  const cardTitleFontFamily = appearance.cardTitleFontFamily
+  const cardTitleFontWeight = appearance.cardTitleFontWeight
+  const cardDescriptionFontFamily = appearance.cardDescriptionFontFamily
+  const cardDescriptionFontWeight = appearance.cardDescriptionFontWeight
+  const cardPadding = Math.min(48, Math.max(16, Number(appearance.cardPadding || 24)))
+  const paddingY = Math.min(180, Math.max(40, Number(appearance.sectionPaddingY || 64)))
 
   const colsClass =
     columns === 2 ? "grid-cols-1 md:grid-cols-2" :
@@ -40,7 +55,7 @@ export default function FeatureCardsSection({
                     "grid-cols-1 md:grid-cols-3"
 
   return (
-    <section className="relative py-16">
+    <section className="relative" style={{ paddingTop: paddingY, paddingBottom: paddingY }}>
       <div className="max-w-7xl mx-auto px-6 lg:px-12">
         {(titulo || descripcion) && (
           <div className={`text-center mb-10 transition-all duration-700 ${vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
@@ -54,6 +69,8 @@ export default function FeatureCardsSection({
                 onChange={(value) => onFieldChange?.("titulo", value)}
                 className="font-display text-3xl md:text-4xl text-foreground mb-3"
                 editorClassName="mx-auto max-w-3xl font-display text-3xl md:text-4xl text-foreground text-center"
+                style={{ color: headingTitleColor, fontFamily: headingFontFamily, fontWeight: headingFontWeight }}
+                editorStyle={{ color: headingTitleColor, fontFamily: headingFontFamily, fontWeight: headingFontWeight }}
               />
             )}
             {descripcion && (
@@ -66,6 +83,8 @@ export default function FeatureCardsSection({
                 onChange={(value) => onFieldChange?.("descripcion", value)}
                 className="text-muted-foreground max-w-2xl mx-auto"
                 editorClassName="mx-auto max-w-2xl text-center text-muted-foreground"
+                style={{ color: headingDescriptionColor, fontFamily: headingFontFamily, fontWeight: cardDescriptionFontWeight }}
+                editorStyle={{ color: headingDescriptionColor, fontFamily: headingFontFamily, fontWeight: cardDescriptionFontWeight }}
               />
             )}
           </div>
@@ -83,7 +102,12 @@ export default function FeatureCardsSection({
                 <div
                   key={item.id}
                   className={`rounded-2xl border border-border bg-card/80 p-6 transition-all duration-700 ${vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
-                  style={{ transitionDelay: `${i * 100}ms` }}
+                  style={{
+                    transitionDelay: `${i * 100}ms`,
+                    backgroundColor: cardBg,
+                    borderColor: cardBorder,
+                    padding: cardPadding,
+                  }}
                 >
                   {item.emoji && (
                     <div
@@ -111,6 +135,8 @@ export default function FeatureCardsSection({
                       onChange={(value) => onItemChange?.(i, { title: value })}
                       className="text-lg font-bold text-foreground mb-2"
                       editorClassName="text-lg font-bold text-foreground"
+                      style={{ color: titleColor, fontFamily: cardTitleFontFamily, fontWeight: cardTitleFontWeight }}
+                      editorStyle={{ color: titleColor, fontFamily: cardTitleFontFamily, fontWeight: cardTitleFontWeight }}
                     />
                   )}
                   {item.description && (
@@ -123,6 +149,8 @@ export default function FeatureCardsSection({
                       onChange={(value) => onItemChange?.(i, { description: value })}
                       className="text-sm text-muted-foreground"
                       editorClassName="text-sm text-muted-foreground"
+                      style={{ color: descriptionColor, fontFamily: cardDescriptionFontFamily, fontWeight: cardDescriptionFontWeight }}
+                      editorStyle={{ color: descriptionColor, fontFamily: cardDescriptionFontFamily, fontWeight: cardDescriptionFontWeight }}
                     />
                   )}
                 </div>

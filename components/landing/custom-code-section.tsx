@@ -107,6 +107,8 @@ interface CustomCodeSectionProps {
   iframeRef?: React.RefObject<HTMLIFrameElement>
   /** Execute CMS actions bound to buttons/links inside the imported HTML */
   onAction?: (action?: CMSActionConfig, fallbackHref?: string) => void
+  /** Notify parent when touch/move interactions should lock outer scrolling */
+  onInteractionLockChange?: (locked: boolean) => void
 }
 
 function buildFrameDocument(html: string, revision?: string | number) {
@@ -159,6 +161,7 @@ export default function CustomCodeSection({
   onActivate,
   iframeRef: externalRef,
   onAction,
+  onInteractionLockChange,
 }: CustomCodeSectionProps) {
   const html = (data.html as string) ?? ""
   const actionBindings = React.useMemo(
@@ -168,6 +171,7 @@ export default function CustomCodeSection({
   const internalRef = React.useRef<HTMLIFrameElement>(null)
   const iframeRef   = externalRef ?? internalRef
   const [height, setHeight] = React.useState(480)
+  const [interactionLocked, setInteractionLocked] = React.useState(false)
   const [iframeSrcDoc, setIframeSrcDoc] = React.useState(() => buildFrameDocument(html))
   const lastLiveSnapshotRef = React.useRef("")
   const lastAppliedHtmlRef = React.useRef(html)
@@ -216,6 +220,11 @@ export default function CustomCodeSection({
         lastAppliedHtmlRef.current = snapshotHtml
         onEditorSnapshot?.(snapshotHtml)
       }
+    }
+    if (data.__editor_interaction_lock) {
+      const nextLocked = Boolean(data.active)
+      setInteractionLocked(nextLocked)
+      onInteractionLockChange?.(nextLocked)
     }
   }, [iframeRef, onEditorSnapshot, onEditingChange, onElementSelect, syncHeightFromDocument])
   const injectEditorRuntime = React.useCallback((doc: Document) => {
@@ -483,8 +492,68 @@ export default function CustomCodeSection({
     if (!editMode) {
       onElementSelect?.(null)
       onEditingChange?.(false)
+      setInteractionLocked(false)
+      onInteractionLockChange?.(false)
     }
-  }, [editMode, onEditingChange, onElementSelect])
+  }, [editMode, onEditingChange, onElementSelect, onInteractionLockChange])
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const syncIframeSize = () => {
+      syncHeightFromDocument(iframeRef.current?.contentDocument)
+    }
+
+    const handleVisibilitySync = () => {
+      if (document.visibilityState === "visible") {
+        window.requestAnimationFrame(syncIframeSize)
+        window.setTimeout(syncIframeSize, 120)
+      }
+    }
+
+    window.addEventListener("resize", syncIframeSize)
+    window.addEventListener("orientationchange", syncIframeSize)
+    window.addEventListener("focus", syncIframeSize)
+    window.addEventListener("pageshow", syncIframeSize)
+    document.addEventListener("visibilitychange", handleVisibilitySync)
+
+    return () => {
+      window.removeEventListener("resize", syncIframeSize)
+      window.removeEventListener("orientationchange", syncIframeSize)
+      window.removeEventListener("focus", syncIframeSize)
+      window.removeEventListener("pageshow", syncIframeSize)
+      document.removeEventListener("visibilitychange", handleVisibilitySync)
+    }
+  }, [iframeRef, syncHeightFromDocument])
+
+  React.useEffect(() => {
+    if (typeof document === "undefined") return
+    if (!interactionLocked) return
+
+    const { body, documentElement } = document
+    const prevBodyOverflow = body.style.overflow
+    const prevBodyTouchAction = body.style.touchAction
+    const prevBodyOverscroll = body.style.overscrollBehavior
+    const prevDocOverflow = documentElement.style.overflow
+    const prevDocTouchAction = documentElement.style.touchAction
+    const prevDocOverscroll = documentElement.style.overscrollBehavior
+
+    body.style.overflow = "hidden"
+    body.style.touchAction = "none"
+    body.style.overscrollBehavior = "none"
+    documentElement.style.overflow = "hidden"
+    documentElement.style.touchAction = "none"
+    documentElement.style.overscrollBehavior = "none"
+
+    return () => {
+      body.style.overflow = prevBodyOverflow
+      body.style.touchAction = prevBodyTouchAction
+      body.style.overscrollBehavior = prevBodyOverscroll
+      documentElement.style.overflow = prevDocOverflow
+      documentElement.style.touchAction = prevDocTouchAction
+      documentElement.style.overscrollBehavior = prevDocOverscroll
+    }
+  }, [interactionLocked])
 
   const handleLoad = () => {
     const iframe = iframeRef.current
@@ -541,13 +610,17 @@ export default function CustomCodeSection({
       const iframe = iframeRef.current as (HTMLIFrameElement & { __heCleanupObservers?: () => void }) | null
       iframe?.__heCleanupObservers?.()
       if (iframe) delete iframe.__heCleanupObservers
+      onInteractionLockChange?.(false)
     }
-  }, [iframeRef])
+  }, [iframeRef, onInteractionLockChange])
 
   if (!html.trim()) return null
 
   return (
-    <section className={editMode ? "relative min-h-0 w-full overflow-visible" : "relative w-full"}>
+    <section
+      className={editMode ? "relative min-h-0 w-full overflow-visible" : "relative w-full"}
+      data-he-html-interaction-locked={interactionLocked ? "1" : undefined}
+    >
       {!editMode && onActivate ? (
         <button
           type="button"
@@ -569,6 +642,7 @@ export default function CustomCodeSection({
           border: "none",
           display: "block",
           overflow: "auto",
+          touchAction: interactionLocked ? "none" : "auto",
           cursor: editMode ? "crosshair" : undefined,
         }}
         title="custom-block"

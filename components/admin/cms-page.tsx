@@ -1638,6 +1638,31 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
           <StudioRangeField label="Tamano descripcion" value={Number(appearance.descriptionSize || 18)} onChange={(value) => sAppearance({ descriptionSize: value })} min={14} max={28} />
         </div>
       </Card>
+
+      <Card title="Tipografia">
+        <div className="grid grid-cols-2 gap-3">
+          <F label="Fuente titulo">
+            <select className={iCls} value={appearance.titleFontFamily || NAV_FONT_OPTIONS[0].value} onChange={(event) => sAppearance({ titleFontFamily: event.target.value })}>
+              {NAV_FONT_OPTIONS.map((option) => <option key={`hero-title-${option.value}`} value={option.value}>{option.label}</option>)}
+            </select>
+          </F>
+          <F label="Peso titulo">
+            <select className={iCls} value={String(appearance.titleFontWeight || 800)} onChange={(event) => sAppearance({ titleFontWeight: Number(event.target.value) })}>
+              {[400, 500, 600, 700, 800, 900].map((weight) => <option key={`hero-title-weight-${weight}`} value={weight}>{weight}</option>)}
+            </select>
+          </F>
+          <F label="Fuente descripcion">
+            <select className={iCls} value={appearance.descriptionFontFamily || NAV_FONT_OPTIONS[0].value} onChange={(event) => sAppearance({ descriptionFontFamily: event.target.value })}>
+              {NAV_FONT_OPTIONS.map((option) => <option key={`hero-description-${option.value}`} value={option.value}>{option.label}</option>)}
+            </select>
+          </F>
+          <F label="Peso descripcion">
+            <select className={iCls} value={String(appearance.descriptionFontWeight || 500)} onChange={(event) => sAppearance({ descriptionFontWeight: Number(event.target.value) })}>
+              {[400, 500, 600, 700].map((weight) => <option key={`hero-description-weight-${weight}`} value={weight}>{weight}</option>)}
+            </select>
+          </F>
+        </div>
+      </Card>
     </div>
   )
 }
@@ -1706,6 +1731,41 @@ function FeatureCardsEditor({ data, onChange }: { data: Record<string, any>; onC
           <StudioColorField label="Descripcion tarjeta" value={appearance.descriptionColor} onChange={(value) => sAppearance({ descriptionColor: value })} fallback="#9CA3AF" />
           <StudioRangeField label="Padding bloque" value={Number(appearance.sectionPaddingY || 64)} onChange={(value) => sAppearance({ sectionPaddingY: value })} min={40} max={180} step={4} />
           <StudioRangeField label="Padding tarjeta" value={Number(appearance.cardPadding || 24)} onChange={(value) => sAppearance({ cardPadding: value })} min={16} max={48} step={2} />
+        </div>
+      </Card>
+
+      <Card title="Tipografia">
+        <div className="grid grid-cols-2 gap-3">
+          <F label="Fuente encabezado">
+            <select className={iCls} value={appearance.headingFontFamily || NAV_FONT_OPTIONS[0].value} onChange={(event) => sAppearance({ headingFontFamily: event.target.value })}>
+              {NAV_FONT_OPTIONS.map((option) => <option key={`features-heading-${option.value}`} value={option.value}>{option.label}</option>)}
+            </select>
+          </F>
+          <F label="Peso encabezado">
+            <select className={iCls} value={String(appearance.headingFontWeight || 800)} onChange={(event) => sAppearance({ headingFontWeight: Number(event.target.value) })}>
+              {[400, 500, 600, 700, 800, 900].map((weight) => <option key={`features-heading-weight-${weight}`} value={weight}>{weight}</option>)}
+            </select>
+          </F>
+          <F label="Fuente titulo tarjeta">
+            <select className={iCls} value={appearance.cardTitleFontFamily || NAV_FONT_OPTIONS[0].value} onChange={(event) => sAppearance({ cardTitleFontFamily: event.target.value })}>
+              {NAV_FONT_OPTIONS.map((option) => <option key={`features-card-title-${option.value}`} value={option.value}>{option.label}</option>)}
+            </select>
+          </F>
+          <F label="Peso titulo tarjeta">
+            <select className={iCls} value={String(appearance.cardTitleFontWeight || 700)} onChange={(event) => sAppearance({ cardTitleFontWeight: Number(event.target.value) })}>
+              {[400, 500, 600, 700, 800].map((weight) => <option key={`features-card-title-weight-${weight}`} value={weight}>{weight}</option>)}
+            </select>
+          </F>
+          <F label="Fuente descripcion">
+            <select className={iCls} value={appearance.cardDescriptionFontFamily || NAV_FONT_OPTIONS[0].value} onChange={(event) => sAppearance({ cardDescriptionFontFamily: event.target.value })}>
+              {NAV_FONT_OPTIONS.map((option) => <option key={`features-card-description-${option.value}`} value={option.value}>{option.label}</option>)}
+            </select>
+          </F>
+          <F label="Peso descripcion">
+            <select className={iCls} value={String(appearance.cardDescriptionFontWeight || 500)} onChange={(event) => sAppearance({ cardDescriptionFontWeight: Number(event.target.value) })}>
+              {[400, 500, 600, 700].map((weight) => <option key={`features-card-description-weight-${weight}`} value={weight}>{weight}</option>)}
+            </select>
+          </F>
         </div>
       </Card>
     </div>
@@ -2817,9 +2877,11 @@ function StudioViewport({
   previewMode,
   desktopWidth,
   mobileShell,
+  mobileDockVisible = true,
   htmlIframeRef,
   onHtmlElementSelect,
   onHtmlEditingChange,
+  onHtmlInteractionLockChange,
   onHtmlSnapshot,
 }: {
   title: string
@@ -2842,9 +2904,11 @@ function StudioViewport({
   previewMode?: boolean
   desktopWidth?: 1440 | 1280
   mobileShell?: boolean
+  mobileDockVisible?: boolean
   htmlIframeRef?: React.MutableRefObject<HTMLIFrameElement | null>
   onHtmlElementSelect?: (info: EditorElementInfo | null) => void
   onHtmlEditingChange?: (editing: boolean) => void
+  onHtmlInteractionLockChange?: (locked: boolean) => void
   onHtmlSnapshot?: (html: string) => void
 }) {
   const workspaceRef = useRef<HTMLDivElement>(null)
@@ -2852,7 +2916,8 @@ function StudioViewport({
   const [fitScale, setFitScale] = useState(1)
   const [previewHeight, setPreviewHeight] = useState<number | null>(null)
   const [showGuide, setShowGuide] = useState(true)
-  const [mobileViewportHeight, setMobileViewportHeight] = useState(844)
+  const [mobileViewportHeight, setMobileViewportHeight] = useState(640)
+  const [mobileDockHeight, setMobileDockHeight] = useState(0)
 
   const viewportWidth =
     mode === "mobile"
@@ -2877,19 +2942,26 @@ function StudioViewport({
       const paddingX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0)
       const availableWidth = Math.max(workspace.clientWidth - paddingX, 320)
       if (mode === "mobile" && mobileShell) {
-        const workspaceRect = workspace.getBoundingClientRect()
         const dockNode = document.querySelector("[data-he-mobile-dock='1']") as HTMLElement | null
-        const dockTop = dockNode ? dockNode.getBoundingClientRect().top : workspaceRect.bottom
+        const dockRect = dockNode?.getBoundingClientRect()
         const topInset = parseFloat(style.paddingTop) || 0
-        const nextViewportHeight = Math.max(320, Math.min(844, Math.floor(dockTop - workspaceRect.top - topInset - 12)))
+        const dockHeight = dockRect ? Math.ceil(dockRect.height) : 0
+        const reservedBottom = dockHeight > 0 ? dockHeight + 14 : 0
+        const nextViewportHeight = Math.max(280, Math.floor(workspace.clientHeight - topInset - reservedBottom - 12))
+        setMobileDockHeight((current) => (current === dockHeight ? current : dockHeight))
         setMobileViewportHeight((current) => (current === nextViewportHeight ? current : nextViewportHeight))
+      } else if (mobileDockHeight !== 0) {
+        setMobileDockHeight(0)
       }
       const nextScale = Math.min(1, availableWidth / viewportWidth)
       const appliedScale = zoomMode === "fit" ? nextScale : Math.min(zoomMode / 100, nextScale)
-      const nextHeight = preview.scrollHeight * nextScale
+      const previewBaseHeight =
+        (mode === "mobile" || mode === "tablet") && viewportHeight
+          ? viewportHeight
+          : preview.scrollHeight
 
       setFitScale(nextScale)
-      setPreviewHeight(Number.isFinite(preview.scrollHeight * appliedScale) ? preview.scrollHeight * appliedScale : null)
+      setPreviewHeight(Number.isFinite(previewBaseHeight * appliedScale) ? previewBaseHeight * appliedScale : null)
     }
 
     updateScale()
@@ -2903,7 +2975,7 @@ function StudioViewport({
       resizeObserver.disconnect()
       window.removeEventListener("resize", updateScale)
     }
-  }, [isDesktop, mobileShell, viewportWidth, mode, sections, selectedId, route, zoomMode])
+  }, [isDesktop, mobileDockHeight, mobileDockVisible, mobileShell, mobileViewportHeight, viewportWidth, mode, sections, selectedId, route, zoomMode, viewportHeight])
 
   const appliedScale = zoomMode === "fit" ? fitScale : Math.min(zoomMode / 100, fitScale)
   const scaledViewportWidth = Math.max(220, Math.round(viewportWidth * appliedScale))
@@ -2927,6 +2999,7 @@ function StudioViewport({
     htmlIframeRef,
     onHtmlElementSelect,
     onHtmlEditingChange,
+    onHtmlInteractionLockChange,
     onHtmlSnapshot,
   }
 
@@ -2952,7 +3025,10 @@ function StudioViewport({
             "radial-gradient(circle at 50% 0%, rgba(232,57,42,0.05) 0%, transparent 50%)",
           ].join(", "),
           backgroundSize: "24px 24px, 24px 24px, auto",
-          paddingBottom: isMobile && !previewMode ? `calc(env(safe-area-inset-bottom) + ${selectedId ? 180 : 148}px)` : undefined,
+          paddingBottom:
+            isMobile && !previewMode
+              ? `calc(env(safe-area-inset-bottom) + ${Math.max(mobileDockHeight + 18, selectedId ? 190 : 156)}px)`
+              : undefined,
         }}
       >
         <div className={cn("flex min-h-full items-start justify-center", isMobile ? "px-2 py-3" : "px-4 py-6 sm:px-5 md:px-6 xl:px-10 2xl:px-14")}>
@@ -3186,16 +3262,20 @@ function AddModal({
   onAdd,
   onClose,
   pageMode,
+  viewportHeight,
 }: {
   onAdd: (type: CMSSectionType) => void
   onClose: () => void
   pageMode?: boolean
+  viewportHeight?: number | null
 }) {
   const list = pageMode ? ADDABLE_PAGE : ADDABLE
   const [hovered, setHovered] = useState<CMSSectionType | null>(null)
   const [detailsType, setDetailsType] = useState<CMSSectionType | null>(null)
   const [search, setSearch] = useState("")
   const [groupFilter, setGroupFilter] = useState<string>("all")
+  const resolvedViewportHeight = viewportHeight ? Math.max(320, viewportHeight - 16) : null
+  const mobileSheetMode = Boolean(resolvedViewportHeight && resolvedViewportHeight < 820)
   const handleAdd = (type: CMSSectionType) => {
     onAdd(type)
     onClose()
@@ -3223,44 +3303,56 @@ function AddModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-2 pt-[calc(env(safe-area-inset-top)+8px)] pb-[calc(env(safe-area-inset-bottom)+8px)] backdrop-blur-sm sm:items-center sm:p-3"
+      className="fixed inset-0 z-50 flex flex-col items-stretch justify-end bg-black/75 backdrop-blur-sm sm:items-center sm:justify-center sm:p-3"
       onClick={onClose}
     >
       <div
-        className="flex h-full w-full max-w-[min(1440px,calc(100vw-16px))] flex-col overflow-hidden rounded-[28px] border border-border bg-card shadow-2xl sm:h-[min(92vh,980px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-xl"
-        style={{ maxHeight: "calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px)" }}
+        className={cn(
+          "flex min-h-0 w-full flex-col overflow-hidden border border-border bg-card shadow-2xl",
+          mobileSheetMode
+            ? "max-w-none rounded-t-[28px]"
+            : "max-w-[min(1440px,calc(100vw-16px))] rounded-[28px] sm:h-[min(92vh,980px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-xl"
+        )}
+        style={{
+          height: resolvedViewportHeight
+            ? `${Math.min(resolvedViewportHeight, Math.round(resolvedViewportHeight * 0.97))}px`
+            : "calc(100dvh - env(safe-area-inset-top) - 8px)",
+          maxHeight: resolvedViewportHeight
+            ? `${resolvedViewportHeight}px`
+            : "calc(100dvh - env(safe-area-inset-top))",
+        }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-secondary/10 px-4 py-4 sm:items-center sm:px-6">
+        <div className="flex-shrink-0 sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-secondary/10 px-4 py-3 sm:px-6 sm:py-4">
           <div className="min-w-0">
-            <div className="text-xs font-bold uppercase tracking-widest text-primary mb-0.5">Biblioteca de bloques</div>
-            <div className="font-semibold text-foreground">Combina bloques base, plantillas y bloques dinamicos para crear cualquier pagina</div>
+            <div className="text-xs font-bold uppercase tracking-widest text-primary">Biblioteca de bloques</div>
+            <div className="hidden sm:block text-sm font-semibold text-foreground mt-0.5">Combina bloques base, plantillas y bloques dinamicos</div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cerrar biblioteca de bloques"
-            title="Cerrar biblioteca de bloques"
-            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-card/70 text-muted-foreground transition-all hover:bg-secondary hover:text-foreground"
+            aria-label="Cerrar"
+            title="Cerrar"
+            className="flex h-10 w-10 touch-manipulation flex-shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-card/70 text-muted-foreground transition-all hover:bg-secondary hover:text-foreground"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="border-b border-border bg-secondary/5 px-4 py-4 sm:px-5">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="flex-shrink-0 border-b border-border bg-secondary/5 px-3 py-3 sm:px-5 sm:py-4">
+          <div className="flex flex-col gap-2 sm:grid sm:gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
             <input
               className={iCls}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar bloque, patron o integracion..."
+              placeholder="Buscar bloque..."
             />
-            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:flex-wrap lg:overflow-visible lg:pb-0">
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
               <button
                 type="button"
                 onClick={() => setGroupFilter("all")}
                 className={cn(
-                  "h-10 rounded-xl border px-4 text-xs font-semibold transition-all",
+                  "h-9 flex-shrink-0 rounded-xl border px-3 text-xs font-semibold transition-all whitespace-nowrap touch-manipulation",
                   groupFilter === "all" ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/30"
                 )}
               >
@@ -3272,7 +3364,7 @@ function AddModal({
                   type="button"
                   onClick={() => setGroupFilter(group.id)}
                   className={cn(
-                    "h-10 rounded-xl border px-4 text-xs font-semibold transition-all",
+                    "h-9 flex-shrink-0 rounded-xl border px-3 text-xs font-semibold transition-all whitespace-nowrap touch-manipulation",
                     groupFilter === group.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/30"
                   )}
                 >
@@ -3281,11 +3373,8 @@ function AddModal({
               ))}
             </div>
           </div>
-          <div className="mt-3 text-xs leading-5 text-muted-foreground">
-            Inspirado en el patron de editores visuales como Wix Studio, Webflow, Framer y Fluid Engine: mezcla elementos base, secciones listas y bloques conectados a datos.
-          </div>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-[calc(env(safe-area-inset-bottom)+16px)] sm:p-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-[calc(env(safe-area-inset-bottom)+28px)] sm:p-4">
           <div className="space-y-5">
             {visibleTypes.length === 0 ? (
               <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
@@ -3429,9 +3518,20 @@ function AddModal({
           </div>
         </div>
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-border bg-secondary/5 flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-primary/50 flex-shrink-0" />
-          <p className="text-[11px] text-muted-foreground">Explora bloques del sistema, revisa detalles antes de insertarlos y combinalos luego desde el canvas del Studio.</p>
+        <div className="border-t border-border bg-secondary/5 px-4 py-3 sm:px-5">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-primary/50 flex-shrink-0" />
+            <p className="text-[11px] text-muted-foreground">Explora bloques del sistema, revisa detalles antes de insertarlos y combinalos luego desde el canvas del Studio.</p>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-11 touch-manipulation items-center justify-center rounded-2xl border border-border bg-card/60 px-4 text-sm font-medium text-foreground transition-all hover:bg-secondary"
+            >
+              Cerrar biblioteca
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -5542,16 +5642,19 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
   const [shellWidth, setShellWidth] = useState(0)
   const [mobileShellHeight, setMobileShellHeight] = useState<number | null>(null)
+  const [isTouchDevice, setIsTouchDevice] = useState(false)
   const mountedRef = useRef(false)
   const reviewPanelStateRef = useRef<{ left: boolean; right: boolean } | null>(null)
   const mobileViewportAutoRef = useRef(false)
   const mobileShellResetRef = useRef(false)
   const mobileEdgeGestureRef = useRef<{ x: number; y: number; zone: "left" | "right" | null }>({ x: 0, y: 0, zone: null })
   const mobileDrawerGestureRef = useRef<{ x: number; y: number; panel: "left" | "right" | null }>({ x: 0, y: 0, panel: null })
+  const touchDragActiveRef = useRef<{ id: string; lastY: number } | null>(null)
 
   // ---- HTML editor bridge (shared by canvas iframe + inspector panel) ----
   const [htmlEl, setHtmlEl] = useState<EditorElementInfo | null>(null)
   const [htmlEditing, setHtmlEditing] = useState(false)
+  const [htmlInteractionLocked, setHtmlInteractionLocked] = useState(false)
   const htmlIframeRef = useRef<HTMLIFrameElement | null>(null)
   const htmlSnapshotTimerRef = useRef<number | null>(null)
   const lastHtmlSnapshotRef = useRef<string>("")
@@ -5669,6 +5772,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const mobileStudioLayout = shellWidth > 0 && shellWidth < 768
   const compactStudioLayout = shellWidth > 0 && shellWidth < 1024
   const effectiveFocusMode = focusMode || compactStudioLayout
+  const showMobileButtons = mobileStudioLayout || isTouchDevice
 
   useEffect(() => {
     if (!mountedRef.current) {
@@ -5726,22 +5830,65 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   useEffect(() => {
     if (typeof window === "undefined") return
 
+    let rafId = 0
+    let timeoutId = 0
+
     const syncShellMetrics = () => {
-      setShellWidth(window.innerWidth)
-      const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || 0)
+      const visualViewport = window.visualViewport
+      const viewportWidth = Math.round(visualViewport?.width || window.innerWidth || 0)
+      const viewportHeight = Math.round((visualViewport?.height || window.innerHeight || 0) + (visualViewport?.offsetTop || 0))
+      setShellWidth(viewportWidth > 0 ? viewportWidth : window.innerWidth)
       setMobileShellHeight(viewportHeight > 0 ? viewportHeight : null)
+    }
+
+    const queueSyncShellMetrics = () => {
+      if (rafId) window.cancelAnimationFrame(rafId)
+      if (timeoutId) window.clearTimeout(timeoutId)
+      rafId = window.requestAnimationFrame(() => {
+        syncShellMetrics()
+        timeoutId = window.setTimeout(syncShellMetrics, 200)
+      })
+    }
+
+    const handleVisibilitySync = () => {
+      if (document.visibilityState === "visible") {
+        queueSyncShellMetrics()
+        window.setTimeout(syncShellMetrics, 350)
+        window.setTimeout(syncShellMetrics, 800)
+        window.setTimeout(syncShellMetrics, 1600)
+      }
     }
 
     syncShellMetrics()
     window.addEventListener("resize", syncShellMetrics)
-    window.visualViewport?.addEventListener("resize", syncShellMetrics)
-    window.visualViewport?.addEventListener("scroll", syncShellMetrics)
+    window.addEventListener("orientationchange", queueSyncShellMetrics)
+    window.addEventListener("focus", queueSyncShellMetrics)
+    window.addEventListener("pageshow", queueSyncShellMetrics)
+    window.addEventListener("pagehide", queueSyncShellMetrics)
+    window.visualViewport?.addEventListener("resize", queueSyncShellMetrics)
+    window.visualViewport?.addEventListener("scroll", queueSyncShellMetrics)
+    document.addEventListener("visibilitychange", handleVisibilitySync)
 
     return () => {
+      if (rafId) window.cancelAnimationFrame(rafId)
+      if (timeoutId) window.clearTimeout(timeoutId)
       window.removeEventListener("resize", syncShellMetrics)
-      window.visualViewport?.removeEventListener("resize", syncShellMetrics)
-      window.visualViewport?.removeEventListener("scroll", syncShellMetrics)
+      window.removeEventListener("orientationchange", queueSyncShellMetrics)
+      window.removeEventListener("focus", queueSyncShellMetrics)
+      window.removeEventListener("pageshow", queueSyncShellMetrics)
+      window.removeEventListener("pagehide", queueSyncShellMetrics)
+      window.visualViewport?.removeEventListener("resize", queueSyncShellMetrics)
+      window.visualViewport?.removeEventListener("scroll", queueSyncShellMetrics)
+      document.removeEventListener("visibilitychange", handleVisibilitySync)
     }
+  }, [])
+
+  useEffect(() => {
+    const mq = window.matchMedia("(hover: none) and (pointer: coarse)")
+    setIsTouchDevice(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsTouchDevice(e.matches)
+    mq.addEventListener("change", handler)
+    return () => mq.removeEventListener("change", handler)
   }, [])
 
   useEffect(() => {
@@ -5797,6 +5944,15 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       setFocusRightOpen(true)
     }
   }, [effectiveFocusMode, studioMode, mobileStudioLayout, selectedSectionId, htmlEl?.eid, htmlEditing])
+
+  useEffect(() => {
+    if (!mobileStudioLayout || studioMode !== "edit") return
+    if (selectedSection?.type !== "customCode") return
+    if (!htmlEl && !htmlEditing) return
+    setFocusLeftOpen(false)
+    setMobileControlsOpen(false)
+    setFocusRightOpen(true)
+  }, [mobileStudioLayout, studioMode, selectedSection?.type, htmlEl, htmlEditing])
 
   useEffect(() => {
     if (selectedSection?.type !== "customCode" || !htmlEl) return
@@ -6009,6 +6165,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       setRightPanelCollapsed(false)
       setInspectorTab("content")
     }
+  }, [])
+
+  const handleHtmlInteractionLockChange = useCallback((locked: boolean) => {
+    setHtmlInteractionLocked(locked)
   }, [])
 
   const handleHtmlSnapshot = useCallback((nextHtml: string) => {
@@ -6558,6 +6718,16 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const currentZoomLabel = zoomMode === "fit" ? "Fit" : `${zoomMode}%`
   const reviewModeActive = studioMode === "review"
   const focusEditingMode = effectiveFocusMode && studioMode === "edit"
+  const mobileDockVisible = Boolean(
+    mobileStudioLayout &&
+    focusEditingMode &&
+    !focusLeftOpen &&
+    !focusRightOpen &&
+    !mobileControlsOpen &&
+    !showAdd &&
+    !htmlEditing &&
+    !htmlInteractionLocked
+  )
   const canvasOnlyMode = reviewModeActive || compactStudioLayout || focusMode
   const inspectorTabs =
     selectedSection?.type === "customCode"
@@ -6740,6 +6910,33 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     }
     openFocusInspectorTab(tab)
   }
+
+  const handleSectionTouchStart = useCallback((id: string, e: React.TouchEvent) => {
+    const touch = e.touches[0]
+    touchDragActiveRef.current = { id, lastY: touch.clientY }
+    setDraggingSectionId(id)
+    setDropTargetId(id)
+  }, [])
+
+  const handleSectionTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchDragActiveRef.current) return
+    const touch = e.touches[0]
+    touchDragActiveRef.current.lastY = touch.clientY
+    const el = document.elementFromPoint(touch.clientX, touch.clientY)
+    const sectionEl = el?.closest("[data-sdrag]")
+    const newId = sectionEl?.getAttribute("data-sdrag") ?? null
+    if (newId && newId !== touchDragActiveRef.current.id) setDropTargetId(newId)
+  }, [])
+
+  const handleSectionTouchEnd = useCallback(() => {
+    if (touchDragActiveRef.current) {
+      const { id } = touchDragActiveRef.current
+      if (dropTargetId && dropTargetId !== id) reorderSectionByDrop(id, dropTargetId)
+      touchDragActiveRef.current = null
+    }
+    setDraggingSectionId(null)
+    setDropTargetId(null)
+  }, [dropTargetId, reorderSectionByDrop])
 
   const handleMobileRootTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     if (!mobileStudioLayout || !focusEditingMode || focusLeftOpen || focusRightOpen || mobileControlsOpen || showAdd) {
@@ -7037,9 +7234,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             return (
               <div
                 key={section.id}
+                data-sdrag={section.id}
                 role="button"
                 tabIndex={0}
-                draggable
+                draggable={!isTouchDevice}
                 onDragStart={() => {
                   setDraggingSectionId(section.id)
                   setDropTargetId(section.id)
@@ -7058,6 +7256,9 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   setDraggingSectionId(null)
                   setDropTargetId(null)
                 }}
+                onTouchStart={(e) => handleSectionTouchStart(section.id, e)}
+                onTouchMove={handleSectionTouchMove}
+                onTouchEnd={handleSectionTouchEnd}
                 onClick={() => {
                   setSelectedSectionId(section.id)
                   setLeftTab("layers")
@@ -7108,7 +7309,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                     )}
                   </div>
                 </div>
-                {mobileStudioLayout ? (
+                {showMobileButtons ? (
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <button
                       type="button"
@@ -7172,60 +7373,81 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     </div>
   )
 
-  const renderNavigationSidebar = () => (
+  const renderNavigationSidebar = () => {
+    const allPages = config.pages ?? []
+    const totalNavItems = config.nav.items.length + allPages.filter(p => p.showInNav !== false).length
+    return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Menu</div>
             <div className="text-sm font-semibold text-white">Menu del sitio</div>
           </div>
-        <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">{config.nav.items.length}</span>
+        <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">{totalNavItems}</span>
       </div>
-      <div className="flex-1 space-y-5 overflow-y-auto p-4">
-        {config.nav.items.map((item, index) => (
-          <div key={item.id} className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-[#0b1017] text-white/40"><Link2 className="h-4 w-4" /></div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <div className="truncate text-sm font-semibold text-white">{item.label || `Link ${index + 1}`}</div>
-                  {item.external && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Externo</span>}
-                </div>
-                <div className="mt-1 truncate text-[11px] uppercase tracking-[0.18em] text-white/30">{item.href}</div>
-              </div>
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        {config.nav.items.length > 0 && (
+          <div>
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Links manuales</div>
+            <div className="space-y-2">
+              {config.nav.items.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => { setLeftTab("navigation"); setInspectorTab("content"); if (mobileStudioLayout) setFocusRightOpen(true) }}
+                  className="flex w-full items-start gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3 text-left transition-all hover:border-primary/25 hover:bg-white/[0.05]"
+                >
+                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-[#0b1017] text-white/40"><Link2 className="h-4 w-4" /></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="truncate text-sm font-semibold text-white">{item.label || `Link ${index + 1}`}</div>
+                      {item.external && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Externo</span>}
+                    </div>
+                    <div className="mt-1 truncate text-[11px] uppercase tracking-[0.18em] text-white/30">{item.href}</div>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
-        ))}
+        )}
         <div>
-          <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Paginas del menu</div>
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Paginas del sitio</div>
           <div className="space-y-2">
-            {(config.pages ?? []).filter((page) => page.showInNav !== false).length === 0 ? (
+            {allPages.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45">
-                No hay paginas publicadas en el menu.
+                No hay paginas creadas aun. Crea una desde "Pag".
               </div>
             ) : (
-              (config.pages ?? [])
-                .filter((page) => page.showInNav !== false)
-                .map((page) => (
+              allPages.map((page) => {
+                const inNav = page.showInNav !== false
+                return (
                   <button
                     key={`nav-page-${page.slug}`}
                     type="button"
                     onClick={() => activatePage(page.slug, "pages")}
                     className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3 text-left transition-all hover:border-primary/25 hover:bg-white/[0.05]"
                   >
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold text-white">{page.navLabel || page.title}</div>
                       <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">/{page.slug}</div>
                     </div>
-                    <span className="rounded-full bg-emerald-500/12 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Auto</span>
+                    {inNav
+                      ? <span className="flex-shrink-0 rounded-full bg-emerald-500/12 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">En menu</span>
+                      : <span className="flex-shrink-0 rounded-full bg-white/8 px-2 py-0.5 text-[10px] font-semibold text-white/35">Oculta</span>
+                    }
                   </button>
-                ))
+                )
+              })
             )}
           </div>
+        </div>
+        <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-xs text-white/40 leading-5">
+          Haz clic en un link para editarlo. Las paginas "Ocultas" no aparecen en el menu publico. Puedes cambiar esto desde el inspector de cada pagina.
         </div>
       </div>
     </div>
   )
+  }
 
   const renderPagesInspector = () => (
     <div className="flex h-full flex-col">
@@ -8680,22 +8902,120 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const forceHtmlInspector =
     selectedSection?.type === "customCode" && (Boolean(htmlEl) || htmlEditing)
 
-  const renderNavigationInspector = () => (
+  const renderNavigationInspector = () => {
+    const nav = config.nav
+    const general = config.general
+    const sNav = (p: Partial<typeof nav>) => handleChange({ ...config, nav: { ...nav, ...p } })
+    const sGeneral = (p: Partial<typeof general>) => handleChange({ ...config, general: { ...general, ...p } })
+    const appearance = general.navAppearance ?? {}
+    const setAppearance = (patch: Record<string, any>) => sGeneral({ navAppearance: { ...appearance, ...patch } })
+    const items = nav.items
+    const moveItem = (index: number, direction: -1 | 1) => {
+      const nextIndex = index + direction
+      if (nextIndex < 0 || nextIndex >= items.length) return
+      const next = [...items]
+      ;[next[index], next[nextIndex]] = [next[nextIndex], next[index]]
+      sNav({ items: next })
+    }
+    return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-white/8 px-5 py-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Link2 className="h-4 w-4" /></div>
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-white">Navegacion del sitio</div>
-          <div className="text-xs text-white/40">Edita los links y botones del header publico.</div>
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Link2 className="h-4 w-4" /></div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-white">Navegacion</div>
+          <div className="text-xs text-white/40">Links y estilos del header.</div>
         </div>
-        <div className="ml-auto">{renderInspectorCollapseAction()}</div>
+        <div className="ml-auto flex-shrink-0">{renderInspectorCollapseAction()}</div>
       </div>
-      {renderInspectorTabsRow({ contentOnly: true })}
-      <div className="flex-1 overflow-y-auto p-5">
-        <TabNavegacion config={config} onChange={handleChange} variant="panel" />
+      <div className="flex-shrink-0 grid grid-cols-2 gap-1 border-b border-white/8 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setInspectorTab("content")}
+          className={cn("inline-flex items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-all", inspectorTab === "content" ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
+        >
+          <Link2 className="h-3.5 w-3.5 flex-shrink-0" />
+          Links
+        </button>
+        <button
+          type="button"
+          onClick={() => setInspectorTab("style")}
+          className={cn("inline-flex items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-all", inspectorTab === "style" ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white/70")}
+        >
+          <Type className="h-3.5 w-3.5 flex-shrink-0" />
+          Tipografia y Colores
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        {inspectorTab !== "style" ? (
+          <div className="space-y-4">
+            <Card title="Links del menu" action={
+              <Btn size="sm" variant="ghost" onClick={() => sNav({ items: [...items, { id: `n${Date.now()}`, label: "Nuevo link", href: "/" }] })}>
+                <Plus className="w-3.5 h-3.5" />Agregar
+              </Btn>
+            }>
+              <div className="space-y-3">
+                {items.map((item, index) => (
+                  <div key={item.id} className="rounded-2xl border border-border bg-secondary/10 p-3 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0 text-sm font-semibold text-foreground truncate">{item.label || `Link ${index + 1}`}</div>
+                      <button type="button" disabled={index === 0} onClick={() => moveItem(index, -1)} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-primary disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
+                      <button type="button" disabled={index === items.length - 1} onClick={() => moveItem(index, 1)} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-primary disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => sNav({ items: items.filter((_, i) => i !== index) })} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/40"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                    <F label="Texto">
+                      <input className={iCls} value={item.label} placeholder="Texto del link" onChange={(e) => sNav({ items: items.map((x, i) => i === index ? { ...x, label: e.target.value } : x) })} />
+                    </F>
+                    <F label="URL">
+                      <input className={iCls} value={item.href} placeholder="/pagina o https://..." onChange={(e) => sNav({ items: items.map((x, i) => i === index ? { ...x, href: e.target.value } : x) })} />
+                    </F>
+                    <F label="Badge (opcional)">
+                      <input className={iCls} value={item.badge || ""} placeholder="Opcional" onChange={(e) => sNav({ items: items.map((x, i) => i === index ? { ...x, badge: e.target.value || undefined } : x) })} />
+                    </F>
+                    <button type="button" onClick={() => sNav({ items: items.map((x, i) => i === index ? { ...x, external: !x.external } : x) })} className={cn("flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-all w-full", item.external ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/35")}>
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      {item.external ? "Abre en nueva pestana" : "Abrir en misma pestana"}
+                    </button>
+                  </div>
+                ))}
+                {items.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Sin links. Agrega el primero.</p>}
+              </div>
+            </Card>
+            <Card title="Botones">
+              <F label="Texto Iniciar sesion"><input className={iCls} value={nav.loginLabel} onChange={(e) => sNav({ loginLabel: e.target.value })} /></F>
+              <F label="Texto Registrarse"><input className={iCls} value={nav.registerLabel} onChange={(e) => sNav({ registerLabel: e.target.value })} /></F>
+            </Card>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Card title="Identidad">
+              <F label="Nombre de la plataforma"><input className={iCls} value={general.nombrePlataforma} onChange={(e) => sGeneral({ nombrePlataforma: e.target.value })} /></F>
+              <F label="Tagline / eslogan"><input className={iCls} value={general.tagline} onChange={(e) => sGeneral({ tagline: e.target.value })} /></F>
+              <F label="Tipografia del menu">
+                <select className={iCls} value={appearance.fontFamily || NAV_FONT_OPTIONS[0].value} onChange={(e) => setAppearance({ fontFamily: e.target.value })}>
+                  {NAV_FONT_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                </select>
+              </F>
+            </Card>
+            <Card title="Colores del header">
+              <div className="space-y-3">
+                <StudioColorField label="Fondo del header" value={appearance.surfaceColor} onChange={(v) => setAppearance({ surfaceColor: v })} fallback="#0b1220" />
+                <StudioColorField label="Borde del header" value={appearance.borderColor} onChange={(v) => setAppearance({ borderColor: v })} fallback="#1e293b" />
+                <StudioColorField label="Color marca" value={appearance.brandColor} onChange={(v) => setAppearance({ brandColor: v })} fallback="#ffffff" />
+                <StudioColorField label="Color tagline" value={appearance.taglineColor} onChange={(v) => setAppearance({ taglineColor: v })} fallback="#94a3b8" />
+                <StudioColorField label="Color links" value={appearance.linkColor} onChange={(v) => setAppearance({ linkColor: v })} fallback="#cbd5e1" />
+                <StudioColorField label="Hover links" value={appearance.linkHoverColor} onChange={(v) => setAppearance({ linkHoverColor: v })} fallback="#ffffff" />
+                <StudioColorField label="Boton primario" value={appearance.primaryButtonColor} onChange={(v) => setAppearance({ primaryButtonColor: v })} fallback="#E8392A" />
+                <StudioColorField label="Texto boton primario" value={appearance.primaryButtonTextColor} onChange={(v) => setAppearance({ primaryButtonTextColor: v })} fallback="#ffffff" />
+                <StudioColorField label="Boton secundario" value={appearance.secondaryButtonColor} onChange={(v) => setAppearance({ secondaryButtonColor: v })} fallback="#0f172a" />
+                <StudioColorField label="Texto boton secundario" value={appearance.secondaryButtonTextColor} onChange={(v) => setAppearance({ secondaryButtonTextColor: v })} fallback="#ffffff" />
+              </div>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   )
+  }
 
   const renderSettingsInspector = () => (
     <div className="flex h-full flex-col">
@@ -8742,7 +9062,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     const dockTitle = mobileStudioLayout ? "Editor movil" : compactStudioLayout ? "Edicion compacta" : "Modo enfoque"
 
     if (mobileStudioLayout) {
-      if (focusLeftOpen || focusRightOpen || mobileControlsOpen || showAdd) return null
+      if (focusLeftOpen || focusRightOpen || mobileControlsOpen || showAdd || htmlEditing || htmlInteractionLocked) return null
 
       const mobileDockButtons = selectedSection
         ? [
@@ -9278,7 +9598,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   return (
       <div
         className="relative flex h-[100dvh] min-h-[100svh] w-full flex-col overflow-hidden bg-[#07111f] pt-[env(safe-area-inset-top)] text-white"
-        style={mobileShellHeight ? { height: `${mobileShellHeight}px`, minHeight: `${mobileShellHeight}px` } : undefined}
+        style={mobileShellHeight ? { height: `${mobileShellHeight}px`, minHeight: `${mobileShellHeight}px`, maxHeight: `${mobileShellHeight}px` } : undefined}
         onTouchStart={handleMobileRootTouchStart}
         onTouchEnd={handleMobileRootTouchEnd}
       >
@@ -9561,6 +9881,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             zoomMode={zoomMode}
             previewMode={studioMode !== "edit"}
             mobileShell={mobileStudioLayout}
+            mobileDockVisible={mobileDockVisible}
             onInlineUpdate={updateSectionInlineContent}
             onDuplicate={duplicateSectionInPage}
             onToggleVisibility={toggleSectionVisibility}
@@ -9574,6 +9895,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             htmlIframeRef={htmlIframeRef}
             onHtmlElementSelect={handleHtmlElementSelect}
             onHtmlEditingChange={handleHtmlEditingChange}
+            onHtmlInteractionLockChange={handleHtmlInteractionLockChange}
             onHtmlSnapshot={handleHtmlSnapshot}
           />
         </main>
@@ -9606,6 +9928,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           onAdd={addSection}
           onClose={() => { setInsertIndex(null); setShowAdd(false) }}
           pageMode={!currentPage.home}
+          viewportHeight={mobileShellHeight}
         />
       )}
 

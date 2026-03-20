@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { CheckCircle2 } from "lucide-react"
 import StudioInlineText from "@/components/studio/studio-inline-text"
 import type { CMSTextStyle } from "@/hooks/use-cms"
+import { withAlpha } from "@/lib/color-utils"
 
 interface PageHeroSectionProps {
   data: Record<string, any>
@@ -46,6 +47,20 @@ export default function PageHeroSection({
   const stats        = (data.stats as { emoji: string; value: string; label: string }[]) || []
   const rightImg     = data.rightImage    || ""
   const textStyles   = (data.textStyles as Record<string, CMSTextStyle>) || {}
+  const appearance   = (data.appearance as Record<string, any>) || {}
+  const sectionPaddingY = Math.min(220, Math.max(56, Number(appearance.sectionPaddingY || 96)))
+  const sectionPaddingX = Math.min(96, Math.max(16, Number(appearance.sectionPaddingX || 24)))
+  const titleSize = Math.min(92, Math.max(36, Number(appearance.titleSize || 64)))
+  const descriptionSize = Math.min(28, Math.max(14, Number(appearance.descriptionSize || 18)))
+  const titleColor = appearance.titleColor
+  const descriptionColor = appearance.descriptionColor
+  const titleFontFamily = appearance.titleFontFamily
+  const titleFontWeight = appearance.titleFontWeight
+  const descriptionFontFamily = appearance.descriptionFontFamily
+  const descriptionFontWeight = appearance.descriptionFontWeight
+  const surfaceBg = appearance.surfaceBg
+  const surfaceBorder = appearance.surfaceBorder
+  const sectionGlow = appearance.glowColor || accent
 
   const handlePri = () => {
     if (editMode) return
@@ -104,6 +119,8 @@ export default function PageHeroSection({
           onFormattingChange={(style) => onTextStyleChange?.("titulo", style)}
           className="font-display text-4xl md:text-5xl lg:text-6xl text-foreground leading-[1.1] mb-1"
           editorClassName="font-display text-3xl md:text-5xl text-foreground leading-[1.1]"
+          style={{ color: titleColor, fontSize: `clamp(${Math.max(34, Math.round(titleSize * 0.58))}px, 5.2vw, ${titleSize}px)`, fontFamily: titleFontFamily, fontWeight: titleFontWeight }}
+          editorStyle={{ color: titleColor, fontSize: `clamp(${Math.max(30, Math.round(titleSize * 0.48))}px, 4.8vw, ${Math.max(36, titleSize - 8)}px)`, fontFamily: titleFontFamily, fontWeight: titleFontWeight }}
         />
       )}
       {subtitulo && (
@@ -118,8 +135,8 @@ export default function PageHeroSection({
           onFormattingChange={(style) => onTextStyleChange?.("subtitulo", style)}
           className="font-display text-4xl md:text-5xl lg:text-6xl leading-[1.1] mb-5"
           editorClassName="font-display text-3xl md:text-5xl leading-[1.1]"
-          style={{ color: accent }}
-          editorStyle={{ color: accent }}
+          style={{ color: accent, fontFamily: titleFontFamily, fontWeight: titleFontWeight }}
+          editorStyle={{ color: accent, fontFamily: titleFontFamily, fontWeight: titleFontWeight }}
         />
       )}
       {!subtitulo && titulo && <div className="mb-5" />}
@@ -136,6 +153,8 @@ export default function PageHeroSection({
           onFormattingChange={(style) => onTextStyleChange?.("descripcion", style)}
           className="text-lg text-muted-foreground leading-relaxed max-w-xl mb-8"
           editorClassName="max-w-xl text-lg text-muted-foreground"
+          style={{ color: descriptionColor, fontSize: descriptionSize, fontFamily: descriptionFontFamily, fontWeight: descriptionFontWeight }}
+          editorStyle={{ color: descriptionColor, fontSize: descriptionSize, fontFamily: descriptionFontFamily, fontWeight: descriptionFontWeight }}
         />
       )}
 
@@ -204,7 +223,10 @@ export default function PageHeroSection({
   const rightBlock =
     rightPanel === "stats" ? (
       <div className={`transition-all duration-700 delay-150 ${vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
-        <div className="rounded-2xl border border-border bg-card/80 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
+        <div
+          className="rounded-2xl border border-border bg-card/80 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)]"
+          style={{ backgroundColor: surfaceBg, borderColor: surfaceBorder }}
+        >
           {statsTitle && (
             <div className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-[0.2em]">
               {statsTitle}
@@ -237,12 +259,18 @@ export default function PageHeroSection({
     ) : null
 
   return (
-    <section className="relative py-24 overflow-hidden">
+    <section
+      className="relative overflow-hidden"
+      style={{ paddingTop: sectionPaddingY, paddingBottom: sectionPaddingY }}
+    >
       <div
         className="absolute inset-0"
-        style={{ background: `radial-gradient(circle at top, ${accent}18, transparent 55%)` }}
+        style={{ background: `radial-gradient(circle at top, ${withAlpha(sectionGlow, 0.16)}, transparent 55%)` }}
       />
-      <div className="max-w-7xl mx-auto px-6 lg:px-12 relative">
+      <div
+        className="max-w-7xl mx-auto relative"
+        style={{ paddingLeft: sectionPaddingX, paddingRight: sectionPaddingX }}
+      >
         {layout === "center" ? (
           <div className="text-center max-w-3xl mx-auto">
             {leftBlock}

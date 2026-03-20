@@ -87,6 +87,7 @@ export type EditorMessage =
   | { __editor_text_change: true; eid: string | null; text: string; html: string }
   | { __editor_moved: true; eid: string | null; targetEid: string | null; position: "before" | "after" | "inside" }
   | { __editor_snapshot: true; html: string }
+  | { __editor_interaction_lock: true; active: boolean; kind: "move" | "resize" | "group" | null }
   | { __hei_resize: number }
 
 export type EditorCommand =
@@ -136,6 +137,12 @@ export function buildEditorRuntime(): string {
   var suppressSelectionClick = false;
   var activeTouchId = null;
   var eidCounter = 1;
+  var coarsePointer = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || ((navigator.maxTouchPoints || 0) > 0);
+  var resizeHandleSize = coarsePointer ? 26 : 14;
+  var resizeHandleHalf = Math.round(resizeHandleSize / 2);
+  var compactTargetSize = coarsePointer ? 48 : 30;
+  var moveHitTargetSize = coarsePointer ? 62 : 34;
+  var toolbarGap = coarsePointer ? 10 : 12;
 
   function markRuntime(node, attr) {
     node.setAttribute(attr, "1");
@@ -146,7 +153,7 @@ export function buildEditorRuntime(): string {
 
   function mkDiv(css) {
     var d = document.createElement("div");
-    d.style.cssText = css + ";pointer-events:none;";
+    d.style.cssText = css + ";pointer-events:none;touch-action:none;";
     markRuntime(d, "data-he-editor-overlay");
     document.documentElement.appendChild(d);
     return d;
@@ -176,9 +183,9 @@ export function buildEditorRuntime(): string {
   );
   var resizeHandle = document.createElement("div");
   resizeHandle.style.cssText =
-    "position:fixed;width:14px;height:14px;border-radius:999px;background:#E8392A;" +
+    "position:fixed;width:" + resizeHandleSize + "px;height:" + resizeHandleSize + "px;border-radius:999px;background:#E8392A;" +
     "border:2px solid rgba(9,17,27,.95);box-shadow:0 6px 18px rgba(0,0,0,.32);" +
-    "z-index:2147483647;display:none;cursor:nwse-resize;pointer-events:auto;";
+    "z-index:2147483647;display:none;cursor:nwse-resize;pointer-events:auto;touch-action:none;";
   resizeHandle.setAttribute("data-he-runtime", "resize");
   document.documentElement.appendChild(resizeHandle);
 
@@ -233,6 +240,27 @@ export function buildEditorRuntime(): string {
     '<button type="button" data-tool="delete" style="height:28px;padding:0 10px;border-radius:10px;border:1px solid rgba(232,57,42,.22);background:rgba(232,57,42,.12);color:#ff8b81;font:700 11px/28px system-ui;cursor:pointer;">Eliminar</button>'
   ].join("");
   document.documentElement.appendChild(selToolbar);
+  var lastToolbarTouchTs = 0;
+  if (coarsePointer) {
+    selToolbar.style.maxWidth = "calc(100vw - 14px)";
+    selToolbar.style.flexWrap = "wrap";
+    selToolbar.style.justifyContent = "center";
+    Array.prototype.forEach.call(selToolbar.querySelectorAll("button[data-tool]"), function (button) {
+      if (!button || !button.style) return;
+      if (button.getAttribute("data-tool") === "up" || button.getAttribute("data-tool") === "down") {
+        button.style.width = "34px";
+        button.style.height = "34px";
+        button.style.lineHeight = "34px";
+      } else {
+        button.style.height = "34px";
+        button.style.lineHeight = "34px";
+      }
+      button.style.fontSize = "12px";
+      button.style.borderRadius = "12px";
+      button.style.paddingLeft = button.style.paddingLeft || "12px";
+      button.style.paddingRight = button.style.paddingRight || "12px";
+    });
+  }
 
   function emitToParent(payload) {
     try {
@@ -265,6 +293,9 @@ export function buildEditorRuntime(): string {
   }
 
   function getEventClientPoint(event) {
+    if (event && typeof event.pointerId === "number" && typeof event.clientX === "number" && typeof event.clientY === "number") {
+      return { x: event.clientX, y: event.clientY, id: event.pointerId };
+    }
     var touch = getPrimaryTouch(event);
     if (touch) {
       return { x: touch.clientX, y: touch.clientY, id: touch.identifier };
@@ -275,6 +306,10 @@ export function buildEditorRuntime(): string {
     return null;
   }
 
+  function isNonMousePointerEvent(event) {
+    return !!(event && typeof event.pointerType === "string" && event.pointerType !== "mouse");
+  }
+
   function beginInteractionLock(cursor, touchIdentifier) {
     if (touchIdentifier != null) {
       activeTouchId = touchIdentifier;
@@ -282,6 +317,13 @@ export function buildEditorRuntime(): string {
     document.body.style.userSelect = "none";
     document.body.style.cursor = cursor || "grabbing";
     document.body.style.touchAction = "none";
+    document.body.style.overscrollBehavior = "none";
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.userSelect = "none";
+    document.documentElement.style.cursor = cursor || "grabbing";
+    document.documentElement.style.touchAction = "none";
+    document.documentElement.style.overscrollBehavior = "none";
+    document.documentElement.style.overflow = "hidden";
   }
 
   function endInteractionLock() {
@@ -289,6 +331,13 @@ export function buildEditorRuntime(): string {
     document.body.style.userSelect = "";
     document.body.style.cursor = "";
     document.body.style.touchAction = "";
+    document.body.style.overscrollBehavior = "";
+    document.body.style.overflow = "";
+    document.documentElement.style.userSelect = "";
+    document.documentElement.style.cursor = "";
+    document.documentElement.style.touchAction = "";
+    document.documentElement.style.overscrollBehavior = "";
+    document.documentElement.style.overflow = "";
   }
 
   function place(overlay, el) {
@@ -308,8 +357,8 @@ export function buildEditorRuntime(): string {
     }
     var rect = el.getBoundingClientRect();
     resizeHandle.style.display = "block";
-    resizeHandle.style.left = (rect.right - 8) + "px";
-    resizeHandle.style.top = (rect.bottom - 8) + "px";
+    resizeHandle.style.left = (rect.right - resizeHandleHalf) + "px";
+    resizeHandle.style.top = (rect.bottom - resizeHandleHalf) + "px";
   }
 
   function placeSelectionBox(el) {
@@ -322,8 +371,8 @@ export function buildEditorRuntime(): string {
     var padX = 0;
     var padY = 0;
     if (nodeType === "icon" || rect.width < 24 || rect.height < 24) {
-      var minWidth = 30;
-      var minHeight = 30;
+      var minWidth = compactTargetSize;
+      var minHeight = compactTargetSize;
       padX = Math.max(6, (minWidth - rect.width) / 2);
       padY = Math.max(6, (minHeight - rect.height) / 2);
     }
@@ -345,8 +394,8 @@ export function buildEditorRuntime(): string {
       moveHitBox.style.display = "none";
       return;
     }
-    var minWidth = 34;
-    var minHeight = 34;
+    var minWidth = moveHitTargetSize;
+    var minHeight = moveHitTargetSize;
     var padX = Math.max(10, (minWidth - rect.width) / 2);
     var padY = Math.max(10, (minHeight - rect.height) / 2);
     moveHitBox.style.display = "block";
@@ -419,7 +468,7 @@ export function buildEditorRuntime(): string {
     selToolbar.style.display = "flex";
     var toolbarWidth = selToolbar.offsetWidth || 320;
     var toolbarHeight = selToolbar.offsetHeight || 42;
-    var gap = 12;
+    var gap = toolbarGap;
     var minX = 10;
     var minY = 10;
     var maxLeft = Math.max(minX, window.innerWidth - toolbarWidth - 10);
@@ -1122,8 +1171,8 @@ export function buildEditorRuntime(): string {
     }
     if (moveMode !== "absolute") {
       el.style.transformOrigin = "top left";
-      el.style.touchAction = "none";
     }
+    el.style.touchAction = "none";
     applyFreeMoveTransform(el, currentOffset.x, currentOffset.y);
     el.style.willChange = moveMode === "absolute" ? "left, top, width, height" : "transform, width, height";
     if (moveMode === "absolute") {
@@ -1152,6 +1201,7 @@ export function buildEditorRuntime(): string {
       root: root
     };
     beginInteractionLock("grabbing", touchIdentifier);
+    emitToParent({ __editor_interaction_lock: true, active: true, kind: "move" });
     return true;
   }
 
@@ -1159,6 +1209,7 @@ export function buildEditorRuntime(): string {
     if (freeMoveDirectHandleEl && freeMoveDirectHandle) {
       freeMoveDirectHandleEl.removeEventListener("mousedown", freeMoveDirectHandle, true);
       freeMoveDirectHandleEl.removeEventListener("touchstart", freeMoveDirectHandle, true);
+      freeMoveDirectHandleEl.removeEventListener("pointerdown", freeMoveDirectHandle, true);
     }
     freeMoveDirectHandleEl = null;
     freeMoveDirectHandle = null;
@@ -1182,6 +1233,7 @@ export function buildEditorRuntime(): string {
     };
     el.addEventListener("mousedown", freeMoveDirectHandle, true);
     el.addEventListener("touchstart", freeMoveDirectHandle, { passive: false, capture: true });
+    el.addEventListener("pointerdown", freeMoveDirectHandle, true);
   }
 
   function primeFreeMoveLayout(el) {
@@ -1245,6 +1297,7 @@ export function buildEditorRuntime(): string {
       items: items
     };
     beginInteractionLock("grabbing", touchIdentifier);
+    emitToParent({ __editor_interaction_lock: true, active: true, kind: "group" });
     return true;
   }
 
@@ -1269,6 +1322,7 @@ export function buildEditorRuntime(): string {
       ratio: rect.height > 0 ? rect.width / rect.height : 1,
     };
     beginInteractionLock("nwse-resize", touchIdentifier);
+    emitToParent({ __editor_interaction_lock: true, active: true, kind: "resize" });
     return true;
   }
 
@@ -1862,6 +1916,7 @@ export function buildEditorRuntime(): string {
     if (fallbackText && canEdit(fallbackText)) {
       return normalizeSelectionTarget(fallbackText);
     }
+    var bestInlineText = fallbackText || earlyText || null;
 
     var normalized = [];
     if (typeof document.elementsFromPoint === "function") {
@@ -1916,6 +1971,9 @@ export function buildEditorRuntime(): string {
     }
 
     if (best) {
+      if (getNodeType(best) === "container" && bestInlineText && canEdit(bestInlineText)) {
+        return normalizeSelectionTarget(bestInlineText);
+      }
       return best;
     }
 
@@ -2351,6 +2409,12 @@ export function buildEditorRuntime(): string {
   function selectElement(el) {
     if (!canEdit(el)) return;
     ensureEids(document.body);
+    var nodeType = getNodeType(el);
+    var shouldAutoEnableTouchMove =
+      coarsePointer &&
+      !multiSelectMode &&
+      !editingEl &&
+      canUseFreeMove(el);
     if (freeMoveEl && freeMoveEl !== el && !freeMoveIsGroup) {
       setFreeMove(null, false);
     }
@@ -2362,6 +2426,9 @@ export function buildEditorRuntime(): string {
     }
     if (dragEnabled) {
       markDraggable(el);
+    }
+    if (shouldAutoEnableTouchMove) {
+      setFreeMove(el, false);
     }
     hoverBox.style.display = "none";
     refreshSelectionUi();
@@ -2507,6 +2574,15 @@ export function buildEditorRuntime(): string {
     event.preventDefault();
     event.stopPropagation();
   }, true);
+  selToolbar.addEventListener("touchstart", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }, { passive: false, capture: true });
+  selToolbar.addEventListener("pointerdown", function (event) {
+    if (!isNonMousePointerEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
 
   groupBox.addEventListener("mousedown", function (event) {
     event.preventDefault();
@@ -2520,6 +2596,14 @@ export function buildEditorRuntime(): string {
     event.stopPropagation();
     startGroupMove(point.x, point.y, point.id);
   }, { passive: false, capture: true });
+  groupBox.addEventListener("pointerdown", function (event) {
+    if (!isNonMousePointerEvent(event)) return;
+    var point = getEventClientPoint(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    startGroupMove(point.x, point.y, point.id);
+  }, true);
 
   selBox.addEventListener("mousedown", function (event) {
     if (!selectedEl || freeMoveEl !== selectedEl || !canUseFreeMove(selectedEl)) return;
@@ -2535,6 +2619,15 @@ export function buildEditorRuntime(): string {
     event.stopPropagation();
     beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
   }, { passive: false, capture: true });
+  selBox.addEventListener("pointerdown", function (event) {
+    if (!isNonMousePointerEvent(event)) return;
+    if (!selectedEl || freeMoveEl !== selectedEl || !canUseFreeMove(selectedEl)) return;
+    var point = getEventClientPoint(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
+  }, true);
 
   moveHitBox.addEventListener("mousedown", function (event) {
     if (!selectedEl || freeMoveEl !== selectedEl || !canUseFreeMove(selectedEl)) return;
@@ -2550,6 +2643,15 @@ export function buildEditorRuntime(): string {
     event.stopPropagation();
     beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
   }, { passive: false, capture: true });
+  moveHitBox.addEventListener("pointerdown", function (event) {
+    if (!isNonMousePointerEvent(event)) return;
+    if (!selectedEl || freeMoveEl !== selectedEl || !canUseFreeMove(selectedEl)) return;
+    var point = getEventClientPoint(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
+  }, true);
 
   resizeHandle.addEventListener("mousedown", function (event) {
     event.preventDefault();
@@ -2563,8 +2665,26 @@ export function buildEditorRuntime(): string {
     event.stopPropagation();
     startSelectedResize(point.x, point.y, point.id);
   }, { passive: false, capture: true });
+  resizeHandle.addEventListener("pointerdown", function (event) {
+    if (!isNonMousePointerEvent(event)) return;
+    var point = getEventClientPoint(event);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    startSelectedResize(point.x, point.y, point.id);
+  }, true);
 
-  selToolbar.addEventListener("click", function (event) {
+  function handleToolbarAction(event) {
+    var sourceType = typeof event.type === "string" ? event.type : "";
+    var now = Date.now();
+    if (sourceType === "click" && now - lastToolbarTouchTs < 450) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (sourceType === "touchend" || sourceType === "pointerup") {
+      lastToolbarTouchTs = now;
+    }
     var button = event.target && event.target.closest ? event.target.closest("button[data-tool]") : null;
     if (!button) return;
     event.preventDefault();
@@ -2609,6 +2729,13 @@ export function buildEditorRuntime(): string {
     if (tool === "delete") {
       deleteSelected();
     }
+  }
+
+  selToolbar.addEventListener("click", handleToolbarAction, true);
+  selToolbar.addEventListener("touchend", handleToolbarAction, { passive: false, capture: true });
+  selToolbar.addEventListener("pointerup", function (event) {
+    if (!isNonMousePointerEvent(event)) return;
+    handleToolbarAction(event);
   }, true);
 
   document.addEventListener("mousedown", function (event) {
@@ -2934,6 +3061,16 @@ export function buildEditorRuntime(): string {
       event.stopPropagation();
     }
   }, { passive: false, capture: true });
+  document.addEventListener("pointermove", function (event) {
+    if (!isNonMousePointerEvent(event)) return;
+    var point = getEventClientPoint(event);
+    if (!point) return;
+    var handled = handleCanvasPointerMove(point.x, point.y, event.target, 1, false, point.id);
+    if (handled) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, true);
 
   document.addEventListener("mouseleave", function () {
     hoverBox.style.display = "none";
@@ -2944,6 +3081,7 @@ export function buildEditorRuntime(): string {
       var resizedEl = resizeState.el;
       resizeState = null;
       endInteractionLock();
+      emitToParent({ __editor_interaction_lock: true, active: false, kind: null });
       hideMoveFeedback();
       recalculateRootMoveCapacity(getFreeMoveRoot(resizedEl));
       queueSnapshot();
@@ -2954,6 +3092,7 @@ export function buildEditorRuntime(): string {
       var movedItems = freeMoveState.items.slice();
       freeMoveState = null;
       endInteractionLock();
+      emitToParent({ __editor_interaction_lock: true, active: false, kind: null });
       hideMoveFeedback();
       movedItems.forEach(function (item) {
         recalculateRootMoveCapacity(getFreeMoveRoot(item.el));
@@ -2966,6 +3105,7 @@ export function buildEditorRuntime(): string {
     var movedEl = freeMoveState.el;
     freeMoveState = null;
     endInteractionLock();
+    emitToParent({ __editor_interaction_lock: true, active: false, kind: null });
     hideMoveFeedback();
     recalculateRootMoveCapacity(getFreeMoveRoot(movedEl));
     queueSnapshot();
@@ -2984,6 +3124,29 @@ export function buildEditorRuntime(): string {
     }
     finishCanvasPointerInteraction();
   }, { passive: false, capture: true });
+  document.addEventListener("touchcancel", function (event) {
+    if (resizeState || freeMoveState) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    finishCanvasPointerInteraction();
+  }, { passive: false, capture: true });
+  document.addEventListener("pointerup", function (event) {
+    if (!isNonMousePointerEvent(event)) return;
+    if (resizeState || freeMoveState) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    finishCanvasPointerInteraction();
+  }, true);
+  document.addEventListener("pointercancel", function (event) {
+    if (!isNonMousePointerEvent(event)) return;
+    if (resizeState || freeMoveState) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    finishCanvasPointerInteraction();
+  }, true);
 
   document.addEventListener("touchcancel", function (event) {
     if (resizeState || freeMoveState) {
@@ -2992,6 +3155,14 @@ export function buildEditorRuntime(): string {
     }
     finishCanvasPointerInteraction();
   }, { passive: false, capture: true });
+  document.addEventListener("pointercancel", function (event) {
+    if (!isNonMousePointerEvent(event)) return;
+    if (resizeState || freeMoveState) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    finishCanvasPointerInteraction();
+  }, true);
 
   document.addEventListener("click", function (event) {
     if (editingEl) return;
@@ -3064,12 +3235,14 @@ export function buildEditorRuntime(): string {
     if (event.key === "Escape" && freeMoveEl) {
       freeMoveState = null;
       endInteractionLock();
+      emitToParent({ __editor_interaction_lock: true, active: false, kind: null });
       hideMoveFeedback();
       setFreeMove(null);
     }
     if (event.key === "Escape" && resizeState) {
       resizeState = null;
       endInteractionLock();
+      emitToParent({ __editor_interaction_lock: true, active: false, kind: null });
       hideMoveFeedback();
     }
   }, true);
