@@ -110,7 +110,7 @@ export type EditorCommand =
   | { __editor_cmd: true; cmd: "enable_drag" }
 
 const TEXT_TAGS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "a", "button", "li", "td", "th", "label", "small", "strong", "em", "blockquote"])
-export const EDITOR_RUNTIME_VERSION = "2026-03-20-02"
+export const EDITOR_RUNTIME_VERSION = "2026-03-20-03"
 
 export function buildEditorRuntime(): string {
   return `
@@ -2956,7 +2956,7 @@ export function buildEditorRuntime(): string {
     if (isRuntimeUiTarget(event.target)) return;
     var el = getSelectionTargetFromPoint(event.clientX, event.clientY, event.target);
     if (!canEdit(el)) return;
-    if (!multiSelectMode && selectedEl && canUseFreeMove(selectedEl) && ((freeMoveEl && !freeMoveIsGroup) || coarsePointer)) {
+    if (!multiSelectMode && selectedEl && canUseFreeMove(selectedEl) && freeMoveEl && !freeMoveIsGroup && freeMoveEl === selectedEl) {
       var dragTarget = event.target instanceof Element ? event.target : null;
       var dragOwner = dragTarget ? getEditableOwner(dragTarget) : null;
       var selectedRect = selectedEl.getBoundingClientRect ? selectedEl.getBoundingClientRect() : null;
@@ -3006,7 +3006,7 @@ export function buildEditorRuntime(): string {
     if (isRuntimeUiTarget(event.target)) return;
     var el = getSelectionTargetFromPoint(point.x, point.y, event.target);
     if (!canEdit(el)) return;
-    if (!multiSelectMode && selectedEl && canUseFreeMove(selectedEl) && ((freeMoveEl && !freeMoveIsGroup) || coarsePointer)) {
+    if (!multiSelectMode && selectedEl && canUseFreeMove(selectedEl) && freeMoveEl && !freeMoveIsGroup && freeMoveEl === selectedEl) {
       var dragTarget = event.target instanceof Element ? event.target : null;
       var dragOwner = dragTarget ? getEditableOwner(dragTarget) : null;
       var selectedRect = selectedEl.getBoundingClientRect ? selectedEl.getBoundingClientRect() : null;
@@ -3071,7 +3071,9 @@ export function buildEditorRuntime(): string {
       !multiSelectMode &&
       selectedEl &&
       canUseFreeMove(selectedEl) &&
-      ((freeMoveEl && !freeMoveIsGroup && freeMoveEl === selectedEl) || coarsePointer) &&
+      freeMoveEl &&
+      !freeMoveIsGroup &&
+      freeMoveEl === selectedEl &&
       buttonsMask === 1
     ) {
       var moveTarget = target instanceof Element ? target : null;

@@ -208,8 +208,15 @@ export default function CustomCodeSection({
 
     const scrollDocument = (doc: Document | null | undefined, dx: number, dy: number) => {
       if (!doc) return false
-      const scrollingElement = doc.scrollingElement || doc.documentElement || doc.body
-      return scrollElement(scrollingElement, dx, dy)
+      const candidates = [
+        doc.body,
+        doc.scrollingElement,
+        doc.documentElement,
+      ]
+      for (const candidate of candidates) {
+        if (scrollElement(candidate, dx, dy)) return true
+      }
+      return false
     }
 
     const iframe = iframeRef.current
@@ -446,6 +453,87 @@ export default function CustomCodeSection({
     }
   }, [editMode, scrollStudioCanvasBy])
 
+  const wireEditorTouchBridge = React.useCallback((doc: Document) => {
+    try {
+      if (!doc.documentElement || !doc.body) return
+      const touchDoc = doc as Document & {
+        __heTouchStartHandler?: EventListener
+        __heTouchMoveHandler?: EventListener
+        __heTouchEndHandler?: EventListener
+        __heTouchState?: { id: number | null; x: number; y: number } | null
+      }
+      const previousStart = touchDoc.__heTouchStartHandler
+      const previousMove = touchDoc.__heTouchMoveHandler
+      const previousEnd = touchDoc.__heTouchEndHandler
+      if (previousStart) doc.removeEventListener("touchstart", previousStart, true)
+      if (previousMove) doc.removeEventListener("touchmove", previousMove, true)
+      if (previousEnd) {
+        doc.removeEventListener("touchend", previousEnd, true)
+        doc.removeEventListener("touchcancel", previousEnd, true)
+      }
+
+      touchDoc.__heTouchState = null
+
+      if (!editMode) {
+        touchDoc.__heTouchStartHandler = undefined
+        touchDoc.__heTouchMoveHandler = undefined
+        touchDoc.__heTouchEndHandler = undefined
+        return
+      }
+
+      const isRuntimeTarget = (target: EventTarget | null) =>
+        target instanceof Element && Boolean(target.closest("[data-he-runtime],[data-he-editor-overlay]"))
+
+      const handleTouchStart = (event: Event) => {
+        if (interactionLocked) return
+        const touchEvent = event as TouchEvent
+        const touch = touchEvent.touches[0]
+        if (!touch) {
+          touchDoc.__heTouchState = null
+          return
+        }
+        if (isRuntimeTarget(touchEvent.target)) {
+          touchDoc.__heTouchState = null
+          return
+        }
+        touchDoc.__heTouchState = { id: touch.identifier, x: touch.clientX, y: touch.clientY }
+      }
+
+      const handleTouchMove = (event: Event) => {
+        if (interactionLocked) return
+        const touchEvent = event as TouchEvent
+        const state = touchDoc.__heTouchState
+        if (!state) return
+        const touch = Array.from(touchEvent.touches).find((entry) => entry.identifier === state.id) ?? touchEvent.touches[0]
+        if (!touch) return
+        if (isRuntimeTarget(touchEvent.target)) return
+        const deltaX = state.x - touch.clientX
+        const deltaY = state.y - touch.clientY
+        if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return
+        if (touchEvent.cancelable) {
+          touchEvent.preventDefault()
+        }
+        touchEvent.stopPropagation()
+        scrollStudioCanvasBy(deltaX, deltaY)
+        touchDoc.__heTouchState = { id: touch.identifier, x: touch.clientX, y: touch.clientY }
+      }
+
+      const handleTouchEnd = () => {
+        touchDoc.__heTouchState = null
+      }
+
+      doc.addEventListener("touchstart", handleTouchStart, { passive: true, capture: true })
+      doc.addEventListener("touchmove", handleTouchMove, { passive: false, capture: true })
+      doc.addEventListener("touchend", handleTouchEnd, { passive: true, capture: true })
+      doc.addEventListener("touchcancel", handleTouchEnd, { passive: true, capture: true })
+      touchDoc.__heTouchStartHandler = handleTouchStart
+      touchDoc.__heTouchMoveHandler = handleTouchMove
+      touchDoc.__heTouchEndHandler = handleTouchEnd
+    } catch {
+      // keep the Studio usable if touch bridge setup fails
+    }
+  }, [editMode, interactionLocked, scrollStudioCanvasBy])
+
   const wireHtmlActions = React.useCallback((doc: Document) => {
     if (!doc.documentElement || !doc.body) return
     const previousHandler = (doc as Document & { __heActionHandler?: EventListener }).__heActionHandler
@@ -531,12 +619,13 @@ export default function CustomCodeSection({
       syncIframeTheme(doc)
       wireHtmlActions(doc)
       wireEditorWheelBridge(doc)
+      wireEditorTouchBridge(doc)
       syncHeightFromDocument(doc)
       injectEditorRuntime(doc)
     } catch {
       // Avoid breaking the Studio while the iframe document is still mounting.
     }
-  }, [actionBindings, editMode, forceRuntimeReload, html, iframeRef, injectEditorRuntime, isIframeDocumentReady, syncHeightFromDocument, syncIframeTheme, wireEditorWheelBridge, wireHtmlActions])
+  }, [actionBindings, editMode, forceRuntimeReload, html, iframeRef, injectEditorRuntime, isIframeDocumentReady, syncHeightFromDocument, syncIframeTheme, wireEditorTouchBridge, wireEditorWheelBridge, wireHtmlActions])
 
   React.useEffect(() => {
     if (!editMode) {
@@ -652,6 +741,7 @@ export default function CustomCodeSection({
       syncIframeTheme(doc)
       wireHtmlActions(doc)
       wireEditorWheelBridge(doc)
+      wireEditorTouchBridge(doc)
       lastAppliedHtmlRef.current = html
       if (!lastLiveSnapshotRef.current) {
         lastLiveSnapshotRef.current = html
@@ -721,7 +811,7 @@ export default function CustomCodeSection({
           border: "none",
           display: "block",
           overflow: "auto",
-          touchAction: interactionLocked ? "none" : editMode ? "manipulation" : "auto",
+          touchAction: interactionLocked ? "none" : "auto",
           overscrollBehavior: editMode ? "contain" : undefined,
           cursor: editMode ? "crosshair" : undefined,
         }}

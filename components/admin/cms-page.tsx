@@ -5819,19 +5819,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       mountedRef.current = true
       return
     }
-    if (!changed) return
-
-    setIsAutosaving(true)
-    const timer = window.setTimeout(() => {
-      saveCMSConfig(config, "draft")
-      setIsAutosaving(false)
-      setSaved(true)
-      setChanged(false)
-      window.setTimeout(() => setSaved(false), 1800)
-    }, 1500)
-
-    return () => window.clearTimeout(timer)
-  }, [changed, config])
+    setIsAutosaving(false)
+  }, [config])
 
   useEffect(() => {
     if (!currentSections.length) {
