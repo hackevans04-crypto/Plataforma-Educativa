@@ -88,6 +88,7 @@ export type EditorMessage =
   | { __editor_moved: true; eid: string | null; targetEid: string | null; position: "before" | "after" | "inside" }
   | { __editor_snapshot: true; html: string }
   | { __editor_interaction_lock: true; active: boolean; kind: "move" | "resize" | "group" | null }
+  | { __editor_open_inspector: true }
   | { __hei_resize: number }
 
 export type EditorCommand =
@@ -109,7 +110,7 @@ export type EditorCommand =
   | { __editor_cmd: true; cmd: "enable_drag" }
 
 const TEXT_TAGS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "a", "button", "li", "td", "th", "label", "small", "strong", "em", "blockquote"])
-export const EDITOR_RUNTIME_VERSION = "2026-03-19-08"
+export const EDITOR_RUNTIME_VERSION = "2026-03-20-02"
 
 export function buildEditorRuntime(): string {
   return `
@@ -138,10 +139,10 @@ export function buildEditorRuntime(): string {
   var activeTouchId = null;
   var eidCounter = 1;
   var coarsePointer = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || ((navigator.maxTouchPoints || 0) > 0);
-  var resizeHandleSize = coarsePointer ? 26 : 14;
+  var resizeHandleSize = coarsePointer ? 34 : 14;
   var resizeHandleHalf = Math.round(resizeHandleSize / 2);
-  var compactTargetSize = coarsePointer ? 48 : 30;
-  var moveHitTargetSize = coarsePointer ? 62 : 34;
+  var compactTargetSize = coarsePointer ? 58 : 30;
+  var moveHitTargetSize = coarsePointer ? 96 : 34;
   var toolbarGap = coarsePointer ? 10 : 12;
 
   function markRuntime(node, attr) {
@@ -314,30 +315,48 @@ export function buildEditorRuntime(): string {
     if (touchIdentifier != null) {
       activeTouchId = touchIdentifier;
     }
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = cursor || "grabbing";
-    document.body.style.touchAction = "none";
-    document.body.style.overscrollBehavior = "none";
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.userSelect = "none";
-    document.documentElement.style.cursor = cursor || "grabbing";
-    document.documentElement.style.touchAction = "none";
-    document.documentElement.style.overscrollBehavior = "none";
-    document.documentElement.style.overflow = "hidden";
+    if (document.body) {
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = cursor || "grabbing";
+      document.body.style.touchAction = "none";
+      document.body.style.overscrollBehavior = "none";
+      document.body.style.overflow = "hidden";
+    }
+    if (document.documentElement) {
+      document.documentElement.style.userSelect = "none";
+      document.documentElement.style.cursor = cursor || "grabbing";
+      document.documentElement.style.touchAction = "none";
+      document.documentElement.style.overscrollBehavior = "none";
+      document.documentElement.style.overflow = "hidden";
+    }
   }
 
   function endInteractionLock() {
     activeTouchId = null;
-    document.body.style.userSelect = "";
-    document.body.style.cursor = "";
-    document.body.style.touchAction = "";
-    document.body.style.overscrollBehavior = "";
-    document.body.style.overflow = "";
-    document.documentElement.style.userSelect = "";
-    document.documentElement.style.cursor = "";
-    document.documentElement.style.touchAction = "";
-    document.documentElement.style.overscrollBehavior = "";
-    document.documentElement.style.overflow = "";
+    if (document.body) {
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      document.body.style.touchAction = "";
+      document.body.style.overscrollBehavior = "";
+      document.body.style.overflow = "";
+    }
+    if (document.documentElement) {
+      document.documentElement.style.userSelect = "";
+      document.documentElement.style.cursor = "";
+      document.documentElement.style.touchAction = "";
+      document.documentElement.style.overscrollBehavior = "";
+      document.documentElement.style.overflow = "";
+    }
+  }
+
+  function abortActiveInteraction() {
+    if (finishCanvasPointerInteraction()) {
+      return true;
+    }
+    endInteractionLock();
+    emitToParent({ __editor_interaction_lock: true, active: false, kind: null });
+    hideMoveFeedback();
+    return false;
   }
 
   function place(overlay, el) {
@@ -390,7 +409,8 @@ export function buildEditorRuntime(): string {
     }
     var rect = el.getBoundingClientRect();
     var nodeType = getNodeType(el);
-    if (!(nodeType === "icon" || rect.width < 24 || rect.height < 24)) {
+    var shouldExpandHitBox = coarsePointer || nodeType === "icon" || rect.width < 24 || rect.height < 24;
+    if (!shouldExpandHitBox) {
       moveHitBox.style.display = "none";
       return;
     }
@@ -1399,6 +1419,7 @@ export function buildEditorRuntime(): string {
     var active = !!(freeMoveEl && ((freeMoveIsGroup && grouped) || (!freeMoveIsGroup && selectedEl && freeMoveEl === selectedEl)));
     var selectedRect = selectedEl && selectedEl.getBoundingClientRect ? selectedEl.getBoundingClientRect() : null;
     var smallTargetSelection = !!(selectedRect && (getNodeType(selectedEl) === "icon" || selectedRect.width < 24 || selectedRect.height < 24));
+    var moveOverlayActive = active && !grouped && movableSelection && (coarsePointer || smallTargetSelection);
     var singleOverlayInteractive = active && !grouped;
     if (groupButton) {
       groupButton.disabled = protectedSelection;
@@ -1423,9 +1444,9 @@ export function buildEditorRuntime(): string {
     groupBox.style.pointerEvents = active && grouped ? "auto" : "none";
     selBox.style.cursor = active && !grouped ? "move" : "default";
     groupBox.style.cursor = active && grouped ? "move" : "default";
-    moveHitBox.style.pointerEvents = active && !grouped && smallTargetSelection ? "auto" : "none";
-    moveHitBox.style.cursor = active && !grouped && smallTargetSelection ? "move" : "default";
-    if (!(active && !grouped && smallTargetSelection)) {
+    moveHitBox.style.pointerEvents = moveOverlayActive ? "auto" : "none";
+    moveHitBox.style.cursor = moveOverlayActive ? "move" : "default";
+    if (!moveOverlayActive) {
       moveHitBox.style.display = "none";
     }
     if (upButton) {
@@ -1444,8 +1465,8 @@ export function buildEditorRuntime(): string {
     selBox.style.cursor = active && !grouped ? "move" : "default";
     groupBox.style.pointerEvents = active && grouped ? "auto" : "none";
     groupBox.style.cursor = active && grouped ? "move" : "default";
-    moveHitBox.style.pointerEvents = active && !grouped && smallTargetSelection ? "auto" : "none";
-    moveHitBox.style.cursor = active && !grouped && smallTargetSelection ? "move" : "default";
+    moveHitBox.style.pointerEvents = moveOverlayActive ? "auto" : "none";
+    moveHitBox.style.cursor = moveOverlayActive ? "move" : "default";
     resizeHandle.style.opacity = selectedEl && !protectedSelection && !grouped && resizableSelection ? "1" : "0";
     resizeHandle.style.pointerEvents = selectedEl && !protectedSelection && !grouped && resizableSelection ? "auto" : "none";
   }
@@ -1653,7 +1674,7 @@ export function buildEditorRuntime(): string {
 
   function canResizeFreely(el) {
     var kind = getNodeType(el);
-    return kind === "icon" || kind === "button" || kind === "image" || kind === "container" || kind === "field";
+    return kind === "icon" || kind === "button" || kind === "image" || kind === "container" || kind === "field" || kind === "text";
   }
 
   function isIconCandidate(el) {
@@ -2707,7 +2728,11 @@ export function buildEditorRuntime(): string {
     }
 
     if (tool === "edit" && selectedEl) {
-      beginInlineEdit(selectedEl);
+      var started = beginInlineEdit(selectedEl);
+      if (!started) {
+        // Non-text element: signal parent to open the inspector panel
+        emitToParent({ __editor_open_inspector: true });
+      }
       return;
     }
 
@@ -2918,6 +2943,14 @@ export function buildEditorRuntime(): string {
 
       resizeState.el.style.width = nextWidth + "px";
       resizeState.el.style.height = nextHeight + "px";
+
+      if (getNodeType(resizeState.el) === "text") {
+        var textGrowth = Math.max(nextWidth - resizeState.startWidth, nextHeight - resizeState.startHeight);
+        var nextFontSize = Math.max(12, Math.round(resizeState.startFontSize + textGrowth * 0.18));
+        resizeState.el.style.fontSize = nextFontSize + "px";
+        resizeState.el.style.lineHeight = "1.1";
+        resizeState.el.style.height = "";
+      }
 
       if (isIconCandidate(resizeState.el)) {
         var nextIconSize = Math.max(12, Math.round(clampValue(Math.max(nextWidth, nextHeight), 12, Math.min(resizeBounds.width, resizeBounds.height, 220))));
@@ -3146,6 +3179,14 @@ export function buildEditorRuntime(): string {
       event.stopPropagation();
     }
     finishCanvasPointerInteraction();
+  }, true);
+
+  window.addEventListener("blur", abortActiveInteraction, true);
+  window.addEventListener("pagehide", abortActiveInteraction, true);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState !== "visible") {
+      abortActiveInteraction();
+    }
   }, true);
 
   document.addEventListener("touchcancel", function (event) {

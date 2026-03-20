@@ -109,6 +109,8 @@ interface CustomCodeSectionProps {
   onAction?: (action?: CMSActionConfig, fallbackHref?: string) => void
   /** Notify parent when touch/move interactions should lock outer scrolling */
   onInteractionLockChange?: (locked: boolean) => void
+  /** Called when the iframe toolbar "Editar" is tapped on a non-text element */
+  onOpenInspector?: () => void
 }
 
 function buildFrameDocument(html: string, revision?: string | number) {
@@ -162,6 +164,7 @@ export default function CustomCodeSection({
   iframeRef: externalRef,
   onAction,
   onInteractionLockChange,
+  onOpenInspector,
 }: CustomCodeSectionProps) {
   const html = (data.html as string) ?? ""
   const actionBindings = React.useMemo(
@@ -226,7 +229,11 @@ export default function CustomCodeSection({
       setInteractionLocked(nextLocked)
       onInteractionLockChange?.(nextLocked)
     }
-  }, [iframeRef, onEditorSnapshot, onEditingChange, onElementSelect, syncHeightFromDocument])
+
+    if (data.__editor_open_inspector) {
+      onOpenInspector?.()
+    }
+  }, [iframeRef, onEditorSnapshot, onEditingChange, onElementSelect, onOpenInspector, syncHeightFromDocument])
   const injectEditorRuntime = React.useCallback((doc: Document) => {
     if (!editMode || !doc.documentElement || !doc.head || !doc.body) return
 
@@ -515,6 +522,8 @@ export default function CustomCodeSection({
     window.addEventListener("orientationchange", syncIframeSize)
     window.addEventListener("focus", syncIframeSize)
     window.addEventListener("pageshow", syncIframeSize)
+    window.visualViewport?.addEventListener("resize", syncIframeSize)
+    window.visualViewport?.addEventListener("scroll", syncIframeSize)
     document.addEventListener("visibilitychange", handleVisibilitySync)
 
     return () => {
@@ -522,6 +531,8 @@ export default function CustomCodeSection({
       window.removeEventListener("orientationchange", syncIframeSize)
       window.removeEventListener("focus", syncIframeSize)
       window.removeEventListener("pageshow", syncIframeSize)
+      window.visualViewport?.removeEventListener("resize", syncIframeSize)
+      window.visualViewport?.removeEventListener("scroll", syncIframeSize)
       document.removeEventListener("visibilitychange", handleVisibilitySync)
     }
   }, [iframeRef, syncHeightFromDocument])
@@ -554,6 +565,31 @@ export default function CustomCodeSection({
       documentElement.style.overscrollBehavior = prevDocOverscroll
     }
   }, [interactionLocked])
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const releaseInteractionLock = () => {
+      setInteractionLocked(false)
+      onInteractionLockChange?.(false)
+    }
+
+    const handleVisibilityLockReset = () => {
+      if (document.visibilityState !== "visible") {
+        releaseInteractionLock()
+      }
+    }
+
+    window.addEventListener("blur", releaseInteractionLock)
+    window.addEventListener("pagehide", releaseInteractionLock)
+    document.addEventListener("visibilitychange", handleVisibilityLockReset)
+
+    return () => {
+      window.removeEventListener("blur", releaseInteractionLock)
+      window.removeEventListener("pagehide", releaseInteractionLock)
+      document.removeEventListener("visibilitychange", handleVisibilityLockReset)
+    }
+  }, [onInteractionLockChange])
 
   const handleLoad = () => {
     const iframe = iframeRef.current
@@ -642,7 +678,8 @@ export default function CustomCodeSection({
           border: "none",
           display: "block",
           overflow: "auto",
-          touchAction: interactionLocked ? "none" : "auto",
+          touchAction: interactionLocked ? "none" : editMode ? "manipulation" : "auto",
+          overscrollBehavior: editMode ? "contain" : undefined,
           cursor: editMode ? "crosshair" : undefined,
         }}
         title="custom-block"

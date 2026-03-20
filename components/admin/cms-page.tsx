@@ -2878,6 +2878,7 @@ function StudioViewport({
   desktopWidth,
   mobileShell,
   mobileDockVisible = true,
+  mobileHtmlSelectionActive = false,
   htmlIframeRef,
   onHtmlElementSelect,
   onHtmlEditingChange,
@@ -2906,6 +2907,7 @@ function StudioViewport({
   desktopWidth?: 1440 | 1280
   mobileShell?: boolean
   mobileDockVisible?: boolean
+  mobileHtmlSelectionActive?: boolean
   htmlIframeRef?: React.MutableRefObject<HTMLIFrameElement | null>
   onHtmlElementSelect?: (info: EditorElementInfo | null) => void
   onHtmlEditingChange?: (editing: boolean) => void
@@ -2935,6 +2937,9 @@ function StudioViewport({
   const canvasShell = "min-h-0 overflow-visible rounded-[28px] border border-white/10 bg-[#07101a] shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
 
   useEffect(() => {
+    let rafId = 0
+    let timeoutId = 0
+
     const updateScale = () => {
       const workspace = workspaceRef.current
       const preview = previewRef.current
@@ -2966,6 +2971,23 @@ function StudioViewport({
       setPreviewHeight(Number.isFinite(previewBaseHeight * appliedScale) ? previewBaseHeight * appliedScale : null)
     }
 
+    const queueUpdateScale = () => {
+      if (rafId) window.cancelAnimationFrame(rafId)
+      if (timeoutId) window.clearTimeout(timeoutId)
+      rafId = window.requestAnimationFrame(() => {
+        updateScale()
+        timeoutId = window.setTimeout(updateScale, 220)
+      })
+    }
+
+    const handleVisibilitySync = () => {
+      if (document.visibilityState === "visible") {
+        queueUpdateScale()
+        window.setTimeout(updateScale, 420)
+        window.setTimeout(updateScale, 900)
+      }
+    }
+
     updateScale()
 
     const resizeObserver = new ResizeObserver(() => updateScale())
@@ -2973,11 +2995,25 @@ function StudioViewport({
     if (previewRef.current) resizeObserver.observe(previewRef.current)
 
     window.addEventListener("resize", updateScale)
+    window.addEventListener("orientationchange", queueUpdateScale)
+    window.addEventListener("focus", queueUpdateScale)
+    window.addEventListener("pageshow", queueUpdateScale)
+    window.visualViewport?.addEventListener("resize", queueUpdateScale)
+    window.visualViewport?.addEventListener("scroll", queueUpdateScale)
+    document.addEventListener("visibilitychange", handleVisibilitySync)
     return () => {
+      if (rafId) window.cancelAnimationFrame(rafId)
+      if (timeoutId) window.clearTimeout(timeoutId)
       resizeObserver.disconnect()
       window.removeEventListener("resize", updateScale)
+      window.removeEventListener("orientationchange", queueUpdateScale)
+      window.removeEventListener("focus", queueUpdateScale)
+      window.removeEventListener("pageshow", queueUpdateScale)
+      window.visualViewport?.removeEventListener("resize", queueUpdateScale)
+      window.visualViewport?.removeEventListener("scroll", queueUpdateScale)
+      document.removeEventListener("visibilitychange", handleVisibilitySync)
     }
-  }, [isDesktop, mobileDockHeight, mobileDockVisible, mobileShell, mobileViewportHeight, viewportWidth, mode, sections, selectedId, route, zoomMode, viewportHeight])
+  }, [isDesktop, mobileDockHeight, mobileDockVisible, mobileHtmlSelectionActive, mobileShell, mobileViewportHeight, viewportWidth, mode, sections, selectedId, route, zoomMode, viewportHeight])
 
   const appliedScale = zoomMode === "fit" ? fitScale : Math.min(zoomMode / 100, fitScale)
   const scaledViewportWidth = Math.max(220, Math.round(viewportWidth * appliedScale))
@@ -3030,7 +3066,7 @@ function StudioViewport({
           backgroundSize: "24px 24px, 24px 24px, auto",
           paddingBottom:
             isMobile && !previewMode
-              ? `calc(env(safe-area-inset-bottom) + ${Math.max(mobileDockHeight + 18, selectedId ? 190 : 156)}px)`
+              ? `calc(env(safe-area-inset-bottom) + ${Math.max(mobileDockHeight + 26, mobileHtmlSelectionActive ? 236 : selectedId ? 204 : 164)}px)`
               : undefined,
         }}
       >
@@ -3277,7 +3313,7 @@ function AddModal({
   const [detailsType, setDetailsType] = useState<CMSSectionType | null>(null)
   const [search, setSearch] = useState("")
   const [groupFilter, setGroupFilter] = useState<string>("all")
-  const resolvedViewportHeight = viewportHeight ? Math.max(320, viewportHeight - 16) : null
+  const resolvedViewportHeight = viewportHeight ? Math.max(320, viewportHeight - 8) : null
   const mobileSheetMode = Boolean(resolvedViewportHeight && resolvedViewportHeight < 820)
   const handleAdd = (type: CMSSectionType) => {
     onAdd(type)
@@ -3306,23 +3342,23 @@ function AddModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-stretch justify-end bg-black/75 backdrop-blur-sm sm:items-center sm:justify-center sm:p-3"
+      className="fixed inset-0 z-50 flex flex-col items-stretch justify-end bg-black/75 px-0 pb-0 pt-[max(env(safe-area-inset-top),8px)] backdrop-blur-sm sm:items-center sm:justify-center sm:p-3"
       onClick={onClose}
     >
       <div
         className={cn(
           "flex min-h-0 w-full flex-col overflow-hidden border border-border bg-card shadow-2xl",
           mobileSheetMode
-            ? "max-w-none rounded-t-[28px]"
+            ? "max-w-none rounded-t-[28px] pb-[max(env(safe-area-inset-bottom),10px)]"
             : "max-w-[min(1440px,calc(100vw-16px))] rounded-[28px] sm:h-[min(92vh,980px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-xl"
         )}
         style={{
           height: resolvedViewportHeight
-            ? `${Math.min(resolvedViewportHeight, Math.round(resolvedViewportHeight * 0.97))}px`
-            : "calc(100dvh - env(safe-area-inset-top) - 8px)",
+            ? `${Math.min(resolvedViewportHeight, Math.round(resolvedViewportHeight * 0.985))}px`
+            : "calc(100dvh - env(safe-area-inset-top) - 6px)",
           maxHeight: resolvedViewportHeight
             ? `${resolvedViewportHeight}px`
-            : "calc(100dvh - env(safe-area-inset-top))",
+            : "calc(100dvh - env(safe-area-inset-top) - 6px)",
         }}
         onClick={e => e.stopPropagation()}
       >
@@ -10319,6 +10355,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             previewMode={studioMode !== "edit"}
             mobileShell={mobileStudioLayout}
             mobileDockVisible={mobileDockVisible}
+            mobileHtmlSelectionActive={selectedSection?.type === "customCode" && (Boolean(htmlEl) || htmlEditing || htmlInteractionLocked)}
             onInlineUpdate={updateSectionInlineContent}
             onDuplicate={duplicateSectionInPage}
             onToggleVisibility={toggleSectionVisibility}
