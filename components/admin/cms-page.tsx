@@ -1668,7 +1668,7 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
 }
 
 import { HtmlImporter } from "@/components/admin/html-importer"
-import { HtmlElementInspector } from "@/components/admin/html-element-inspector"
+import { HtmlElementInspector, type HtmlInspectorTab } from "@/components/admin/html-element-inspector"
 import CustomCodeSection from "@/components/landing/custom-code-section"
 import type { EditorElementInfo } from "@/components/admin/html-editor-bridge"
 
@@ -2934,6 +2934,12 @@ function StudioViewport({
   const isDesktop = mode === "desktop"
   const isTablet = mode === "tablet"
   const isMobile = mode === "mobile"
+  // useNaturalMobileEditCanvas: only skip the iframe when the studio is *actually*
+  // running on a mobile device (mobileShell). On desktop we always render mobile/tablet
+  // inside a StudioPreviewFrame so CSS media-queries use the correct viewport width.
+  const useNaturalMobileEditCanvas = isMobile && editorMode === "edit" && mobileShell
+  const useLayoutZoom = editorMode === "edit" && !useNaturalMobileEditCanvas
+  const shouldSyncPreviewOnViewportScroll = !(isMobile && editorMode === "edit")
   const canvasShell = "min-h-0 overflow-visible rounded-[28px] border border-white/10 bg-[#07101a] shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
 
   useEffect(() => {
@@ -2960,15 +2966,32 @@ function StudioViewport({
       } else if (mobileDockHeight !== 0) {
         setMobileDockHeight(0)
       }
-      const nextScale = Math.min(1, availableWidth / viewportWidth)
-      const appliedScale = zoomMode === "fit" ? nextScale : Math.min(zoomMode / 100, nextScale)
-      const previewBaseHeight =
-        (mode === "mobile" || mode === "tablet") && viewportHeight
-          ? viewportHeight
-          : preview.scrollHeight
+      // The outer canvas frame (rounded-[38px]) has horizontal padding (p-4 xl:p-5
+      // for desktop/tablet, p-1.5 for mobile). Read the padding from the frame element
+      // but derive the fittable width from the workspace (not frameEl.clientWidth) so
+      // that removing max-w-full on the frame doesn't create a circular dependency.
+      const frameEl = preview.parentElement?.parentElement as HTMLElement | null
+      const frameStyle = frameEl ? window.getComputedStyle(frameEl) : null
+      const framePadX = frameEl && frameStyle
+        ? (parseFloat(frameStyle.paddingLeft) || 0) + (parseFloat(frameStyle.paddingRight) || 0)
+        : 0
+      const fittableWidth = Math.max(availableWidth - framePadX, 320)
+      const nextScale = Math.min(1, (fittableWidth / viewportWidth) * 1.15)
+      const appliedScale = useNaturalMobileEditCanvas ? 1 : (zoomMode === "fit" ? nextScale : zoomMode / 100)
+      // In edit mode show the full page height so all sections are reachable.
+      // Only use the fixed device viewport height in preview/review mode.
+      const useFixedViewport =
+        (mode === "mobile" || mode === "tablet") &&
+        viewportHeight &&
+        editorMode !== "edit"
+      const previewBaseHeight = useFixedViewport ? viewportHeight : preview.scrollHeight
+      const previewHeightSlack = !useFixedViewport && !useNaturalMobileEditCanvas ? 6 : 0
+      const scaledPreviewHeight = Number.isFinite(previewBaseHeight * appliedScale)
+        ? Math.ceil(previewBaseHeight * appliedScale + previewHeightSlack)
+        : null
 
       setFitScale(nextScale)
-      setPreviewHeight(Number.isFinite(previewBaseHeight * appliedScale) ? previewBaseHeight * appliedScale : null)
+      setPreviewHeight(useLayoutZoom ? null : scaledPreviewHeight)
     }
 
     const queueUpdateScale = () => {
@@ -2999,7 +3022,9 @@ function StudioViewport({
     window.addEventListener("focus", queueUpdateScale)
     window.addEventListener("pageshow", queueUpdateScale)
     window.visualViewport?.addEventListener("resize", queueUpdateScale)
-    window.visualViewport?.addEventListener("scroll", queueUpdateScale)
+    if (shouldSyncPreviewOnViewportScroll) {
+      window.visualViewport?.addEventListener("scroll", queueUpdateScale)
+    }
     document.addEventListener("visibilitychange", handleVisibilitySync)
     return () => {
       if (rafId) window.cancelAnimationFrame(rafId)
@@ -3010,14 +3035,24 @@ function StudioViewport({
       window.removeEventListener("focus", queueUpdateScale)
       window.removeEventListener("pageshow", queueUpdateScale)
       window.visualViewport?.removeEventListener("resize", queueUpdateScale)
-      window.visualViewport?.removeEventListener("scroll", queueUpdateScale)
+      if (shouldSyncPreviewOnViewportScroll) {
+        window.visualViewport?.removeEventListener("scroll", queueUpdateScale)
+      }
       document.removeEventListener("visibilitychange", handleVisibilitySync)
     }
-  }, [isDesktop, mobileDockHeight, mobileDockVisible, mobileShell, mobileViewportHeight, viewportWidth, mode, sections, selectedId, route, zoomMode, viewportHeight])
+  }, [editorMode, fitScale, isDesktop, mobileDockHeight, mobileDockVisible, mobileShell, mobileViewportHeight, viewportWidth, mode, sections, selectedId, route, shouldSyncPreviewOnViewportScroll, useLayoutZoom, useNaturalMobileEditCanvas, zoomMode, viewportHeight])
 
-  const appliedScale = zoomMode === "fit" ? fitScale : Math.min(zoomMode / 100, fitScale)
-  const scaledViewportWidth = Math.max(220, Math.round(viewportWidth * appliedScale))
+  const appliedScale = useNaturalMobileEditCanvas ? 1 : (zoomMode === "fit" ? fitScale : zoomMode / 100)
+  const scaledViewportWidth = useNaturalMobileEditCanvas ? viewportWidth : Math.max(220, Math.round(viewportWidth * appliedScale))
   const viewportFrameWidth = Math.min(viewportWidth + (isDesktop ? 168 : isTablet ? 96 : 56), 1720)
+  const mobileCanvasBottomInset = isMobile && !previewMode
+    ? (() => {
+        const dockInset = Math.max(mobileDockHeight + 10, 88)
+        if (mobileHtmlSelectionActive) return dockInset + 46
+        if (selectedId) return dockInset + 20
+        return dockInset + 4
+      })()
+    : null
   const sitePreviewProps = {
     config,
     sections,
@@ -3043,19 +3078,61 @@ function StudioViewport({
   }
 
   useEffect(() => {
+    if (editorMode !== "edit" || useNaturalMobileEditCanvas || useLayoutZoom) return
+    let rafId = 0
+    let settleRafId = 0
+
+    const syncRenderedCanvasHeight = () => {
+      const preview = previewRef.current
+      const wrapper = preview?.parentElement as HTMLElement | null
+      if (!preview || !wrapper) return
+
+      const wrapperRect = wrapper.getBoundingClientRect()
+      const previewRect = preview.getBoundingClientRect()
+      let renderedBottom = Math.max(wrapperRect.top, previewRect.bottom)
+
+      Array.from(wrapper.children).forEach((child) => {
+        const rect = (child as HTMLElement).getBoundingClientRect?.()
+        if (!rect || !Number.isFinite(rect.bottom) || rect.height <= 0) return
+        renderedBottom = Math.max(renderedBottom, rect.bottom)
+      })
+
+      preview.querySelectorAll<HTMLElement>("[data-he-edit-id], [data-he-import-root='1']").forEach((node) => {
+        const rect = node.getBoundingClientRect()
+        if (!Number.isFinite(rect.bottom) || rect.height <= 0) return
+        renderedBottom = Math.max(renderedBottom, rect.bottom)
+      })
+
+      const nextHeight = Math.max(0, Math.ceil(renderedBottom - wrapperRect.top)) + 8
+      if (!Number.isFinite(nextHeight) || nextHeight <= 0) return
+      wrapper.style.height = `${nextHeight}px`
+      setPreviewHeight((current) => (current === nextHeight ? current : nextHeight))
+    }
+
+    rafId = window.requestAnimationFrame(() => {
+      settleRafId = window.requestAnimationFrame(syncRenderedCanvasHeight)
+    })
+
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId)
+      if (settleRafId) window.cancelAnimationFrame(settleRafId)
+    }
+  }, [editorMode, fitScale, route, sections, selectedId, useLayoutZoom, useNaturalMobileEditCanvas, viewportHeight, viewportWidth, zoomMode])
+
+  useEffect(() => {
     if (typeof window === "undefined") return
     const stored = window.localStorage.getItem("he-studio-guide-dismissed")
     if (stored === "true") setShowGuide(false)
   }, [])
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#060b12]">
+    <div className="flex min-h-0 flex-1 flex-col bg-[#060b12]">
       <div
         ref={workspaceRef}
         data-he-studio-scroll-root="1"
         className={cn(
           "studio-scroll relative flex-1 min-h-0 overflow-y-scroll overscroll-contain bg-[#060b12]",
-          mode === "desktop" ? "overflow-x-auto" : "overflow-x-hidden",
+          mode === "desktop" ? "overflow-x-scroll" : "overflow-x-hidden",
         )}
         style={{
           backgroundImage: [
@@ -3064,10 +3141,9 @@ function StudioViewport({
             "radial-gradient(circle at 50% 0%, rgba(232,57,42,0.05) 0%, transparent 50%)",
           ].join(", "),
           backgroundSize: "24px 24px, 24px 24px, auto",
-          paddingBottom:
-            isMobile && !previewMode
-              ? `calc(env(safe-area-inset-bottom) + ${Math.max(mobileDockHeight + 26, mobileHtmlSelectionActive ? 236 : selectedId ? 204 : 164)}px)`
-              : undefined,
+          paddingBottom: mobileCanvasBottomInset != null
+            ? `calc(env(safe-area-inset-bottom) + ${mobileCanvasBottomInset}px)`
+            : undefined,
         }}
       >
         <div className={cn("flex min-h-full items-start justify-center", isMobile ? "px-2 py-3" : "px-4 py-6 sm:px-5 md:px-6 xl:px-10 2xl:px-14")}>
@@ -3091,7 +3167,7 @@ function StudioViewport({
               </div>
             ) : null}
 
-            <div className={cn("mx-auto w-fit max-w-full rounded-[38px] border border-white/6 bg-[#040912]/95 shadow-[0_40px_120px_rgba(0,0,0,0.42)]", isMobile ? "p-1.5" : "p-4 xl:p-5")}>
+            <div className={cn("mx-auto w-fit rounded-[38px] border border-white/6 bg-[#040912]/95 shadow-[0_40px_120px_rgba(0,0,0,0.42)]", isMobile ? "p-1.5" : "p-4 xl:p-5")}>
               {isMobile ? null : (
                 <div className="mb-3 flex items-center justify-between gap-3 rounded-[24px] border border-white/6 bg-[#07101a]/95 px-4 py-3">
                   <div>
@@ -3106,9 +3182,16 @@ function StudioViewport({
               <div
                 className="mx-auto"
                 style={{
-                  width: `${scaledViewportWidth}px`,
-                  maxWidth: "100%",
-                  height: previewHeight ?? undefined,
+                  width: useNaturalMobileEditCanvas ? "100%" : `${scaledViewportWidth}px`,
+                  maxWidth: useNaturalMobileEditCanvas ? `${viewportWidth}px` : "none",
+                  height: useLayoutZoom ? undefined : previewHeight ?? undefined,
+                  // overflow:hidden clips the extra empty space that CSS transform:scale()
+                  // leaves in the layout (transforms don't affect layout so the div keeps
+                  // its full unscaled size). Using both axes prevents the browser from
+                  // automatically activating overflow-x:auto which would create an internal
+                  // scrollbar inside the frame.  Horizontal scroll at the workspace level
+                  // is handled by the workspace div's own overflow-x:auto.
+                  overflow: !useNaturalMobileEditCanvas && !useLayoutZoom ? "hidden" : undefined,
                 }}
               >
               {showGuide && !previewMode && !isMobile && (
@@ -3139,8 +3222,10 @@ function StudioViewport({
                   ref={previewRef}
                   className="origin-top transition-transform duration-200 overflow-x-hidden"
                   style={{
-                    width: `${viewportWidth}px`,
-                    transform: `scale(${appliedScale})`,
+                    width: useNaturalMobileEditCanvas ? "100%" : `${viewportWidth}px`,
+                    maxWidth: useNaturalMobileEditCanvas ? `${viewportWidth}px` : undefined,
+                    zoom: useLayoutZoom ? appliedScale : undefined,
+                    transform: useNaturalMobileEditCanvas || useLayoutZoom ? "none" : `scale(${appliedScale})`,
                     transformOrigin: "top left",
                   }}
                 >
@@ -3181,13 +3266,25 @@ function StudioViewport({
                         </div>
                       </div>
                     </div>
-                    <StudioPreviewFrame className="w-full" viewportHeight={viewportHeight} editorMode={editorMode}>
+                    <StudioPreviewFrame className="w-full" viewportHeight={editorMode === "edit" ? null : viewportHeight} editorMode={editorMode}>
                       <StudioSitePreview {...sitePreviewProps} />
                     </StudioPreviewFrame>
                   </div>
-                ) : (
+                ) : useNaturalMobileEditCanvas ? (
+                  // Real mobile device in edit mode — direct DOM, no iframe needed
+                  // (CSS media queries match the real device viewport)
                   <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07101a] shadow-[0_28px_72px_rgba(0,0,0,0.58)]">
-                    <StudioPreviewFrame className="w-full" viewportHeight={viewportHeight} editorMode={editorMode}>
+                    <StudioSitePreview {...sitePreviewProps} />
+                  </div>
+                ) : (
+                  // Desktop viewing mobile preview (or any preview/review mode) — use an
+                  // iframe so CSS media queries see the correct 390 px viewport width.
+                  <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07101a] shadow-[0_28px_72px_rgba(0,0,0,0.58)]">
+                    <StudioPreviewFrame
+                      className="w-full"
+                      viewportHeight={editorMode === "edit" ? null : viewportHeight}
+                      editorMode={editorMode}
+                    >
                       <StudioSitePreview {...sitePreviewProps} />
                     </StudioPreviewFrame>
                   </div>
@@ -5653,13 +5750,14 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const [leftTab, setLeftTab] = useState<StudioLeftTab>("layers")
   const [inspectorTab, setInspectorTab] = useState<StudioInspectorTab>("content")
   const [viewport, setViewport] = useState<StudioViewportMode>("desktop")
-  const [desktopWidth, setDesktopWidth] = useState<1440 | 1280>(1440)
+  const [desktopWidth, setDesktopWidth] = useState<1440 | 1280>(1280)
   const [zoomMode, setZoomMode] = useState<"fit" | 100 | 75 | 50>("fit")
   const [studioMode, setStudioMode] = useState<"edit" | "preview" | "review">("edit")
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
   const [focusLeftOpen, setFocusLeftOpen] = useState(false)
   const [focusRightOpen, setFocusRightOpen] = useState(false)
+  const [focusDockCollapsed, setFocusDockCollapsed] = useState(false)
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false)
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false)
   const [selectedPageSlug, setSelectedPageSlug] = useState("inicio")
@@ -5687,18 +5785,24 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const mobileViewportAutoRef = useRef(false)
   const mobileShellResetRef = useRef(false)
   const mobileEdgeGestureRef = useRef<{ x: number; y: number; zone: "left" | "right" | null }>({ x: 0, y: 0, zone: null })
-  const mobileDrawerGestureRef = useRef<{ x: number; y: number; panel: "left" | "right" | null }>({ x: 0, y: 0, panel: null })
+  const mobileDrawerGestureRef = useRef<{ x: number; y: number; panel: "left" | "right" | null; ignore: boolean }>({ x: 0, y: 0, panel: null, ignore: false })
+  const mobileDrawerInteractionLockRef = useRef(0)
+  const lastMobileImmediateActionRef = useRef<{ key: string; at: number }>({ key: "", at: 0 })
+  const mobileHtmlInspectorPinnedRef = useRef(false)
   const touchDragActiveRef = useRef<{ id: string; lastY: number } | null>(null)
 
   // ---- HTML editor bridge (shared by canvas iframe + inspector panel) ----
   const [htmlEl, setHtmlEl] = useState<EditorElementInfo | null>(null)
   const [htmlEditing, setHtmlEditing] = useState(false)
   const [htmlInteractionLocked, setHtmlInteractionLocked] = useState(false)
+  const [htmlInspectorActiveTab, setHtmlInspectorActiveTab] = useState<HtmlInspectorTab>("content")
   const [selectedNavPageSlug, setSelectedNavPageSlug] = useState<string | null>(null)
   const htmlIframeRef = useRef<HTMLIFrameElement | null>(null)
   const htmlSnapshotTimerRef = useRef<number | null>(null)
   const lastHtmlSnapshotRef = useRef<string>("")
   const selectedHtmlEidRef = useRef<string>("")
+  const lastDesktopFocusRightAutoOpenKeyRef = useRef("")
+  const lastDesktopCustomCodePanelKeyRef = useRef("")
 
   const handleChange = (next: CMSConfig | ((current: CMSConfig) => CMSConfig), trackHistory = true) => {
     if (trackHistory) {
@@ -5955,12 +6059,14 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     if (!effectiveFocusMode || studioMode !== "edit") {
       setFocusLeftOpen(false)
       setFocusRightOpen(false)
+      setFocusDockCollapsed(false)
       return
     }
 
     if (compactStudioLayout && !focusMode) {
       setFocusLeftOpen(false)
       setFocusRightOpen(false)
+      setFocusDockCollapsed(false)
       return
     }
 
@@ -5969,10 +6075,17 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   useEffect(() => {
     if (!effectiveFocusMode || studioMode !== "edit" || mobileStudioLayout) return
-    if (selectedSectionId || htmlEl?.eid || htmlEditing) {
+    const hasActiveSelection = selectedSectionId || htmlEl?.eid || htmlEditing
+    if (!hasActiveSelection) {
+      lastDesktopFocusRightAutoOpenKeyRef.current = ""
+      return
+    }
+    const nextKey = `${selectedPageSlug}:${selectedSectionId}:${htmlEl?.eid || ""}:${htmlEditing ? "editing" : "idle"}`
+    if (!focusRightOpen && lastDesktopFocusRightAutoOpenKeyRef.current !== nextKey) {
       setFocusRightOpen(true)
     }
-  }, [effectiveFocusMode, studioMode, mobileStudioLayout, selectedSectionId, htmlEl?.eid, htmlEditing])
+    lastDesktopFocusRightAutoOpenKeyRef.current = nextKey
+  }, [effectiveFocusMode, focusRightOpen, htmlEditing, htmlEl?.eid, mobileStudioLayout, selectedPageSlug, selectedSectionId, studioMode])
 
   useEffect(() => {
     if (!mobileStudioLayout || studioMode !== "edit") return
@@ -5984,6 +6097,23 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     setFocusLeftOpen(false)
     setMobileControlsOpen(false)
   }, [mobileStudioLayout, studioMode, selectedSection?.type, htmlEl, htmlEditing])
+
+  useEffect(() => {
+    if (!mobileStudioLayout) {
+      mobileHtmlInspectorPinnedRef.current = false
+      return
+    }
+    const htmlInspectorActive =
+      selectedSection?.type === "customCode" &&
+      (Boolean(htmlEl) || htmlEditing)
+    if (!htmlInspectorActive) {
+      mobileHtmlInspectorPinnedRef.current = false
+      return
+    }
+    if (mobileHtmlInspectorPinnedRef.current && !focusRightOpen) {
+      setFocusRightOpen(true)
+    }
+  }, [focusRightOpen, htmlEditing, htmlEl, mobileStudioLayout, selectedSection?.type])
 
   useEffect(() => {
     if (selectedSection?.type !== "customCode" || !htmlEl) return
@@ -6005,20 +6135,31 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }, [htmlEl, inspectorTab, selectedSection?.type])
 
   useEffect(() => {
-    if (selectedSection?.type !== "customCode") return
-    if (!htmlEl && !htmlEditing) return
+    if (selectedSection?.type !== "customCode") {
+      lastDesktopCustomCodePanelKeyRef.current = ""
+      return
+    }
+    if (!htmlEl && !htmlEditing) {
+      lastDesktopCustomCodePanelKeyRef.current = ""
+      return
+    }
     if (leftTab !== "layers") setLeftTab("layers")
-    if (rightPanelCollapsed) setRightPanelCollapsed(false)
+    const nextKey = `${selectedPageSlug}:${selectedSectionId}:${htmlEl?.eid || ""}:${htmlEditing ? "editing" : "idle"}`
+    if (!mobileStudioLayout && rightPanelCollapsed && lastDesktopCustomCodePanelKeyRef.current !== nextKey) {
+      setRightPanelCollapsed(false)
+    }
+    lastDesktopCustomCodePanelKeyRef.current = nextKey
     if (inspectorTab === "style" || inspectorTab !== "content" && inspectorTab !== "actions" && inspectorTab !== "advanced") {
       setInspectorTab("content")
     }
-  }, [htmlEditing, htmlEl, inspectorTab, leftTab, rightPanelCollapsed, selectedSection?.type])
+  }, [htmlEditing, htmlEl, inspectorTab, leftTab, mobileStudioLayout, rightPanelCollapsed, selectedPageSlug, selectedSection?.type, selectedSectionId])
 
   useEffect(() => {
+    if (leftTab === "navigation") return
     if (selectedSection?.type === "customCode" && inspectorTab === "style") {
       setInspectorTab("content")
     }
-  }, [inspectorTab, selectedSection?.type])
+  }, [inspectorTab, leftTab, selectedSection?.type])
 
   useEffect(() => {
     if (leftTab === "navigation" && inspectorTab !== "content" && inspectorTab !== "style") {
@@ -6057,6 +6198,17 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }, [selectedSimulatorId, studioSimulatorItems])
 
   useEffect(() => {
+    if (studioMode !== "edit") {
+      // Clear all editing/selection state when entering preview or review mode
+      setSelectedSectionId("")
+      setHtmlEl(null)
+      setHtmlEditing(false)
+      setHtmlInteractionLocked(false)
+      selectedHtmlEidRef.current = ""
+      // Tell the iframe bridge to deselect any active element
+      htmlIframeRef.current?.contentWindow?.postMessage({ __editor_cmd: true, cmd: "deselect" }, "*")
+    }
+
     if (studioMode === "review") {
       if (!reviewPanelStateRef.current) {
         reviewPanelStateRef.current = { left: leftPanelCollapsed, right: rightPanelCollapsed }
@@ -6116,6 +6268,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     setSelectedSectionId("")
     setHtmlEl(null)
     setHtmlEditing(false)
+    setHtmlInspectorActiveTab("content")
     selectedHtmlEidRef.current = ""
     if (mobileStudioLayout) {
       setFocusLeftOpen(false)
@@ -6180,11 +6333,15 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     selectedHtmlEidRef.current = nextEid
     setHtmlEl(info)
     setHtmlEditing(false)
+    if (!info) {
+      setHtmlInspectorActiveTab("content")
+    }
     setLeftTab("layers")
     setRightPanelCollapsed(false)
     if (info) {
       if (didChangeTarget) {
         setInspectorTab("content")
+        setHtmlInspectorActiveTab("content")
       }
     }
   }, [])
@@ -6192,17 +6349,25 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const handleHtmlEditingChange = useCallback((editing: boolean) => {
     setHtmlEditing(editing)
     if (editing) {
+      mobileHtmlInspectorPinnedRef.current = true
       setLeftTab("layers")
       setRightPanelCollapsed(false)
       setInspectorTab("content")
+      if (mobileStudioLayout && effectiveFocusMode && studioMode === "edit") {
+        setFocusLeftOpen(false)
+        setFocusRightOpen(true)
+        setMobileControlsOpen(false)
+      }
     }
-  }, [])
+  }, [effectiveFocusMode, mobileStudioLayout, studioMode])
 
   const handleHtmlInteractionLockChange = useCallback((locked: boolean) => {
     setHtmlInteractionLocked(locked)
   }, [])
 
   const handleHtmlOpenInspector = useCallback(() => {
+    mobileHtmlInspectorPinnedRef.current = true
+    setLeftTab("layers")
     setInspectorTab("content")
     setRightPanelCollapsed(false)
     if (effectiveFocusMode && studioMode === "edit") {
@@ -6210,6 +6375,22 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       setFocusRightOpen(true)
     }
   }, [effectiveFocusMode, studioMode])
+
+  const sendHtmlRuntimeCommand = useCallback((command: Record<string, unknown>) => {
+    postHtmlEditorCommand(htmlIframeRef, command)
+  }, [htmlIframeRef])
+
+  const triggerHtmlRuntimeToolbarAction = useCallback((tool: "group" | "edit" | "drag" | "up" | "down" | "delete") => {
+    const frameDoc = htmlIframeRef.current?.contentDocument
+    const button = frameDoc?.querySelector(`[data-he-runtime="toolbar"] button[data-tool="${tool}"]`) as HTMLButtonElement | null
+    if (!button || button.disabled) return
+    button.click()
+    if (tool === "edit") {
+      window.setTimeout(() => {
+        handleHtmlOpenInspector()
+      }, 0)
+    }
+  }, [handleHtmlOpenInspector, htmlIframeRef])
 
   const handleHtmlSnapshot = useCallback((nextHtml: string) => {
     if (selectedSection?.type !== "customCode") return
@@ -6780,6 +6961,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const currentInspectorShortcuts = selectedSection
     ? inspectorTabs
     : inspectorTabs.filter((tabItem) => tabItem.id === "advanced")
+  const canReturnToCustomCodeBlock =
+    selectedSection?.type === "customCode" &&
+    inspectorTab === "content" &&
+    (Boolean(htmlEl) || htmlEditing || htmlInteractionLocked)
   const getMobileInspectorLabel = (tab: StudioInspectorTab) => {
     if (tab === "style") return "Diseno"
     if (tab === "actions") return "Acciones"
@@ -6787,23 +6972,87 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     return htmlEl?.eid ? "Editar" : "Contenido"
   }
 
+  const clearHtmlElementSelection = () => {
+    setHtmlEl(null)
+    setHtmlEditing(false)
+    setHtmlInteractionLocked(false)
+    setHtmlInspectorActiveTab("content")
+    selectedHtmlEidRef.current = ""
+    mobileHtmlInspectorPinnedRef.current = false
+  }
+
+  const exitHtmlInspectorToCanvas = () => {
+    clearHtmlElementSelection()
+    if (focusEditingMode) {
+      setFocusRightOpen(false)
+      setMobileControlsOpen(false)
+      return
+    }
+    setRightPanelCollapsed(true)
+  }
+
   const renderInspectorCollapseAction = () => (
     <button
       type="button"
       onClick={() => {
+        if (mobileStudioLayout && canReturnToCustomCodeBlock) {
+          exitHtmlInspectorToCanvas()
+          return
+        }
         if (focusEditingMode) {
           setFocusRightOpen(false)
+          setMobileControlsOpen(false)
           return
         }
         setRightPanelCollapsed(true)
       }}
       className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/45 transition-all hover:border-white/20 hover:text-white"
-      aria-label={focusEditingMode ? "Ocultar inspector flotante" : "Ocultar inspector"}
-      title={focusEditingMode ? "Ocultar inspector flotante" : "Ocultar inspector"}
+      aria-label={canReturnToCustomCodeBlock ? "Volver al canvas" : focusEditingMode ? "Ocultar inspector flotante" : "Ocultar inspector"}
+      title={canReturnToCustomCodeBlock ? "Volver al canvas" : focusEditingMode ? "Ocultar inspector flotante" : "Ocultar inspector"}
     >
       <ChevronRight className="h-4 w-4" />
     </button>
   )
+
+  const renderCustomCodeInspectorHeaderCard = () => {
+    if (selectedSection?.type !== "customCode") return null
+    const meta = getStudioSectionMeta(selectedSection.type)
+    const Icon = meta?.icon ?? LayoutTemplate
+    const hasActiveHtmlTarget = Boolean(htmlEl) || htmlEditing || htmlInteractionLocked
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
+        <div className={cn("flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl", meta?.color ?? "bg-white/5 text-white/35")}>
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-white">{meta?.label ?? selectedSection.type}</div>
+          <div className="truncate text-xs text-white/40">{currentRoute}</div>
+        </div>
+        <div className="flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              if (mobileStudioLayout && hasActiveHtmlTarget) {
+                exitHtmlInspectorToCanvas()
+                return
+              }
+              if (focusEditingMode) {
+                setFocusRightOpen(false)
+                setMobileControlsOpen(false)
+                return
+              }
+              setRightPanelCollapsed(true)
+            }}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/45 transition-all hover:border-white/20 hover:text-white"
+            aria-label={mobileStudioLayout && hasActiveHtmlTarget ? "Volver al canvas" : focusEditingMode ? "Ocultar inspector flotante" : "Ocultar inspector"}
+            title={mobileStudioLayout && hasActiveHtmlTarget ? "Volver al canvas" : focusEditingMode ? "Ocultar inspector flotante" : "Ocultar inspector"}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const renderInspectorTabsRow = ({
     disableAll = false,
@@ -6891,6 +7140,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   )
 
   const openFocusLeftTab = (tab: StudioLeftTab) => {
+    mobileHtmlInspectorPinnedRef.current = false
     setLeftTab(tab)
     setMobileControlsOpen(false)
     setFocusRightOpen(false)
@@ -6898,6 +7148,9 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }
 
   const openFocusInspectorTab = (tab: StudioInspectorTab) => {
+    if (mobileStudioLayout && selectedSection?.type === "customCode" && (Boolean(htmlEl) || htmlEditing)) {
+      mobileHtmlInspectorPinnedRef.current = true
+    }
     setInspectorTab(tab)
     setMobileControlsOpen(false)
     setFocusLeftOpen(false)
@@ -6905,6 +7158,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }
 
   const closeMobileWorkspacePanels = () => {
+    mobileHtmlInspectorPinnedRef.current = false
     setMobileControlsOpen(false)
     setFocusLeftOpen(false)
     setFocusRightOpen(false)
@@ -7019,16 +7273,77 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     }
   }
 
+  const resolveInteractiveTargetElement = (target: EventTarget | null) => {
+    if (target instanceof Element) return target
+    if (target instanceof Node) return target.parentElement
+    return null
+  }
+
+  const getMobileDrawerInteractionLockMs = (target: EventTarget | null) => {
+    const element = resolveInteractiveTargetElement(target)
+    if (!element) return 0
+    if (element.closest("[data-he-mobile-drawer-lock='1'], input[type='color']")) return 2600
+    if (element.closest("input, textarea, select, button, label, [contenteditable='true'], [role='slider'], [data-he-mobile-drawer-interactive='1']")) return 1200
+    return 0
+  }
+
+  const lockMobileDrawerDismiss = (target: EventTarget | null) => {
+    const lockMs = getMobileDrawerInteractionLockMs(target)
+    if (!lockMs) return false
+    mobileDrawerInteractionLockRef.current = Date.now() + lockMs
+    return true
+  }
+
+  const runMobileImmediateAction = (key: string, action: () => void, source: "click" | "press") => {
+    const now = Date.now()
+    const lastAction = lastMobileImmediateActionRef.current
+    if (source === "click" && lastAction.key === key && now - lastAction.at < 700) {
+      return
+    }
+    if (source === "press") {
+      if (lastAction.key === key && now - lastAction.at < 350) {
+        return
+      }
+      lastMobileImmediateActionRef.current = { key, at: now }
+    }
+    action()
+  }
+
+  const handleMobileImmediateAction = (key: string, action: () => void) => ({
+    onClick: () => runMobileImmediateAction(key, action, "click"),
+    onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (!mobileStudioLayout || event.pointerType !== "touch") return
+      lockMobileDrawerDismiss(event.target)
+      event.preventDefault()
+      event.stopPropagation()
+      runMobileImmediateAction(key, action, "press")
+    },
+    onTouchStart: (event: React.TouchEvent<HTMLButtonElement>) => {
+      if (!mobileStudioLayout) return
+      lockMobileDrawerDismiss(event.target)
+      event.preventDefault()
+      event.stopPropagation()
+      runMobileImmediateAction(key, action, "press")
+    },
+  })
+
   const handleMobileDrawerTouchStart = (panel: "left" | "right") => (event: TouchEvent<HTMLDivElement>) => {
     const touch = event.touches[0]
-    mobileDrawerGestureRef.current = { x: touch.clientX, y: touch.clientY, panel }
+    const ignore = lockMobileDrawerDismiss(event.target)
+    mobileDrawerGestureRef.current = { x: touch.clientX, y: touch.clientY, panel, ignore }
   }
 
   const handleMobileDrawerTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
-    const { x, y, panel } = mobileDrawerGestureRef.current
-    mobileDrawerGestureRef.current = { x: 0, y: 0, panel: null }
+    const { x, y, panel, ignore } = mobileDrawerGestureRef.current
+    mobileDrawerGestureRef.current = { x: 0, y: 0, panel: null, ignore: false }
 
     if (!panel) return
+    if (ignore || Date.now() < mobileDrawerInteractionLockRef.current) return
+    const keepHtmlInspectorStable =
+      panel === "right" &&
+      selectedSection?.type === "customCode" &&
+      (Boolean(htmlEl) || htmlEditing)
+    if (keepHtmlInspectorStable) return
 
     const touch = event.changedTouches[0]
     const deltaX = touch.clientX - x
@@ -8509,30 +8824,33 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const renderLayersInspector = () => (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-3 border-b border-white/8 px-5 py-4">
-        {selectedSection ? (
-          <>
-            {(() => {
-              const meta = getStudioSectionMeta(selectedSection.type)
-              const Icon = meta?.icon ?? LayoutTemplate
-              return <div className={cn("flex h-10 w-10 items-center justify-center rounded-2xl", meta?.color ?? "bg-white/5 text-white/35")}><Icon className="h-4 w-4" /></div>
-            })()}
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-white">{getStudioSectionMeta(selectedSection.type).label ?? selectedSection.type}</div>
-              <div className="text-xs text-white/40">{currentRoute}</div>
+      {selectedSection?.type === "customCode" ? null : (
+        <div className="border-b border-white/8 px-5 py-4">
+          {selectedSection ? (
+            <div className="flex items-center gap-3">
+              {(() => {
+                const meta = getStudioSectionMeta(selectedSection.type)
+                const Icon = meta?.icon ?? LayoutTemplate
+                return <div className={cn("flex h-10 w-10 items-center justify-center rounded-2xl", meta?.color ?? "bg-white/5 text-white/35")}><Icon className="h-4 w-4" /></div>
+              })()}
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-white">{getStudioSectionMeta(selectedSection.type).label ?? selectedSection.type}</div>
+                <div className="text-xs text-white/40">{currentRoute}</div>
+              </div>
+              <div className="ml-auto">{renderInspectorCollapseAction()}</div>
             </div>
-          </>
-        ) : (
-          <>
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-white/35"><LayoutTemplate className="h-4 w-4" /></div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-white">Selecciona un bloque</div>
-              <div className="text-xs text-white/40">Haz clic en el canvas o en la lista de capas.</div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-white/35"><LayoutTemplate className="h-4 w-4" /></div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-white">Selecciona un bloque</div>
+                <div className="text-xs text-white/40">Haz clic en el canvas o en la lista de capas.</div>
+              </div>
+              <div className="ml-auto">{renderInspectorCollapseAction()}</div>
             </div>
-          </>
-        )}
-        <div className="ml-auto">{renderInspectorCollapseAction()}</div>
-      </div>
+          )}
+        </div>
+      )}
       {selectedSection
         ? (selectedSection.type === "customCode" ? null : renderInspectorTabsRow())
         : renderInspectorTabsRow({ onlyAdvanced: true })}
@@ -8571,22 +8889,41 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           )
         ) : selectedSection.type === "customCode" ? (
           <div className="flex min-h-0 min-w-0 flex-col gap-3 p-4 pb-8">
-            <div className={cn("flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-medium",
-              htmlEditing ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-400"
-              : htmlEl    ? "border-primary/25 bg-primary/5 text-primary/80"
-              :              "border-white/8 bg-white/3 text-white/40")}>
-              <span className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                htmlEditing ? "bg-emerald-400 animate-pulse" : htmlEl ? "bg-primary" : "bg-white/20")} />
-              {htmlEditing ? "Editando inline — Esc para salir"
-               : htmlEl   ? `<${htmlEl.tag}> seleccionado — edita propiedades abajo`
-               :             "Haz clic en el bloque del canvas para seleccionar un elemento"}
+            {renderCustomCodeInspectorHeaderCard()}
+            <div
+              className={cn(
+                "flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-medium",
+                htmlEditing ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-400"
+                : htmlEl    ? "border-primary/25 bg-primary/5 text-primary/80"
+                :              "border-white/8 bg-white/3 text-white/40"
+              )}
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span
+                  className={cn(
+                    "h-2 w-2 flex-shrink-0 rounded-full",
+                    htmlEditing ? "bg-emerald-400 animate-pulse" : htmlEl ? "bg-primary" : "bg-white/20"
+                  )}
+                />
+                <span className="truncate">
+                  {htmlEditing ? "Editando inline — Esc para salir"
+                  : htmlEl   ? `<${htmlEl.tag}> seleccionado — edita propiedades abajo`
+                  :             "Haz clic en el bloque del canvas para seleccionar un elemento"}
+                </span>
+              </div>
             </div>
             <HtmlElementInspector
               key={htmlEl ? `${htmlEl.eid ?? htmlEl.tag}` : "html-inspector-empty"}
               element={htmlEl}
               isEditing={htmlEditing}
               iframeRef={htmlIframeRef as React.RefObject<HTMLIFrameElement>}
-              onClose={() => { setHtmlEl(null); setHtmlEditing(false) }}
+              showCloseButton={!mobileStudioLayout}
+              onActiveTabChange={setHtmlInspectorActiveTab}
+              onClose={() => {
+                setHtmlEl(null)
+                setHtmlEditing(false)
+                setHtmlInspectorActiveTab("content")
+              }}
             />
             {!htmlEl && !htmlEditing ? (
               <div className="border-t border-white/8 pt-3">
@@ -9029,6 +9366,17 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const forceHtmlInspector =
     selectedSection?.type === "customCode" && (Boolean(htmlEl) || htmlEditing)
+
+  const htmlRuntimeToolbarButtons = useMemo(
+    () => [
+      { key: "delete", label: "Eliminar", onClick: () => triggerHtmlRuntimeToolbarAction("delete"), danger: true },
+      { key: "edit", label: "Editar", onClick: () => triggerHtmlRuntimeToolbarAction("edit") },
+      { key: "drag", label: "Mover", onClick: () => triggerHtmlRuntimeToolbarAction("drag") },
+      { key: "up", label: "Subir", onClick: () => triggerHtmlRuntimeToolbarAction("up") },
+      { key: "down", label: "Bajar", onClick: () => triggerHtmlRuntimeToolbarAction("down") },
+    ],
+    [triggerHtmlRuntimeToolbarAction]
+  )
 
   const renderNavigationInspector = () => {
     const nav = config.nav
@@ -9532,6 +9880,11 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     if (mobileStudioLayout) {
       if (focusLeftOpen || focusRightOpen || mobileControlsOpen || showAdd || htmlEditing || htmlInteractionLocked) return null
 
+      const mobileHtmlToolbarButtons =
+        selectedSection?.type === "customCode" && (Boolean(htmlEl) || htmlEditing || htmlInteractionLocked)
+          ? htmlRuntimeToolbarButtons
+          : null
+
       const mobileDockButtons = selectedSection
         ? [
             {
@@ -9611,7 +9964,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       return (
         <div data-he-mobile-dock="1" className="pointer-events-none absolute inset-x-0 bottom-0 z-30 px-3 pb-[calc(env(safe-area-inset-bottom)+10px)]">
           {selectedSection ? (
-            <div className="pointer-events-auto mb-2 inline-flex max-w-full items-center gap-2 rounded-full border border-primary/15 bg-[#08111b]/94 px-3 py-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+            <div className="pointer-events-none mb-2 inline-flex max-w-full items-center gap-2 rounded-full border border-primary/15 bg-[#08111b]/94 px-3 py-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl">
               <span className="rounded-full bg-primary/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
                 Editando
               </span>
@@ -9621,14 +9974,36 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             </div>
           ) : null}
 
+          {mobileHtmlToolbarButtons ? (
+            <div className="pointer-events-auto mb-2 overflow-hidden rounded-[22px] border border-white/10 bg-[#08111b]/96 shadow-[0_22px_54px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+              <div className="flex items-center gap-2 overflow-x-auto px-2 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {mobileHtmlToolbarButtons.map((button) => (
+                  <button
+                    key={button.key}
+                    type="button"
+                    {...handleMobileImmediateAction(`html-toolbar:${button.key}`, button.onClick)}
+                    className={cn(
+                      "touch-manipulation inline-flex h-10 shrink-0 items-center justify-center rounded-xl border px-3 text-xs font-semibold transition-all",
+                      button.danger
+                        ? "border-primary/30 bg-primary/10 text-primary hover:border-primary/45 hover:bg-primary/14"
+                        : "border-white/10 bg-white/[0.03] text-white/78 hover:border-white/20 hover:text-white"
+                    )}
+                  >
+                    {button.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="pointer-events-auto overflow-hidden rounded-[26px] border border-white/10 bg-[#08111b]/96 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl">
             <div className="grid grid-cols-5 gap-1.5 p-1.5">
               {mobileDockButtons.map((button) => (
                 <button
                   key={button.key}
                   type="button"
-                  onClick={button.onClick}
-                  className={cn("flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[20px] border px-1.5 py-2 text-center text-[11px] font-medium transition-all", button.active ? "border-primary/40 bg-primary/10 text-primary" : "border-white/10 bg-white/[0.03] text-white/72 hover:border-white/20 hover:text-white")}
+                  {...handleMobileImmediateAction(`mobile-dock:${button.key}`, button.onClick)}
+                  className={cn("touch-manipulation flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[20px] border px-1.5 py-2 text-center text-[11px] font-medium transition-all", button.active ? "border-primary/40 bg-primary/10 text-primary" : "border-white/10 bg-white/[0.03] text-white/72 hover:border-white/20 hover:text-white")}
                 >
                   <button.icon className="h-4 w-4 flex-shrink-0" />
                   <span className="leading-tight">{button.label}</span>
@@ -9677,32 +10052,78 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         label: "Inspector",
         icon: SelectedSectionIcon ?? Pencil,
         active: focusRightOpen,
-        onClick: () => setFocusRightOpen((current) => !current),
+        onClick: () =>
+          setFocusRightOpen((current) => {
+            const next = !current
+            mobileHtmlInspectorPinnedRef.current =
+              next &&
+              mobileStudioLayout &&
+              selectedSection?.type === "customCode" &&
+              (Boolean(htmlEl) || htmlEditing)
+            return next
+          }),
       },
     ] as const
 
+    if (focusDockCollapsed) {
+      return (
+        !mobileStudioLayout ? (
+          <div className="pointer-events-none absolute inset-0 z-30">
+            <div className="pointer-events-auto absolute left-3 top-1/2 -translate-y-1/2">
+              <button
+                type="button"
+                onClick={() => setFocusDockCollapsed(false)}
+                className="inline-flex h-12 w-12 items-center justify-center rounded-[20px] border border-white/10 bg-[#08111b]/94 text-white/70 shadow-[0_20px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl transition-all hover:border-white/20 hover:text-white"
+                aria-label="Mostrar herramientas de enfoque"
+                title="Mostrar herramientas de enfoque"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        ) : null
+      )
+    }
+
     return (
       <div className="pointer-events-none absolute inset-0 z-30">
-        <div className="pointer-events-auto absolute left-3 right-3 bottom-3 flex flex-wrap items-center gap-2 rounded-[26px] border border-white/10 bg-[#08111b]/92 p-2 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl md:left-3 md:right-auto md:top-3 md:bottom-auto md:w-[170px] md:flex-col">
-          <div className="w-full rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.22em] text-primary/85">
-            {dockTitle}
+        <div className="pointer-events-auto absolute left-3 right-3 bottom-3 overflow-visible md:left-3 md:right-auto md:top-3 md:bottom-auto md:w-[210px]">
+          <div className="relative overflow-visible">
+            <div className="flex flex-wrap items-center gap-2 rounded-[26px] border border-white/10 bg-[#08111b]/92 p-2 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl md:w-[170px] md:flex-col">
+              <div className="flex w-full items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
+                <div className="min-w-0 flex-1 text-[10px] font-bold uppercase tracking-[0.22em] text-primary/85">
+                  {dockTitle}
+                </div>
+              </div>
+              {dockButtons.map((button) => (
+                <button
+                  key={button.key}
+                  type="button"
+                  onClick={button.onClick}
+                  className={cn(
+                    "inline-flex h-10 min-w-[126px] flex-1 items-center justify-center gap-2 rounded-2xl border px-3 text-sm font-medium transition-all md:w-full md:flex-none md:justify-start",
+                    button.active
+                      ? "border-primary/40 bg-primary/12 text-primary shadow-[0_10px_30px_rgba(232,57,42,0.18)]"
+                      : "border-white/10 bg-white/[0.03] text-white/65 hover:border-white/20 hover:text-white"
+                  )}
+                >
+                  <button.icon className="h-4 w-4 flex-shrink-0" />
+                  <span className="truncate">{button.label}</span>
+                </button>
+              ))}
+            </div>
+            {!mobileStudioLayout && (
+              <button
+                type="button"
+                onClick={() => setFocusDockCollapsed(true)}
+                className="absolute right-0 top-1/2 z-40 inline-flex h-10 w-10 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-2xl border border-white/10 bg-[#0b1220]/96 text-white/55 shadow-[0_16px_40px_rgba(0,0,0,0.42)] transition-all hover:border-white/20 hover:text-white"
+                aria-label="Ocultar herramientas de enfoque"
+                title="Ocultar herramientas de enfoque"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            )}
           </div>
-          {dockButtons.map((button) => (
-            <button
-              key={button.key}
-              type="button"
-              onClick={button.onClick}
-              className={cn(
-                "inline-flex h-10 min-w-[126px] flex-1 items-center justify-center gap-2 rounded-2xl border px-3 text-sm font-medium transition-all md:w-full md:flex-none md:justify-start",
-                button.active
-                  ? "border-primary/40 bg-primary/12 text-primary shadow-[0_10px_30px_rgba(232,57,42,0.18)]"
-                  : "border-white/10 bg-white/[0.03] text-white/65 hover:border-white/20 hover:text-white"
-              )}
-            >
-              <button.icon className="h-4 w-4 flex-shrink-0" />
-              <span className="truncate">{button.label}</span>
-            </button>
-          ))}
         </div>
       </div>
     )
@@ -9720,16 +10141,19 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             onTouchStart={handleMobileDrawerTouchStart("left")}
             onTouchEnd={handleMobileDrawerTouchEnd}
           >
-            <div className="flex items-center justify-between gap-3 border-b border-white/8 px-4 py-2.5">
-              <div className="mx-auto h-1.5 w-14 rounded-full bg-white/10" />
+            <div className="flex items-center gap-3 border-b border-white/8 px-4 py-2.5">
+              <div className="w-10 flex-shrink-0" />
+              <div className="flex min-w-0 flex-1 justify-center">
+                <div className="h-1.5 w-14 rounded-full bg-white/10" />
+              </div>
               <button
                 type="button"
                 onClick={() => setFocusLeftOpen(false)}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/55 transition-all hover:border-white/20 hover:text-white"
-                aria-label="Cerrar panel movil"
-                title="Cerrar panel movil"
+                aria-label="Ocultar panel movil"
+                title="Ocultar panel movil"
               >
-                <X className="h-4 w-4" />
+                <ChevronDown className="h-4 w-4" />
               </button>
             </div>
             {renderMobileLeftTabStrip()}
@@ -9741,18 +10165,22 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
     return (
       <div className="pointer-events-none absolute inset-0 z-20">
-        <div className="pointer-events-auto absolute inset-x-3 bottom-3 max-h-[78%] lg:inset-y-3 lg:left-3 lg:right-auto lg:w-[340px] xl:w-[360px]">
-          <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/10 bg-[#08111b]/96 shadow-[0_30px_90px_rgba(0,0,0,0.5)] backdrop-blur-xl">
-            <button
-              type="button"
-              onClick={() => setFocusLeftOpen(false)}
-              className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-[#0b1220]/90 text-white/50 transition-all hover:border-white/20 hover:text-white"
-              aria-label={`Cerrar panel ${activeLeftTabMeta.label}`}
-              title={`Cerrar panel ${activeLeftTabMeta.label}`}
-            >
-              <X className="h-4 w-4" />
-            </button>
-            <div className="min-h-0 flex-1">{renderActiveLeftSidebar()}</div>
+        <div className="pointer-events-auto absolute inset-x-3 bottom-3 max-h-[78%] lg:inset-y-3 lg:left-3 lg:right-auto lg:w-[356px] xl:w-[376px]">
+          <div className="relative h-full min-h-0 overflow-visible">
+            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/10 bg-[#08111b]/96 shadow-[0_30px_90px_rgba(0,0,0,0.5)] backdrop-blur-xl lg:w-[340px] xl:w-[360px]">
+              <div className="min-h-0 flex-1">{renderActiveLeftSidebar()}</div>
+            </div>
+            {!mobileStudioLayout && (
+              <button
+                type="button"
+                onClick={() => setFocusLeftOpen(false)}
+                className="absolute -right-3 top-1/2 z-20 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-2xl border border-white/10 bg-[#0b1220]/96 text-white/55 shadow-[0_16px_40px_rgba(0,0,0,0.42)] transition-all hover:border-white/20 hover:text-white"
+                aria-label={`Ocultar panel ${activeLeftTabMeta.label}`}
+                title={`Ocultar panel ${activeLeftTabMeta.label}`}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -9763,14 +10191,52 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     if (!focusEditingMode || !focusRightOpen) return null
 
     if (mobileStudioLayout) {
+      const keepHtmlInspectorStable =
+        selectedSection?.type === "customCode" &&
+        (Boolean(htmlEl) || htmlEditing)
       return (
-        <div className="pointer-events-auto absolute inset-0 z-40 bg-[#02050b]/82 backdrop-blur-sm" onClick={() => setFocusRightOpen(false)}>
+        <div
+          className="pointer-events-auto absolute inset-0 z-40 bg-[#02050b]/82 backdrop-blur-sm"
+          onClick={(event) => {
+            if (event.target !== event.currentTarget) return
+            if (Date.now() < mobileDrawerInteractionLockRef.current) return
+            if (keepHtmlInspectorStable) return
+            setFocusRightOpen(false)
+          }}
+        >
           <div
             className="absolute inset-0 flex flex-col overflow-hidden bg-[#08111b]/99"
             onClick={(event) => event.stopPropagation()}
+            onPointerDownCapture={(event) => {
+              lockMobileDrawerDismiss(event.target)
+            }}
+            onMouseDownCapture={(event) => {
+              lockMobileDrawerDismiss(event.target)
+            }}
             onTouchStart={handleMobileDrawerTouchStart("right")}
             onTouchEnd={handleMobileDrawerTouchEnd}
           >
+            <div className="flex items-center gap-3 border-b border-white/8 px-4 py-2.5">
+              <div className="w-10 flex-shrink-0" />
+              <div className="flex min-w-0 flex-1 justify-center">
+                <div className="h-1.5 w-14 rounded-full bg-white/10" />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (keepHtmlInspectorStable) {
+                    exitHtmlInspectorToCanvas()
+                    return
+                  }
+                  setFocusRightOpen(false)
+                }}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/55 transition-all hover:border-white/20 hover:text-white"
+                aria-label={keepHtmlInspectorStable ? "Volver al canvas" : "Ocultar inspector"}
+                title={keepHtmlInspectorStable ? "Volver al canvas" : "Ocultar inspector"}
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </div>
             <div className="min-h-0 flex-1 overflow-hidden">{renderActiveInspectorPanel()}</div>
           </div>
         </div>
@@ -9780,7 +10246,18 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     return (
       <div className="pointer-events-none absolute inset-0 z-20">
         <div className="pointer-events-auto absolute inset-x-3 bottom-3 max-h-[82%] lg:inset-y-3 lg:right-3 lg:left-auto lg:w-[360px] xl:w-[390px]">
-          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/10 bg-[#08111b]/96 shadow-[0_30px_90px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+          <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/10 bg-[#08111b]/96 shadow-[0_30px_90px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+            {!mobileStudioLayout && (
+              <button
+                type="button"
+                onClick={() => setFocusRightOpen(false)}
+                className="absolute -left-3 top-1/2 z-20 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-2xl border border-white/10 bg-[#0b1220]/96 text-white/55 shadow-[0_16px_40px_rgba(0,0,0,0.42)] transition-all hover:border-white/20 hover:text-white"
+                aria-label="Ocultar inspector"
+                title="Ocultar inspector"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
             {renderActiveInspectorPanel()}
           </div>
         </div>
@@ -10030,6 +10507,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                       setSelectedSectionId("")
                       setHtmlEl(null)
                       setHtmlEditing(false)
+                      setHtmlInspectorActiveTab("content")
                       closeMobileWorkspacePanels()
                       setMobileControlsOpen(false)
                     }}
@@ -10065,12 +10543,12 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   return (
       <div
-        className="relative flex h-[100dvh] min-h-[100svh] w-full flex-col overflow-hidden bg-[#07111f] pt-[env(safe-area-inset-top)] text-white"
+        className="relative grid h-[100dvh] min-h-[100svh] w-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[#07111f] pt-[env(safe-area-inset-top)] text-white"
         style={mobileShellHeight ? { height: `${mobileShellHeight}px`, minHeight: `${mobileShellHeight}px`, maxHeight: `${mobileShellHeight}px` } : undefined}
         onTouchStart={handleMobileRootTouchStart}
         onTouchEnd={handleMobileRootTouchEnd}
       >
-      <header className="relative z-30 flex flex-shrink-0 flex-col gap-2 border-b border-white/10 bg-[#08111f] px-3 py-2.5 sm:px-4 xl:px-5">
+      <header className="relative z-30 flex w-full min-w-0 max-w-full flex-shrink-0 flex-col gap-2 overflow-hidden border-b border-white/10 bg-[#08111f] px-3 py-2.5 sm:px-4 xl:px-5">
         {mobileStudioLayout ? (
           <>
             <div className="flex items-center gap-2">
@@ -10141,10 +10619,21 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 Publicar
               </button>
             </div>
+
+            {studioMode !== "edit" && (
+              <button
+                type="button"
+                onClick={() => setStudioMode("edit")}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl border border-primary/35 bg-primary/12 px-3 text-xs font-semibold text-primary transition-all hover:bg-primary/20"
+              >
+                <Pencil className="h-4 w-4" />
+                Volver a editar
+              </button>
+            )}
           </>
         ) : (
           <>
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex w-full min-w-0 max-w-full flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0 flex-1">
                 <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-primary">Studio</div>
                 <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
@@ -10164,7 +10653,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 </div>
               </div>
 
-              <div className="studio-scroll flex max-w-full items-center gap-2 overflow-x-auto pb-1 lg:justify-end lg:pb-0">
+              <div className="studio-scroll flex min-w-0 max-w-full items-center gap-2 overflow-x-auto pb-1 lg:justify-end lg:pb-0">
                 <a href={currentRoute} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-white/10 px-3.5 text-sm font-medium text-white/65 transition-all hover:border-white/20 hover:text-white whitespace-nowrap">
                   <ExternalLink className="h-4 w-4" />
                   Ver sitio
@@ -10184,7 +10673,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               </div>
             </div>
 
-            <div className="studio-scroll flex items-center gap-2 overflow-x-auto pb-1 lg:justify-center lg:pb-0">
+            <div className="studio-scroll flex w-full min-w-0 max-w-full items-center gap-2 overflow-x-auto pb-1 lg:justify-center lg:pb-0">
               <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
                 <button
                   type="button"
@@ -10222,9 +10711,21 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 ))}
               </div>
               <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
-                {(["fit", 100, 75, 50] as const).map((value) => (
+                <button
+                  type="button"
+                  onClick={() => setZoomMode("fit")}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold transition-all",
+                    zoomMode === "fit"
+                      ? "bg-primary/20 text-primary border border-primary/40"
+                      : "text-white/40 hover:text-white/70 border border-transparent"
+                  )}
+                >
+                  Fit
+                </button>
+                {([100, 75, 50] as const).map((value) => (
                   <button
-                    key={String(value)}
+                    key={value}
                     type="button"
                     onClick={() => setZoomMode(value)}
                     className={cn(
@@ -10232,7 +10733,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                       zoomMode === value ? "bg-white/10 text-white" : "text-white/40 hover:text-white/70"
                     )}
                   >
-                    {value === "fit" ? "Fit" : `${value}%`}
+                    {value}%
                   </button>
                 ))}
               </div>
@@ -10293,7 +10794,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         )}
       </header>
 
-      <div className="relative flex min-h-0 flex-1 w-full">
+      <div className="relative flex min-h-0 flex-1 w-full min-w-0 max-w-full overflow-hidden">
         {!canvasOnlyMode && (
           <aside className={cn("flex min-h-0 flex-shrink-0 border-r border-white/10 bg-[#060d18] transition-all duration-200", leftPanelCollapsed ? "w-[64px]" : "w-[clamp(248px,20vw,312px)] max-[1200px]:w-[248px]")}>
             {renderLeftIconRail()}
@@ -10305,7 +10806,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           </aside>
         )}
 
-        <main className="min-w-0 min-h-0 flex-1 flex flex-col overflow-hidden bg-[#060b12]">
+        <main className="min-w-0 min-h-0 basis-0 flex-1 flex flex-col overflow-hidden bg-[#060b12]" style={{ minHeight: 0 }}>
           <StudioViewport
             key={`studio-viewport-${currentRoute}`}
             title={currentPageTitle}
@@ -10321,6 +10822,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 setInspectorTab("content")
                 setHtmlEl(null)
                 setHtmlEditing(false)
+                setHtmlInspectorActiveTab("content")
                 selectedHtmlEidRef.current = ""
               } else if (id === "footer") {
                 setSelectedSectionId("footer")
@@ -10328,11 +10830,13 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 setInspectorTab("content")
                 setHtmlEl(null)
                 setHtmlEditing(false)
+                setHtmlInspectorActiveTab("content")
                 selectedHtmlEidRef.current = ""
               } else {
                 setSelectedSectionId(id)
                 setLeftTab("layers")
                 setInspectorTab("content")
+                setHtmlInspectorActiveTab("content")
               }
               setRightPanelCollapsed(false)
               if (mobileStudioLayout) {

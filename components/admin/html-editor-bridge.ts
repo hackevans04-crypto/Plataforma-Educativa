@@ -11,6 +11,68 @@
  * - style | text | html | replace | attr | highlight | deselect | enable_drag
  */
 
+export interface EditorTypographyTargetInfo {
+  eid: string
+  nodeType: "button" | "field" | "icon" | "text"
+  tag: string
+  label: string
+  text: string | null
+  classes: string | null
+  attrs: {
+    id: string | null
+    href: string | null
+    target: string | null
+    placeholder: string | null
+    src: string | null
+    type: string | null
+    name: string | null
+    autocomplete: string | null
+    min: string | null
+    max: string | null
+    step: string | null
+    rows: string | null
+    multiple: boolean
+    value: string | null
+    alt: string | null
+    title: string | null
+    required: boolean
+    disabled: boolean
+    checked: boolean
+    dataIcon: string | null
+  }
+  styles: {
+    color: string
+    backgroundColor: string
+    backgroundImage: string
+    fontSize: string
+    fontWeight: string
+    fontFamily: string
+    fontStyle: string
+    lineHeight: string
+    letterSpacing: string
+    textDecoration: string
+    textTransform: string
+    padding: string
+    margin: string
+    borderRadius: string
+    textAlign: string
+    display: string
+    width: string
+    maxWidth: string
+    height: string
+    maxHeight: string
+    objectFit: string
+    borderWidth: string
+    borderColor: string
+    boxShadow: string
+    strokeWidth: string
+    accentColor: string
+    gap: string
+    justifyContent: string
+    alignItems: string
+  }
+}
+
 export interface EditorElementInfo {
   eid: string | null
   nodeType: "image" | "button" | "field" | "icon" | "text" | "container" | null
@@ -20,6 +82,7 @@ export interface EditorElementInfo {
   parentEid: string | null
   parentTag: string | null
   children: Array<{ eid: string | null; tag: string; label: string }>
+  typographyTargets: EditorTypographyTargetInfo[]
   text: string | null
   html: string | null
   isText: boolean
@@ -82,7 +145,7 @@ export interface EditorElementInfo {
 }
 
 export type EditorMessage =
-  | { __editor_select: true; info: EditorElementInfo | null }
+  | { __editor_select: true; info: EditorElementInfo | null; rect?: { top: number; left: number; right: number; bottom: number; width: number; height: number } | null }
   | { __editor_editing: true; eid: string | null }
   | { __editor_text_change: true; eid: string | null; text: string; html: string }
   | { __editor_moved: true; eid: string | null; targetEid: string | null; position: "before" | "after" | "inside" }
@@ -108,9 +171,12 @@ export type EditorCommand =
   | { __editor_cmd: true; cmd: "cleanup_layout"; eid?: string }
   | { __editor_cmd: true; cmd: "deselect" }
   | { __editor_cmd: true; cmd: "enable_drag" }
+  | { __editor_cmd: true; cmd: "toggle_multi_select" }
+  | { __editor_cmd: true; cmd: "toggle_free_move" }
+  | { __editor_cmd: true; cmd: "edit_selected" }
 
 const TEXT_TAGS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "a", "button", "li", "td", "th", "label", "small", "strong", "em", "blockquote"])
-export const EDITOR_RUNTIME_VERSION = "2026-03-20-03"
+export const EDITOR_RUNTIME_VERSION = "2026-03-22-02"
 
 export function buildEditorRuntime(): string {
   return `
@@ -139,13 +205,26 @@ export function buildEditorRuntime(): string {
   var activeTouchId = null;
   var autoScrollRafId = 0;
   var lastInteractionPoint = null;
+  var lastTouchGestureMoveTs = 0;
   var eidCounter = 1;
   var coarsePointer = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || ((navigator.maxTouchPoints || 0) > 0);
-  var resizeHandleSize = coarsePointer ? 34 : 14;
+  var touchEditParityMode = !!(coarsePointer && document.documentElement.getAttribute("data-he-editor-mode") === "edit");
+  var runtimeCoarsePointer = !!(coarsePointer && !touchEditParityMode);
+  var coarseUi = !!coarsePointer;
+  var resizeHandleSize = coarseUi ? 34 : 14;
   var resizeHandleHalf = Math.round(resizeHandleSize / 2);
-  var compactTargetSize = coarsePointer ? 58 : 30;
-  var moveHitTargetSize = coarsePointer ? 96 : 34;
-  var toolbarGap = coarsePointer ? 10 : 12;
+  var compactTargetSize = coarseUi ? 58 : 30;
+  var moveHitTargetSize = coarseUi ? 96 : 34;
+  var toolbarGap = coarseUi ? 10 : 12;
+  var toolbarDisplayMode = coarseUi ? "grid" : "flex";
+
+  function isTouchEditParityMode() {
+    return touchEditParityMode;
+  }
+
+  function isTouchScrollBridgeActive() {
+    return !!(coarsePointer && document.documentElement.getAttribute("data-he-scroll-bridge-active") === "1");
+  }
 
   function markRuntime(node, attr) {
     node.setAttribute(attr, "1");
@@ -243,15 +322,23 @@ export function buildEditorRuntime(): string {
     '<button type="button" data-tool="delete" style="height:28px;padding:0 10px;border-radius:10px;border:1px solid rgba(232,57,42,.22);background:rgba(232,57,42,.12);color:#ff8b81;font:700 11px/28px system-ui;cursor:pointer;">Eliminar</button>'
   ].join("");
   document.documentElement.appendChild(selToolbar);
+  var toolbarSafeInset = document.createElement("div");
+  toolbarSafeInset.style.cssText = "display:none;height:0;pointer-events:none;width:100%;";
+  markRuntime(toolbarSafeInset, "data-he-runtime");
+  document.body.appendChild(toolbarSafeInset);
+  var toolbarSafeInsetActive = false;
   var lastToolbarTouchTs = 0;
-  if (coarsePointer) {
+  if (coarseUi) {
+    selToolbar.style.width = "min(304px, calc(100vw - 14px))";
     selToolbar.style.maxWidth = "calc(100vw - 14px)";
-    selToolbar.style.flexWrap = "wrap";
-    selToolbar.style.justifyContent = "center";
+    selToolbar.style.display = "none";
+    selToolbar.style.gridTemplateColumns = "repeat(3, minmax(0, 1fr))";
+    selToolbar.style.alignItems = "stretch";
+    selToolbar.style.justifyItems = "stretch";
     Array.prototype.forEach.call(selToolbar.querySelectorAll("button[data-tool]"), function (button) {
       if (!button || !button.style) return;
+      button.style.width = "100%";
       if (button.getAttribute("data-tool") === "up" || button.getAttribute("data-tool") === "down") {
-        button.style.width = "34px";
         button.style.height = "34px";
         button.style.lineHeight = "34px";
       } else {
@@ -274,6 +361,30 @@ export function buildEditorRuntime(): string {
     try {
       window.parent.postMessage(payload, "*");
     } catch (_err) {}
+  }
+
+  function getElementRectPayload(el) {
+    if (!el || !el.getBoundingClientRect) return null;
+    var rect = el.getBoundingClientRect();
+    if (
+      !rect ||
+      !isFinite(rect.top) ||
+      !isFinite(rect.left) ||
+      !isFinite(rect.right) ||
+      !isFinite(rect.bottom) ||
+      !isFinite(rect.width) ||
+      !isFinite(rect.height)
+    ) {
+      return null;
+    }
+    return {
+      top: rect.top,
+      left: rect.left,
+      right: rect.right,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height
+    };
   }
 
   function getPrimaryTouch(event) {
@@ -413,20 +524,32 @@ export function buildEditorRuntime(): string {
     if (!container) return false;
 
     var rect = getInteractionScrollRect(container);
-    var threshold = coarsePointer ? 84 : 52;
+    var threshold = runtimeCoarsePointer ? 92 : 52;
     var deltaX = 0;
     var deltaY = 0;
+    var maxRatio = 1;
+    var verticalBaseSpeed = runtimeCoarsePointer ? 4 : 5;
+    var verticalMaxExtra = runtimeCoarsePointer ? 12 : 14;
+    var horizontalBaseSpeed = runtimeCoarsePointer ? 3 : 4;
+    var horizontalMaxExtra = runtimeCoarsePointer ? 8 : 10;
+
+    function resolveEdgeDelta(distance, baseSpeed, maxExtraSpeed) {
+      if (distance <= 0 || threshold <= 0) return 0;
+      var ratio = Math.min(maxRatio, Math.max(0, distance / threshold));
+      var eased = Math.pow(ratio, runtimeCoarsePointer ? 1.85 : 1.65);
+      return Math.round(baseSpeed + eased * maxExtraSpeed);
+    }
 
     if (clientY < rect.top + threshold) {
-      deltaY = -Math.round(((rect.top + threshold) - clientY) * 0.38 + 10);
+      deltaY = -resolveEdgeDelta((rect.top + threshold) - clientY, verticalBaseSpeed, verticalMaxExtra);
     } else if (clientY > rect.bottom - threshold) {
-      deltaY = Math.round((clientY - (rect.bottom - threshold)) * 0.38 + 10);
+      deltaY = resolveEdgeDelta(clientY - (rect.bottom - threshold), verticalBaseSpeed, verticalMaxExtra);
     }
 
     if (clientX < rect.left + threshold) {
-      deltaX = -Math.round(((rect.left + threshold) - clientX) * 0.26 + 6);
+      deltaX = -resolveEdgeDelta((rect.left + threshold) - clientX, horizontalBaseSpeed, horizontalMaxExtra);
     } else if (clientX > rect.right - threshold) {
-      deltaX = Math.round((clientX - (rect.right - threshold)) * 0.26 + 6);
+      deltaX = resolveEdgeDelta(clientX - (rect.right - threshold), horizontalBaseSpeed, horizontalMaxExtra);
     }
 
     var moved = scrollInteractionContainer(container, deltaX, deltaY);
@@ -574,7 +697,7 @@ export function buildEditorRuntime(): string {
     }
     var rect = el.getBoundingClientRect();
     var nodeType = getNodeType(el);
-    var shouldExpandHitBox = coarsePointer || nodeType === "icon" || rect.width < 24 || rect.height < 24;
+    var shouldExpandHitBox = runtimeCoarsePointer || nodeType === "icon" || rect.width < 24 || rect.height < 24;
     if (!shouldExpandHitBox) {
       moveHitBox.style.display = "none";
       return;
@@ -645,12 +768,43 @@ export function buildEditorRuntime(): string {
     };
   }
 
-  function placeToolbarForRect(rect) {
+  function placeToolbarForRect(rect, anchorEl) {
+    function syncToolbarSafeInset(active) {
+      var changed = toolbarSafeInsetActive !== !!active;
+      var scrollRoot = document.scrollingElement || document.documentElement || document.body;
+      var startTop = scrollRoot ? scrollRoot.scrollTop : 0;
+      if (!isTouchEditParityMode()) {
+        toolbarSafeInset.style.display = "none";
+        toolbarSafeInset.style.height = "0";
+        toolbarSafeInsetActive = false;
+        if (scrollRoot) scrollRoot.scrollTop = startTop;
+        return;
+      }
+      if (document.body && document.body.firstChild !== toolbarSafeInset) {
+        document.body.insertBefore(toolbarSafeInset, document.body.firstChild || null);
+      }
+      toolbarSafeInset.style.display = active ? "block" : "none";
+      toolbarSafeInset.style.height = active ? "104px" : "0";
+      toolbarSafeInsetActive = !!active;
+      if (scrollRoot) scrollRoot.scrollTop = startTop;
+      if (changed && selectedEl && selectedEl.isConnected) {
+        window.requestAnimationFrame(function () {
+          if (!selectedEl || !selectedEl.isConnected) return;
+          emitToParent({ __editor_select: true, info: getInfo(selectedEl), rect: getElementRectPayload(selectedEl) });
+        });
+      }
+    }
     if (!rect) {
       selToolbar.style.display = "none";
+      syncToolbarSafeInset(false);
       return;
     }
-    selToolbar.style.display = "flex";
+    if (isTouchEditParityMode() && document.documentElement.getAttribute("data-he-external-mobile-toolbar") === "1") {
+      selToolbar.style.display = "none";
+      syncToolbarSafeInset(false);
+      return;
+    }
+    selToolbar.style.display = toolbarDisplayMode;
     var toolbarWidth = selToolbar.offsetWidth || 320;
     var toolbarHeight = selToolbar.offsetHeight || 42;
     var gap = toolbarGap;
@@ -664,7 +818,19 @@ export function buildEditorRuntime(): string {
     var belowTop = rect.top + rect.height + gap;
     var aboveFits = aboveTop >= minY;
     var belowFits = belowTop <= maxTop;
-    var top = aboveFits ? aboveTop : (belowFits ? belowTop : clampValue(aboveTop, minY, maxTop));
+    var preferBelow = isTouchEditParityMode();
+    if (preferBelow) {
+      syncToolbarSafeInset(true);
+      var stickyTop = minY + 6;
+      var stickyLeft = clampValue(window.innerWidth / 2 - toolbarWidth / 2, minX, maxLeft);
+      selToolbar.style.top = clampValue(stickyTop, minY, maxTop) + "px";
+      selToolbar.style.left = clampValue(stickyLeft, minX, maxLeft) + "px";
+      return;
+    }
+    syncToolbarSafeInset(false);
+    var top = preferBelow
+      ? (belowFits ? belowTop : (aboveFits ? aboveTop : clampValue(belowTop, minY, maxTop)))
+      : (aboveFits ? aboveTop : (belowFits ? belowTop : clampValue(aboveTop, minY, maxTop)));
 
     function rectsOverlap(a, b) {
       if (!a || !b) return false;
@@ -946,7 +1112,11 @@ export function buildEditorRuntime(): string {
   }
 
   function composeFreeMoveTransform(base, x, y) {
-    var translate = "translate(" + (Math.round(x * 100) / 100) + "px, " + (Math.round(y * 100) / 100) + "px)";
+    var roundedX = Math.round(x * 100) / 100;
+    var roundedY = Math.round(y * 100) / 100;
+    var translate = isTouchEditParityMode()
+      ? ("translate3d(" + roundedX + "px, " + roundedY + "px, 0)")
+      : ("translate(" + roundedX + "px, " + roundedY + "px)");
     var normalizedBase = base && base !== "none" ? base.trim() : "";
     return normalizedBase ? (normalizedBase + " " + translate).trim() : translate;
   }
@@ -1366,6 +1536,7 @@ export function buildEditorRuntime(): string {
   }
 
   function beginSingleFreeMove(el, clientX, clientY, touchIdentifier) {
+    if (freeMoveState || resizeState) return false;
     if (!el || !el.isConnected || !canUseFreeMove(el)) return false;
     ensureFreeMoveStyles(el);
     primeFreeMoveLayout(el);
@@ -1454,6 +1625,7 @@ export function buildEditorRuntime(): string {
   }
 
   function startGroupMove(clientX, clientY, touchIdentifier) {
+    if (freeMoveState || resizeState) return false;
     if (!hasGroupedSelection() || !freeMoveEl || !freeMoveIsGroup) return false;
     var selection = getUniqueEditableElements(multiSelectedEls);
     if (!selection.length || !selection.every(function (node) { return canUseFreeMove(node); })) return false;
@@ -1490,6 +1662,7 @@ export function buildEditorRuntime(): string {
   }
 
   function startSelectedResize(clientX, clientY, touchIdentifier) {
+    if (freeMoveState || resizeState) return false;
     if (!selectedEl || !selectedEl.isConnected || !canResizeFreely(selectedEl)) return false;
     ensureFreeMoveStyles(selectedEl);
     var rect = selectedEl.getBoundingClientRect();
@@ -1590,8 +1763,13 @@ export function buildEditorRuntime(): string {
     var activelyDragging = !!(freeMoveState || resizeState);
     var selectedRect = selectedEl && selectedEl.getBoundingClientRect ? selectedEl.getBoundingClientRect() : null;
     var smallTargetSelection = !!(selectedRect && (getNodeType(selectedEl) === "icon" || selectedRect.width < 24 || selectedRect.height < 24));
-    var moveOverlayActive = !grouped && movableSelection && ((active && (coarsePointer || smallTargetSelection)) || (coarsePointer && !!selectedEl));
-    var singleOverlayInteractive = (active && !grouped) || (coarsePointer && !grouped && movableSelection);
+    var touchEditParity = isTouchEditParityMode();
+    var moveOverlayActive = touchEditParity
+      ? !grouped && movableSelection && active
+      : !grouped && movableSelection && ((active && (runtimeCoarsePointer || smallTargetSelection)) || (runtimeCoarsePointer && !!selectedEl));
+    var singleOverlayInteractive = touchEditParity
+      ? active && !grouped
+      : (active && !grouped) || (runtimeCoarsePointer && !grouped && movableSelection);
     if (groupButton) {
       groupButton.disabled = protectedSelection;
       groupButton.style.opacity = protectedSelection ? ".35" : "1";
@@ -1604,7 +1782,7 @@ export function buildEditorRuntime(): string {
       editButton.style.opacity = protectedSelection || grouped ? ".35" : "1";
     }
     if (moveButton) {
-      moveButton.textContent = activelyDragging ? "Soltar" : grouped ? "Mover grupo" : "Mover";
+      moveButton.textContent = (active || activelyDragging) ? "Soltar" : grouped ? "Mover grupo" : "Mover";
       moveButton.disabled = protectedSelection || (!grouped && !movableSelection);
       moveButton.style.opacity = protectedSelection || (!grouped && !movableSelection) ? ".35" : "1";
       moveButton.style.borderColor = active || activelyDragging ? "rgba(232,57,42,.22)" : "rgba(255,255,255,.08)";
@@ -1632,6 +1810,13 @@ export function buildEditorRuntime(): string {
       deleteButton.disabled = protectedSelection;
       deleteButton.style.opacity = protectedSelection ? ".35" : "1";
     }
+    if (document.documentElement) {
+      if (active && !grouped && movableSelection) {
+        document.documentElement.setAttribute("data-he-free-move-active", "1");
+      } else {
+        document.documentElement.removeAttribute("data-he-free-move-active");
+      }
+    }
     selBox.style.pointerEvents = singleOverlayInteractive ? "auto" : "none";
     selBox.style.cursor = active && !grouped ? "move" : "default";
     groupBox.style.pointerEvents = active && grouped ? "auto" : "none";
@@ -1644,10 +1829,10 @@ export function buildEditorRuntime(): string {
 
   function placeToolbar(el) {
     if (!el) {
-      placeToolbarForRect(null);
+      placeToolbarForRect(null, null);
       return;
     }
-    placeToolbarForRect(el.getBoundingClientRect());
+    placeToolbarForRect(el.getBoundingClientRect(), el);
   }
 
   function setFreeMove(el, asGroup) {
@@ -1684,6 +1869,7 @@ export function buildEditorRuntime(): string {
 
   function canEdit(el) {
     if (!el || el === document.body || el === document.documentElement) return false;
+    if (document.documentElement.getAttribute("data-he-preview-mode") === "1") return false;
     if (el.closest && el.closest("[data-he-runtime],[data-he-editor-overlay]")) return false;
     var tag = (el.tagName || "").toLowerCase();
     return EID_SKIP.indexOf(tag) === -1;
@@ -1823,7 +2009,7 @@ export function buildEditorRuntime(): string {
   }
 
   function getTouchContainerTarget(raw) {
-    if (!coarsePointer || !raw || !(raw instanceof Element)) return null;
+    if (!coarsePointer || isTouchEditParityMode() || !raw || !(raw instanceof Element)) return null;
     var current = raw;
     var depth = 0;
     while (current && current !== document.body && current !== document.documentElement && depth < 6) {
@@ -2119,7 +2305,7 @@ export function buildEditorRuntime(): string {
           preferredText &&
           canEdit(preferredText) &&
           getNodeType(preferredText) !== "container" &&
-          (!coarsePointer || getNodeType(preferredText) === "button" || getNodeType(preferredText) === "field")
+          (!coarsePointer || isTouchEditParityMode() || getNodeType(preferredText) === "button" || getNodeType(preferredText) === "field")
         ) {
           return normalizeSelectionTarget(preferredText);
         }
@@ -2172,10 +2358,10 @@ export function buildEditorRuntime(): string {
       else if (nodeType === "button" || isActionableEl(candidate) || looksLikeButtonContainerEl(candidate)) score += 740;
       else if (nodeType === "text" || isTextEl(candidate) || looksLikeTextContainerEl(candidate)) score += 700;
       else score += 500;
-      if (coarsePointer && nodeType === "container") {
+      if (coarsePointer && !isTouchEditParityMode() && nodeType === "container") {
         score += hasVisualChromeEl(candidate) ? 220 : 110;
       }
-      if (coarsePointer && (nodeType === "text" || looksLikeTextContainerEl(candidate))) {
+      if (coarsePointer && !isTouchEditParityMode() && (nodeType === "text" || looksLikeTextContainerEl(candidate))) {
         score -= 120;
       }
       score += Math.max(0, 320 - Math.log(area + 1) * 26);
@@ -2195,7 +2381,7 @@ export function buildEditorRuntime(): string {
     }
 
     if (best) {
-      if (!coarsePointer && getNodeType(best) === "container" && bestInlineText && canEdit(bestInlineText)) {
+      if ((!coarsePointer || isTouchEditParityMode()) && getNodeType(best) === "container" && bestInlineText && canEdit(bestInlineText)) {
         return normalizeSelectionTarget(bestInlineText);
       }
       return best;
@@ -2472,6 +2658,145 @@ export function buildEditorRuntime(): string {
     markEditableNodeTypes(scope);
   }
 
+  function getTypographyCandidateLabel(el, nodeType) {
+    if (!el) return "";
+    if (nodeType === "field") {
+      if ((el.tagName || "").toLowerCase() === "select") {
+        var selectedOption = el.options && el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
+        return (
+          (selectedOption && (selectedOption.textContent || selectedOption.value)) ||
+          el.getAttribute("placeholder") ||
+          el.getAttribute("name") ||
+          el.getAttribute("id") ||
+          "Campo"
+        );
+      }
+      return (
+        (el.value != null ? String(el.value) : "") ||
+        el.getAttribute("placeholder") ||
+        el.getAttribute("name") ||
+        el.getAttribute("id") ||
+        "Campo"
+      );
+    }
+    var text = getVisibleTextContent(el) || getOwnTextContent(el) || "";
+    return String(text).replace(/\s+/g, " ").trim();
+  }
+
+  function buildTypographyTargetInfo(el) {
+    if (!el || !canEdit(el) || !el.dataset || !el.dataset.eid) return null;
+    var resolvedEl = getIconHost(el) || el;
+    var nodeType = getNodeType(resolvedEl) || inferEditorNodeType(resolvedEl);
+    if (["text", "button", "field", "icon"].indexOf(nodeType) === -1) return null;
+    var label = getTypographyCandidateLabel(resolvedEl, nodeType);
+    if (!label && nodeType !== "icon") return null;
+    var cs = window.getComputedStyle(resolvedEl);
+    return {
+      eid: resolvedEl.dataset.eid || "",
+      nodeType: nodeType,
+      tag: resolvedEl.tagName.toLowerCase(),
+      label: String(label || resolvedEl.tagName || "Elemento").replace(/\s+/g, " ").trim().slice(0, 64),
+      text: (resolvedEl.innerText || "").slice(0, 200),
+      classes: resolvedEl.className || null,
+      attrs: {
+        id: resolvedEl.getAttribute("id"),
+        href: resolvedEl.getAttribute("href"),
+        target: resolvedEl.getAttribute("target"),
+        placeholder: resolvedEl.getAttribute("placeholder"),
+        src: resolvedEl.getAttribute("src"),
+        type: resolvedEl.getAttribute("type"),
+        name: resolvedEl.getAttribute("name"),
+        autocomplete: resolvedEl.getAttribute("autocomplete"),
+        min: resolvedEl.getAttribute("min"),
+        max: resolvedEl.getAttribute("max"),
+        step: resolvedEl.getAttribute("step"),
+        rows: resolvedEl.getAttribute("rows"),
+        multiple: !!resolvedEl.hasAttribute("multiple"),
+        value: isFieldEl(resolvedEl) ? ((resolvedEl.value != null ? String(resolvedEl.value) : resolvedEl.getAttribute("value")) || "") : resolvedEl.getAttribute("value"),
+        alt: resolvedEl.getAttribute("alt"),
+        title: resolvedEl.getAttribute("title"),
+        required: !!resolvedEl.hasAttribute("required"),
+        disabled: !!resolvedEl.hasAttribute("disabled"),
+        checked: !!resolvedEl.hasAttribute("checked"),
+        dataIcon: resolvedEl.getAttribute("data-he-icon"),
+      },
+      styles: {
+        color: cs.color,
+        backgroundColor: cs.backgroundColor,
+        backgroundImage: cs.backgroundImage,
+        fontSize: cs.fontSize,
+        fontWeight: cs.fontWeight,
+        fontFamily: cs.fontFamily,
+        fontStyle: cs.fontStyle,
+        lineHeight: cs.lineHeight,
+        letterSpacing: cs.letterSpacing,
+        textDecoration: cs.textDecoration,
+        textTransform: cs.textTransform,
+        padding: cs.padding,
+        margin: cs.margin,
+        borderRadius: cs.borderRadius,
+        textAlign: cs.textAlign,
+        display: cs.display,
+        width: cs.width,
+        maxWidth: cs.maxWidth,
+        height: cs.height,
+        maxHeight: cs.maxHeight,
+        objectFit: cs.objectFit,
+        borderWidth: cs.borderWidth,
+        borderColor: cs.borderColor,
+        boxShadow: cs.boxShadow,
+        strokeWidth: getIconStrokeWidthValue(resolvedEl) || cs.strokeWidth,
+        accentColor: cs.accentColor,
+        gap: cs.gap,
+        justifyContent: cs.justifyContent,
+        alignItems: cs.alignItems,
+      }
+    };
+  }
+
+  function collectTypographyTargets(rootEl) {
+    if (!rootEl || !rootEl.querySelectorAll) return [];
+    var targets = [];
+    var seenEids = [];
+    var selector = "h1,h2,h3,h4,h5,h6,p,span,a,button,label,small,strong,em,blockquote,li,input,textarea,select";
+    var nodes = rootEl.querySelectorAll(selector);
+
+    for (var index = 0; index < nodes.length; index += 1) {
+      var node = nodes[index];
+      if (!node || !canEdit(node) || node === rootEl) continue;
+      if (node.closest && node.closest("[data-he-runtime],[data-he-editor-overlay]")) continue;
+      var nodeType = getNodeType(node) || inferEditorNodeType(node);
+      if (nodeType === "icon" || ["text", "button", "field"].indexOf(nodeType) === -1) continue;
+      var info = buildTypographyTargetInfo(node);
+      if (!info || !info.eid || seenEids.indexOf(info.eid) !== -1) continue;
+
+      var duplicateAncestor = false;
+      var ancestor = node.parentElement;
+      while (ancestor && ancestor !== rootEl) {
+        if (!canEdit(ancestor)) {
+          ancestor = ancestor.parentElement;
+          continue;
+        }
+        var ancestorType = getNodeType(ancestor) || inferEditorNodeType(ancestor);
+        if (["text", "button", "field"].indexOf(ancestorType) !== -1) {
+          var ancestorLabel = getTypographyCandidateLabel(ancestor, ancestorType);
+          if (ancestorLabel && ancestorLabel.replace(/\s+/g, " ").trim() === info.label) {
+            duplicateAncestor = true;
+            break;
+          }
+        }
+        ancestor = ancestor.parentElement;
+      }
+
+      if (duplicateAncestor) continue;
+      seenEids.push(info.eid);
+      targets.push(info);
+      if (targets.length >= 12) break;
+    }
+
+    return targets;
+  }
+
   function getInfo(el) {
     ensureEids(document.body);
     var resolvedEl = getIconHost(el) || el;
@@ -2504,6 +2829,7 @@ export function buildEditorRuntime(): string {
       parentEid: parent?.dataset?.eid || null,
       parentTag: parent?.tagName?.toLowerCase() || null,
       children: children,
+      typographyTargets: collectTypographyTargets(resolvedEl),
       text: (resolvedEl.innerText || "").slice(0, 200),
       html: (resolvedEl.innerHTML || "").slice(0, 1200),
       isText: resolvedIsText,
@@ -2567,8 +2893,43 @@ export function buildEditorRuntime(): string {
   }
 
   function reportHeight() {
-    var h = document.documentElement.scrollHeight || document.body.scrollHeight;
-    if (h > 0) emitToParent({ __hei_resize: h });
+    var root = document.querySelector("[data-he-import-root='1']") || document.body;
+    if (!root || !root.getBoundingClientRect) {
+      var fallbackHeight = document.documentElement.scrollHeight || document.body.scrollHeight;
+      if (fallbackHeight > 0) emitToParent({ __hei_resize: fallbackHeight });
+      return;
+    }
+
+    var scrollTop =
+      (document.scrollingElement && document.scrollingElement.scrollTop) ||
+      document.documentElement.scrollTop ||
+      document.body.scrollTop ||
+      0;
+    var rootRect = root.getBoundingClientRect();
+    var minTop = Number.isFinite(rootRect.top) ? rootRect.top + scrollTop : scrollTop;
+    var maxBottom = Number.isFinite(rootRect.bottom) ? rootRect.bottom + scrollTop : minTop;
+    var nodes = root.querySelectorAll ? root.querySelectorAll("*") : [];
+    var limit = Math.min(nodes.length || 0, 4000);
+
+    for (var i = 0; i < limit; i += 1) {
+      var node = nodes[i];
+      if (!node || !node.getBoundingClientRect) continue;
+      if (node.closest && node.closest("[data-he-runtime],[data-he-editor-overlay]")) continue;
+      var style = window.getComputedStyle(node);
+      if (!style || style.display === "none" || style.visibility === "hidden" || style.position === "fixed") continue;
+      var rect = node.getBoundingClientRect();
+      if (!Number.isFinite(rect.top) || !Number.isFinite(rect.bottom) || rect.height <= 0) continue;
+      minTop = Math.min(minTop, rect.top + scrollTop);
+      maxBottom = Math.max(maxBottom, rect.bottom + scrollTop);
+    }
+
+    var measured = Math.max(
+      Math.ceil(rootRect.height || 0),
+      root.scrollHeight || 0,
+      Math.max(0, Math.ceil(maxBottom - minTop)),
+      240
+    );
+    if (measured > 0) emitToParent({ __hei_resize: measured + 20 });
   }
 
   function serializeDocument() {
@@ -2647,7 +3008,7 @@ export function buildEditorRuntime(): string {
     }
     hoverBox.style.display = "none";
     refreshSelectionUi();
-    emitToParent({ __editor_select: true, info: getInfo(el) });
+    emitToParent({ __editor_select: true, info: getInfo(el), rect: getElementRectPayload(el) });
   }
 
   function beginInlineEdit(el, clientX, clientY) {
@@ -2747,7 +3108,7 @@ export function buildEditorRuntime(): string {
       selectedEl = null;
       queueSnapshot();
       hideSelectionUi();
-      emitToParent({ __editor_select: true, info: null });
+      emitToParent({ __editor_select: true, info: null, rect: null });
       return;
     }
     if (!selectedEl || !selectedEl.parentNode || isImportRootEl(selectedEl)) return;
@@ -2767,7 +3128,7 @@ export function buildEditorRuntime(): string {
     selectedEl = null;
     setFreeMove(null, false);
     hideSelectionUi();
-    emitToParent({ __editor_select: true, info: null });
+    emitToParent({ __editor_select: true, info: null, rect: null });
   }
 
   ensureEids(document.body);
@@ -2790,6 +3151,10 @@ export function buildEditorRuntime(): string {
     event.stopPropagation();
   }, true);
   selToolbar.addEventListener("touchstart", function (event) {
+    if (isTouchEditParityMode()) {
+      handleToolbarAction(event);
+      return;
+    }
     stopGestureEvent(event);
   }, { passive: false, capture: true });
   selToolbar.addEventListener("pointerdown", function (event) {
@@ -2804,6 +3169,7 @@ export function buildEditorRuntime(): string {
     startGroupMove(event.clientX, event.clientY, null);
   }, true);
   groupBox.addEventListener("touchstart", function (event) {
+    if (!freeMoveIsGroup) return;
     var point = getEventClientPoint(event);
     if (!point) return;
     stopGestureEvent(event);
@@ -2811,6 +3177,7 @@ export function buildEditorRuntime(): string {
   }, { passive: false, capture: true });
   groupBox.addEventListener("pointerdown", function (event) {
     if (!isNonMousePointerEvent(event)) return;
+    if (!freeMoveIsGroup) return;
     var point = getEventClientPoint(event);
     if (!point) return;
     event.preventDefault();
@@ -2819,13 +3186,13 @@ export function buildEditorRuntime(): string {
   }, true);
 
   selBox.addEventListener("mousedown", function (event) {
-    if (!selectedEl || !canUseFreeMove(selectedEl) || (freeMoveEl !== selectedEl && coarsePointer)) return;
+    if (!selectedEl || !canUseFreeMove(selectedEl) || (freeMoveEl !== selectedEl && runtimeCoarsePointer)) return;
     event.preventDefault();
     event.stopPropagation();
     beginSingleFreeMove(selectedEl, event.clientX, event.clientY, null);
   }, true);
   selBox.addEventListener("touchstart", function (event) {
-    if (!selectedEl || !canUseFreeMove(selectedEl)) return;
+    if (!selectedEl || !canUseFreeMove(selectedEl) || freeMoveEl !== selectedEl || freeMoveIsGroup) return;
     var point = getEventClientPoint(event);
     if (!point) return;
     stopGestureEvent(event);
@@ -2833,7 +3200,7 @@ export function buildEditorRuntime(): string {
   }, { passive: false, capture: true });
   selBox.addEventListener("pointerdown", function (event) {
     if (!isNonMousePointerEvent(event)) return;
-    if (!selectedEl || !canUseFreeMove(selectedEl)) return;
+    if (!selectedEl || !canUseFreeMove(selectedEl) || freeMoveEl !== selectedEl || freeMoveIsGroup) return;
     var point = getEventClientPoint(event);
     if (!point) return;
     event.preventDefault();
@@ -2842,13 +3209,13 @@ export function buildEditorRuntime(): string {
   }, true);
 
   moveHitBox.addEventListener("mousedown", function (event) {
-    if (!selectedEl || !canUseFreeMove(selectedEl) || (freeMoveEl !== selectedEl && coarsePointer)) return;
+    if (!selectedEl || !canUseFreeMove(selectedEl) || (freeMoveEl !== selectedEl && runtimeCoarsePointer)) return;
     event.preventDefault();
     event.stopPropagation();
     beginSingleFreeMove(selectedEl, event.clientX, event.clientY, null);
   }, true);
   moveHitBox.addEventListener("touchstart", function (event) {
-    if (!selectedEl || !canUseFreeMove(selectedEl)) return;
+    if (!selectedEl || !canUseFreeMove(selectedEl) || freeMoveEl !== selectedEl || freeMoveIsGroup) return;
     var point = getEventClientPoint(event);
     if (!point) return;
     stopGestureEvent(event);
@@ -2856,7 +3223,7 @@ export function buildEditorRuntime(): string {
   }, { passive: false, capture: true });
   moveHitBox.addEventListener("pointerdown", function (event) {
     if (!isNonMousePointerEvent(event)) return;
-    if (!selectedEl || !canUseFreeMove(selectedEl)) return;
+    if (!selectedEl || !canUseFreeMove(selectedEl) || freeMoveEl !== selectedEl || freeMoveIsGroup) return;
     var point = getEventClientPoint(event);
     if (!point) return;
     event.preventDefault();
@@ -2886,12 +3253,15 @@ export function buildEditorRuntime(): string {
 
   function handleToolbarAction(event) {
     var sourceType = typeof event.type === "string" ? event.type : "";
+    if (isTouchEditParityMode() && (sourceType === "touchend" || sourceType === "pointerup")) {
+      return;
+    }
     var now = Date.now();
-    if (sourceType === "click" && now - lastToolbarTouchTs < 450) {
+    if (!isTouchEditParityMode() && sourceType === "click" && now - lastToolbarTouchTs < 450) {
       stopGestureEvent(event);
       return;
     }
-    if (sourceType === "touchend" || sourceType === "pointerup") {
+    if (!isTouchEditParityMode() && (sourceType === "touchend" || sourceType === "pointerup")) {
       lastToolbarTouchTs = now;
     }
     var button = event.target && event.target.closest ? event.target.closest("button[data-tool]") : null;
@@ -2916,8 +3286,9 @@ export function buildEditorRuntime(): string {
 
     if (tool === "edit" && selectedEl) {
       var started = beginInlineEdit(selectedEl);
-      if (!started) {
-        // Non-text element: signal parent to open the inspector panel
+      if (!started || isTouchEditParityMode()) {
+        // In mobile parity mode, always open the inspector so the element-specific
+        // controls appear immediately next to the current selection workflow.
         emitToParent({ __editor_open_inspector: true });
       }
       return;
@@ -2947,6 +3318,7 @@ export function buildEditorRuntime(): string {
   selToolbar.addEventListener("touchend", handleToolbarAction, { passive: false, capture: true });
   selToolbar.addEventListener("pointerup", function (event) {
     if (!isNonMousePointerEvent(event)) return;
+    if (isTouchEditParityMode()) return;
     handleToolbarAction(event);
   }, true);
 
@@ -2956,7 +3328,7 @@ export function buildEditorRuntime(): string {
     if (isRuntimeUiTarget(event.target)) return;
     var el = getSelectionTargetFromPoint(event.clientX, event.clientY, event.target);
     if (!canEdit(el)) return;
-    if (!multiSelectMode && selectedEl && canUseFreeMove(selectedEl) && freeMoveEl && !freeMoveIsGroup && freeMoveEl === selectedEl) {
+    if (!isTouchEditParityMode() && !multiSelectMode && selectedEl && canUseFreeMove(selectedEl) && freeMoveEl && !freeMoveIsGroup && freeMoveEl === selectedEl) {
       var dragTarget = event.target instanceof Element ? event.target : null;
       var dragOwner = dragTarget ? getEditableOwner(dragTarget) : null;
       var selectedRect = selectedEl.getBoundingClientRect ? selectedEl.getBoundingClientRect() : null;
@@ -2992,60 +3364,173 @@ export function buildEditorRuntime(): string {
       toggleMultiSelection(el);
       suppressSelectionClick = true;
       refreshSelectionUi();
-      emitToParent({ __editor_select: true, info: selectedEl ? getInfo(selectedEl) : null });
+      emitToParent({ __editor_select: true, info: selectedEl ? getInfo(selectedEl) : null, rect: selectedEl ? getElementRectPayload(selectedEl) : null });
       return;
     }
     suppressSelectionClick = true;
     selectElement(el);
   }, true);
 
+  var touchSelectState = null;
+  var touchParitySelectState = null;
+
+  function clearTouchSelectState() {
+    touchSelectState = null;
+  }
+
+  function clearTouchParitySelectState() {
+    touchParitySelectState = null;
+  }
+
   document.addEventListener("touchstart", function (event) {
+    var touchEditParity = isTouchEditParityMode();
     var point = getEventClientPoint(event);
     if (!point) return;
+    if (event.touches && event.touches.length > 1) {
+      clearTouchSelectState();
+      clearTouchParitySelectState();
+      return;
+    }
     if (editingEl || resizeState || freeMoveState) return;
     if (isRuntimeUiTarget(event.target)) return;
     var el = getSelectionTargetFromPoint(point.x, point.y, event.target);
     if (!canEdit(el)) return;
-    if (!multiSelectMode && selectedEl && canUseFreeMove(selectedEl) && freeMoveEl && !freeMoveIsGroup && freeMoveEl === selectedEl) {
-      var dragTarget = event.target instanceof Element ? event.target : null;
-      var dragOwner = dragTarget ? getEditableOwner(dragTarget) : null;
-      var selectedRect = selectedEl.getBoundingClientRect ? selectedEl.getBoundingClientRect() : null;
-      var pointerInsideSelected = isPointInsideRect(point.x, point.y, selectedRect);
-      var isSelectedTarget =
-        el === selectedEl ||
-        dragOwner === selectedEl ||
-        !!(dragTarget && (dragTarget === selectedEl || selectedEl.contains(dragTarget))) ||
-        pointerInsideSelected;
-      if (isSelectedTarget) {
-        stopGestureEvent(event);
+
+    if (touchEditParity) {
+      touchParitySelectState = {
+        id: point.id,
+        startX: point.x,
+        startY: point.y,
+        startTs: Date.now(),
+        lastX: point.x,
+        lastY: point.y,
+        target: el,
+        moved: false
+      };
+      return;
+    }
+
+    var allowFreeMove =
+      !multiSelectMode &&
+      selectedEl &&
+      canUseFreeMove(selectedEl) &&
+      freeMoveEl &&
+      !freeMoveIsGroup &&
+      freeMoveEl === selectedEl;
+
+    touchSelectState = {
+      id: point.id,
+      startX: point.x,
+      startY: point.y,
+      startTs: Date.now(),
+      lastX: point.x,
+      lastY: point.y,
+      target: el,
+      moved: false,
+      dragging: false,
+      allowFreeMove: allowFreeMove
+    };
+  }, { passive: true, capture: true });
+
+  document.addEventListener("touchmove", function (event) {
+    var touchEditParity = isTouchEditParityMode();
+    if (isTouchScrollBridgeActive()) {
+      clearTouchSelectState();
+      clearTouchParitySelectState();
+      return;
+    }
+    var point = getEventClientPoint(event);
+    if (!point) return;
+
+    if (touchEditParity) {
+      if (!touchParitySelectState) return;
+      if (touchParitySelectState.id != null && point.id != null && touchParitySelectState.id !== point.id) return;
+      var dxParity = point.x - touchParitySelectState.startX;
+      var dyParity = point.y - touchParitySelectState.startY;
+      if (!touchParitySelectState.moved && (Math.abs(dxParity) > 8 || Math.abs(dyParity) > 8)) {
+        touchParitySelectState.moved = true;
+      }
+      touchParitySelectState.lastX = point.x;
+      touchParitySelectState.lastY = point.y;
+      return;
+    }
+
+    if (!touchSelectState) return;
+    if (touchSelectState.id != null && point.id != null && touchSelectState.id !== point.id) return;
+
+    var dx = point.x - touchSelectState.startX;
+    var dy = point.y - touchSelectState.startY;
+    if (!touchSelectState.moved && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+      touchSelectState.moved = true;
+    }
+    touchSelectState.lastX = point.x;
+    touchSelectState.lastY = point.y;
+
+    if (touchSelectState.moved && touchSelectState.allowFreeMove && !freeMoveState && !resizeState) {
+      stopGestureEvent(event);
+      suppressSelectionClick = true;
+      beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
+      touchSelectState.dragging = true;
+    }
+  }, { passive: false, capture: true });
+
+  document.addEventListener("touchend", function (event) {
+    var touchEditParity = isTouchEditParityMode();
+    if (isTouchScrollBridgeActive()) {
+      clearTouchSelectState();
+      clearTouchParitySelectState();
+      return;
+    }
+
+    if (touchEditParity) {
+      if (!touchParitySelectState) return;
+      var parityState = touchParitySelectState;
+      clearTouchParitySelectState();
+      var endDxParity = parityState.lastX - parityState.startX;
+      var endDyParity = parityState.lastY - parityState.startY;
+      var endDistParity = Math.max(Math.abs(endDxParity), Math.abs(endDyParity));
+      var tapDurationParity = Date.now() - (parityState.startTs || 0);
+      if (parityState.moved && (endDistParity > 12 || tapDurationParity > 240)) return;
+      if (!canEdit(parityState.target)) return;
+      stopGestureEvent(event);
+      if (multiSelectMode) {
+        toggleMultiSelection(parityState.target);
         suppressSelectionClick = true;
-        beginSingleFreeMove(selectedEl, point.x, point.y, point.id);
+        refreshSelectionUi();
+        emitToParent({ __editor_select: true, info: selectedEl ? getInfo(selectedEl) : null, rect: selectedEl ? getElementRectPayload(selectedEl) : null });
         return;
       }
+      suppressSelectionClick = true;
+      selectElement(parityState.target);
+      return;
     }
-    var shouldCapture =
-      isNativeInteractiveTarget(event.target) ||
-      isNativeInteractiveTarget(el) ||
-      isFieldEl(el) ||
-      isActionableEl(el) ||
-      looksLikeButtonContainerEl(el) ||
-      isTextEl(el) ||
-      looksLikeTextContainerEl(el) ||
-      isIconCandidate(el) ||
-      isImageEl(el);
-    if (shouldCapture) {
-      stopGestureEvent(event);
-    }
+
+    if (!touchSelectState) return;
+    var state = touchSelectState;
+    clearTouchSelectState();
+    var endDx = state.lastX - state.startX;
+    var endDy = state.lastY - state.startY;
+    var endDist = Math.max(Math.abs(endDx), Math.abs(endDy));
+    var tapDuration = Date.now() - (state.startTs || 0);
+    if (state.dragging) return;
+    if (state.moved && (endDist > 14 || tapDuration > 260)) return;
+    if (!canEdit(state.target)) return;
+    stopGestureEvent(event);
     if (multiSelectMode) {
-      toggleMultiSelection(el);
+      toggleMultiSelection(state.target);
       suppressSelectionClick = true;
       refreshSelectionUi();
-      emitToParent({ __editor_select: true, info: selectedEl ? getInfo(selectedEl) : null });
+      emitToParent({ __editor_select: true, info: selectedEl ? getInfo(selectedEl) : null, rect: selectedEl ? getElementRectPayload(selectedEl) : null });
       return;
     }
     suppressSelectionClick = true;
-    selectElement(el);
+    selectElement(state.target);
   }, { passive: false, capture: true });
+
+  document.addEventListener("touchcancel", function () {
+    clearTouchSelectState();
+    clearTouchParitySelectState();
+  }, { passive: true, capture: true });
 
   document.addEventListener("focusin", function (event) {
     if (editingEl) return;
@@ -3062,9 +3547,15 @@ export function buildEditorRuntime(): string {
   }, true);
 
   function handleCanvasPointerMove(clientX, clientY, target, buttonsMask, allowAutoStart, touchIdentifier) {
+    var touchEditParity = isTouchEditParityMode();
+    if (isTouchScrollBridgeActive()) {
+      hoverBox.style.display = "none";
+      return false;
+    }
     setInteractionPoint(clientX, clientY, touchIdentifier);
     if (
       allowAutoStart &&
+      !isTouchEditParityMode() &&
       !freeMoveState &&
       !resizeState &&
       !editingEl &&
@@ -3103,10 +3594,6 @@ export function buildEditorRuntime(): string {
       if (hoverInsideSelected) {
         primeFreeMoveLayout(selectedEl);
       }
-    }
-    if (isRuntimeUiTarget(target)) {
-      hoverBox.style.display = "none";
-      return false;
     }
     if (resizeState && resizeState.el && resizeState.el.isConnected) {
       var deltaX = clientX - resizeState.startX;
@@ -3158,12 +3645,20 @@ export function buildEditorRuntime(): string {
 
       selectedEl = resizeState.el;
       hoverBox.style.display = "none";
-      placeSelectionBox(resizeState.el);
-      placeMoveHitBox(resizeState.el);
-      placeToolbar(resizeState.el);
-      placeResizeHandle(resizeState.el);
-      updateMoveFeedback(getFreeMoveRoot(resizeState.el), currentLeft, currentTop, nextWidth, nextHeight, null, null);
-      syncMoveUi();
+      if (touchEditParity) {
+        selBox.style.display = "none";
+        moveHitBox.style.display = "none";
+        resizeHandle.style.display = "none";
+        selToolbar.style.display = "none";
+        hideMoveFeedback();
+      } else {
+        placeSelectionBox(resizeState.el);
+        placeMoveHitBox(resizeState.el);
+        placeToolbar(resizeState.el);
+        placeResizeHandle(resizeState.el);
+        updateMoveFeedback(getFreeMoveRoot(resizeState.el), currentLeft, currentTop, nextWidth, nextHeight, null, null);
+        syncMoveUi();
+      }
       return true;
     }
 
@@ -3194,17 +3689,28 @@ export function buildEditorRuntime(): string {
       });
 
       var groupedBounds = placeGroupBox(multiSelectedEls);
-      selBox.style.display = "none";
-      placeResizeHandle(null);
-      placeToolbarForRect(groupedBounds);
-      if (groupedBounds) {
+      if (touchEditParity) {
+        selBox.style.display = "none";
+        moveHitBox.style.display = "none";
+        placeResizeHandle(null);
+        selToolbar.style.display = "none";
+        hideMoveFeedback();
+      } else {
+        selBox.style.display = "none";
+        moveHitBox.style.display = "none";
+        placeResizeHandle(null);
+        placeToolbarForRect(groupedBounds);
+      }
+      if (!touchEditParity && groupedBounds) {
         var groupRoot = getEditorRoot(freeMoveState.items[0].el);
         var groupRootRect = groupRoot.getBoundingClientRect();
         var groupLeft = groupedBounds.left - groupRootRect.left + (groupRoot.scrollLeft || 0);
         var groupTop = groupedBounds.top - groupRootRect.top + (groupRoot.scrollTop || 0);
         updateMoveFeedback(groupRoot, groupLeft, groupTop, groupedBounds.width, groupedBounds.height, null, null);
       }
-      syncMoveUi();
+      if (!touchEditParity) {
+        syncMoveUi();
+      }
       return true;
     }
 
@@ -3222,8 +3728,9 @@ export function buildEditorRuntime(): string {
       var nextTop = pointerTopInRoot - freeMoveState.anchorTop;
       var desiredLeft = freeMoveState.anchorLeft + nextLeft;
       var desiredTop = freeMoveState.anchorTop + nextTop;
-      var snapX = resolveSnapGuide(desiredLeft, moveWidth, moveBounds.width, 8);
-      var snapY = resolveSnapGuide(desiredTop, moveHeight, moveBounds.height, 8);
+      var snapThreshold = touchEditParity ? 0 : 8;
+      var snapX = snapThreshold > 0 ? resolveSnapGuide(desiredLeft, moveWidth, moveBounds.width, snapThreshold) : null;
+      var snapY = snapThreshold > 0 ? resolveSnapGuide(desiredTop, moveHeight, moveBounds.height, snapThreshold) : null;
 
       if (snapX) {
         nextLeft = snapX.start - freeMoveState.anchorLeft;
@@ -3231,16 +3738,31 @@ export function buildEditorRuntime(): string {
       if (snapY) {
         nextTop = snapY.start - freeMoveState.anchorTop;
       }
-      nextLeft = clampValue(
-        nextLeft,
-        -freeMoveState.anchorLeft,
-        Math.max(-freeMoveState.anchorLeft, moveBounds.width - (freeMoveState.anchorLeft + moveWidth))
-      );
-      nextTop = clampValue(
-        nextTop,
-        -freeMoveState.anchorTop,
-        Math.max(-freeMoveState.anchorTop, moveBounds.height - (freeMoveState.anchorTop + moveHeight))
-      );
+      if (touchEditParity) {
+        var paddingX = Math.max(64, moveBounds.width * 0.12);
+        var paddingY = Math.max(64, moveBounds.height * 0.12);
+        nextLeft = clampValue(
+          nextLeft,
+          -freeMoveState.anchorLeft - paddingX,
+          Math.max(-freeMoveState.anchorLeft, moveBounds.width - (freeMoveState.anchorLeft + moveWidth) + paddingX)
+        );
+        nextTop = clampValue(
+          nextTop,
+          -freeMoveState.anchorTop - paddingY,
+          Math.max(-freeMoveState.anchorTop, moveBounds.height - (freeMoveState.anchorTop + moveHeight) + paddingY)
+        );
+      } else {
+        nextLeft = clampValue(
+          nextLeft,
+          -freeMoveState.anchorLeft,
+          Math.max(-freeMoveState.anchorLeft, moveBounds.width - (freeMoveState.anchorLeft + moveWidth))
+        );
+        nextTop = clampValue(
+          nextTop,
+          -freeMoveState.anchorTop,
+          Math.max(-freeMoveState.anchorTop, moveBounds.height - (freeMoveState.anchorTop + moveHeight))
+        );
+      }
       var actualLeft = freeMoveState.anchorLeft + nextLeft;
       var actualTop = freeMoveState.anchorTop + nextTop;
       var guideX = snapX && Math.abs(actualLeft - snapX.start) <= 0.5 ? snapX.guide : null;
@@ -3248,13 +3770,29 @@ export function buildEditorRuntime(): string {
       applyFreeMoveTransform(freeMoveState.el, nextLeft, nextTop);
       selectedEl = freeMoveState.el;
       hoverBox.style.display = "none";
-      placeSelectionBox(freeMoveState.el);
-      placeMoveHitBox(freeMoveState.el);
-      placeToolbar(freeMoveState.el);
-      placeResizeHandle(freeMoveState.el);
-      updateMoveFeedback(moveRoot, actualLeft, actualTop, moveWidth, moveHeight, guideX, guideY);
-      syncMoveUi();
+      if (touchEditParity) {
+        selBox.style.display = "none";
+        moveHitBox.style.display = "none";
+        resizeHandle.style.display = "none";
+        selToolbar.style.display = "none";
+        hideMoveFeedback();
+      } else {
+        placeSelectionBox(freeMoveState.el);
+        placeMoveHitBox(freeMoveState.el);
+        placeToolbar(freeMoveState.el);
+        placeResizeHandle(freeMoveState.el);
+        updateMoveFeedback(moveRoot, actualLeft, actualTop, moveWidth, moveHeight, guideX, guideY);
+        syncMoveUi();
+      }
       return true;
+    }
+    if (isRuntimeUiTarget(target)) {
+      hoverBox.style.display = "none";
+      return false;
+    }
+    if (touchEditParity) {
+      hoverBox.style.display = "none";
+      return false;
     }
     if (editingEl) return;
     var el = getSelectionTargetFromPoint(clientX, clientY, target);
@@ -3272,9 +3810,14 @@ export function buildEditorRuntime(): string {
   });
 
   document.addEventListener("touchmove", function (event) {
+    var touchEditParity = isTouchEditParityMode();
+    if (touchEditParity && !freeMoveState && !resizeState) return;
     var point = getEventClientPoint(event);
     if (!point) return;
-    var handled = handleCanvasPointerMove(point.x, point.y, event.target, 1, true, point.id);
+    if (touchEditParity) {
+      lastTouchGestureMoveTs = Date.now();
+    }
+    var handled = handleCanvasPointerMove(point.x, point.y, event.target, 1, !touchEditParity, point.id);
     if (handled) {
       stopGestureEvent(event);
     }
@@ -3283,6 +3826,16 @@ export function buildEditorRuntime(): string {
     if (!isNonMousePointerEvent(event)) return;
     var point = getEventClientPoint(event);
     if (!point) return;
+    if (
+      isTouchEditParityMode() &&
+      (freeMoveState || resizeState) &&
+      event.pointerType === "touch" &&
+      activeTouchId != null &&
+      point.id === activeTouchId &&
+      Date.now() - lastTouchGestureMoveTs < 80
+    ) {
+      return;
+    }
     var handled = handleCanvasPointerMove(point.x, point.y, event.target, 1, true, point.id);
     if (handled) {
       stopGestureEvent(event);
@@ -3374,6 +3927,28 @@ export function buildEditorRuntime(): string {
       abortActiveInteraction();
     }
   }, true);
+
+  function bindParentInteractionRelease() {
+    try {
+      var parentWindow = window.parent;
+      if (!parentWindow || parentWindow === window) return;
+      var parentDoc = parentWindow.document;
+      if (!parentDoc || parentDoc.__heEditorReleaseBound) return;
+      parentDoc.__heEditorReleaseBound = true;
+      var release = function () {
+        if (freeMoveState || resizeState) {
+          abortActiveInteraction();
+        }
+      };
+      parentDoc.addEventListener("mouseup", release, true);
+      parentDoc.addEventListener("touchend", release, true);
+      parentDoc.addEventListener("touchcancel", release, true);
+      parentDoc.addEventListener("pointerup", release, true);
+      parentDoc.addEventListener("pointercancel", release, true);
+    } catch (_err) {}
+  }
+
+  bindParentInteractionRelease();
 
   document.addEventListener("click", function (event) {
     if (editingEl) return;
@@ -3622,7 +4197,7 @@ export function buildEditorRuntime(): string {
           setFreeMove(null);
           freeMoveState = null;
           hideSelectionUi();
-          emitToParent({ __editor_select: true, info: null });
+          emitToParent({ __editor_select: true, info: null, rect: null });
         }
       }
     }
@@ -3701,9 +4276,36 @@ export function buildEditorRuntime(): string {
       enableDrag();
     }
 
+    if (data.cmd === "toggle_multi_select") {
+      multiSelectMode = !multiSelectMode;
+      if (multiSelectMode) {
+        setMultiSelection(selectedEl ? [selectedEl] : []);
+      } else {
+        clearMultiSelection();
+        if (freeMoveIsGroup) {
+          setFreeMove(null, false);
+          freeMoveState = null;
+        }
+      }
+      refreshSelectionUi();
+    }
+
+    if (data.cmd === "toggle_free_move" && selectedEl) {
+      toggleFreeMove();
+    }
+
+    if (data.cmd === "edit_selected" && selectedEl) {
+      var editStarted = beginInlineEdit(selectedEl);
+      if (!editStarted || isTouchEditParityMode()) {
+        emitToParent({ __editor_open_inspector: true });
+      }
+    }
+
     if (data.cmd === "highlight" && el) {
       selectElement(el);
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (!isTouchEditParityMode()) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
     }
 
     if (data.cmd === "move_up" && el) {

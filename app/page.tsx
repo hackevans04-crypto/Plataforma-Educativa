@@ -84,10 +84,17 @@ export default function Home() {
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   const handleNavigate = (section: string) => {
+    const navbarOffset = 82
+    const scrollToElement = (element: HTMLElement) => {
+      const rect = element.getBoundingClientRect()
+      const y = window.pageYOffset + rect.top - navbarOffset
+      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" })
+    }
+
     const ref = sectionRefs.current[section]
-    if (ref) { ref.scrollIntoView({ behavior: "smooth" }); return }
+    if (ref) { scrollToElement(ref); return }
     const target = document.getElementById(section)
-    if (target) { target.scrollIntoView({ behavior: "smooth" }); return }
+    if (target) { scrollToElement(target); return }
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
@@ -174,7 +181,7 @@ export default function Home() {
   }
 
   return (
-    <main className="relative min-h-screen bg-transparent">
+    <main className="relative min-h-screen bg-transparent overflow-x-hidden">
       <AnimatedBackground className="fixed inset-0 z-0" />
       <div className="relative z-10">
         <Navbar
@@ -187,8 +194,8 @@ export default function Home() {
         />
         {config.sections.map(renderSection)}
         <Footer />
-        <LandingPopupHost popup={activePopup} onClose={closePopup} onAction={executeAction} fallbackSubmitAction={pendingPopupSubmitAction} />
       </div>
+      <LandingPopupHost popup={activePopup} onClose={closePopup} onAction={executeAction} fallbackSubmitAction={pendingPopupSubmitAction} />
     </main>
   )
 }

@@ -277,6 +277,23 @@
   pointer-events: none;
 }
 
+html, body {
+  min-height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+body {
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+main {
+  min-height: 100vh;
+}
+
 .animated-bg__mesh {
   position: absolute;
   inset: 0;
@@ -498,6 +515,25 @@
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
+}
+
+/* Studio canvas scrollbars (horizontal + vertical) */
+[data-he-studio-scroll-root="1"]::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+[data-he-studio-scroll-root="1"]::-webkit-scrollbar-track {
+  background: #040912;
+}
+[data-he-studio-scroll-root="1"]::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+}
+[data-he-studio-scroll-root="1"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.28);
+}
+[data-he-studio-scroll-root="1"]::-webkit-scrollbar-corner {
+  background: #040912;
 }
 
 ::-webkit-scrollbar-track {

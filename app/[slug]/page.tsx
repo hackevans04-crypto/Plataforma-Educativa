@@ -27,7 +27,7 @@ export default function DynamicCMSPage({ params }: { params: { slug: string } })
 
   if (isLoading) {
     return (
-      <main className="relative min-h-screen bg-transparent">
+      <main className="relative min-h-screen flex flex-col bg-transparent overflow-x-hidden">
         <AnimatedBackground className="fixed inset-0 z-0" />
         <div className="relative z-10 flex min-h-screen items-center justify-center">
           <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-primary" />
@@ -38,9 +38,9 @@ export default function DynamicCMSPage({ params }: { params: { slug: string } })
 
   if (!page) {
     return (
-      <main className="relative min-h-screen bg-transparent">
+      <main className="relative min-h-screen flex flex-col bg-transparent overflow-x-hidden">
         <AnimatedBackground className="fixed inset-0 z-0" />
-        <div className="relative z-10">
+        <div className="relative z-10 flex-1">
           <Navbar onLoginClick={openLogin} onRegisterClick={openRegister} />
           <section className="px-6 py-24 lg:px-12">
             <div className="mx-auto max-w-3xl rounded-3xl border border-border bg-card/80 p-10 text-center backdrop-blur-xl">
@@ -58,14 +58,14 @@ export default function DynamicCMSPage({ params }: { params: { slug: string } })
               </button>
             </div>
           </section>
-          <Footer />
         </div>
+        <Footer />
       </main>
     )
   }
 
   return (
-    <main className="relative min-h-screen bg-transparent">
+    <main className="relative min-h-screen bg-transparent overflow-x-hidden">
       <AnimatedBackground className="fixed inset-0 z-0" />
       <div className="relative z-10">
         <Navbar onLoginClick={openLogin} onRegisterClick={openRegister} />

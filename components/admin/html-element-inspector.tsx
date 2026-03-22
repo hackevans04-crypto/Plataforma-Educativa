@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import type { EditorCommand, EditorElementInfo } from "./html-editor-bridge"
+import type { EditorCommand, EditorElementInfo, EditorTypographyTargetInfo } from "./html-editor-bridge"
 import { IconPicker } from "./icon-picker"
 import {
   EMOJI_ICON_MAP,
@@ -10,15 +10,16 @@ import {
   findKnownEmojis,
   findSiteIconsInHtml,
   replaceFirstIconInHtmlFragment,
-  replaceKnownEmojisInHtmlFragment,
   renderSiteIconHtml,
   type SiteIconName,
 } from "@/lib/site-icon-registry"
+import { TYPOGRAPHY_FONT_GROUPS, TYPOGRAPHY_FONT_OPTIONS, TYPOGRAPHY_SITE_FONT, type TypographyFontOption } from "@/lib/typography-fonts"
 
-type InspectorTab = "style" | "content" | "layers"
+type InspectorTab = "style" | "content" | "typography" | "layers"
+export type HtmlInspectorTab = InspectorTab
 type NodeKind = "image" | "button" | "field" | "icon" | "text" | "container"
 type InsertPlacement = "beforebegin" | "afterbegin" | "beforeend" | "afterend"
-type InspectorView = "full" | "style" | "content"
+type InspectorView = "full" | "style" | "content" | "typography"
 type QuickInsertTemplate = {
   group: string
   key: string
@@ -29,20 +30,57 @@ type QuickInsertTemplate = {
 const INSPECTOR_TABS = [
   { key: "content", label: "Contenido" },
   { key: "style", label: "Estilo" },
+  { key: "typography", label: "Tipografia" },
   { key: "layers", label: "Capas" },
 ] as const
 
 const CONTAINER_TAGS = new Set(["div", "section", "article", "main", "header", "footer", "aside", "nav", "form", "ul", "ol", "li", "table", "tbody", "thead", "tr", "td", "th"])
-const FONT_OPTIONS = [
-  { value: "var(--he-font-sans, 'Barlow', system-ui, sans-serif)", label: "Sitio" },
-  { value: "'Barlow', system-ui, sans-serif", label: "Barlow" },
-  { value: "'Space Grotesk', system-ui, sans-serif", label: "Space" },
-  { value: "'Merriweather', Georgia, serif", label: "Serif" },
-  { value: "'IBM Plex Mono', monospace", label: "Mono" },
-]
+const FONT_OPTIONS = TYPOGRAPHY_FONT_OPTIONS.map((option) => ({
+  value: option.value,
+  label: option.label,
+}))
+const TYPOGRAPHY_SIZE_PRESETS = [12, 14, 16, 18, 22, 28, 36, 48, 64] as const
+const TYPOGRAPHY_WEIGHT_PRESETS = [
+  { value: "300", label: "Light" },
+  { value: "400", label: "Regular" },
+  { value: "500", label: "Medium" },
+  { value: "600", label: "Semibold" },
+  { value: "700", label: "Bold" },
+  { value: "800", label: "Extra Bold" },
+] as const
+const TYPOGRAPHY_COLOR_SWATCHES = [
+  "#111111",
+  "#ffffff",
+  "#e8392a",
+  "#2563eb",
+  "#16a34a",
+  "#f59e0b",
+  "#7c3aed",
+  "#ec4899",
+] as const
 const PRESET_BUTTON_CLS = "rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-left text-sm leading-5 text-white transition-all hover:border-primary/35 hover:text-primary"
+const MOBILE_COLOR_SWATCHES = [
+  "#ffffff",
+  "#e8392a",
+  "#2563eb",
+  "#22c55e",
+  "#f59e0b",
+  "#a855f7",
+  "#0f172a",
+  "#000000",
+] as const
+const TYPOGRAPHY_RECENT_FONTS_STORAGE_KEY = "he-typography-recent-fonts"
 
 function toHex(css: string) {
+  const directHex = normalizeHex(css)
+  if (directHex) return directHex
+  const variableFallback = css.match(/var\([^,]+,\s*([^)]+)\)/i)
+  if (variableFallback?.[1]) {
+    return toHex(variableFallback[1].trim())
+  }
+  const namedColor = css.trim().toLowerCase()
+  if (namedColor === "white") return "#ffffff"
+  if (namedColor === "black") return "#000000"
   const match = css.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
   if (!match) return "#000000"
   return "#" + [match[1], match[2], match[3]].map((value) => parseInt(value, 10).toString(16).padStart(2, "0")).join("")
@@ -82,6 +120,35 @@ function isTransparent(css: string) {
 
 function parsePx(css: string) {
   return parseFloat(css) || 0
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function parseLineHeightRatio(value: string, fontSize: number) {
+  if (!value || value === "normal") return 1.4
+  const raw = parseFloat(value)
+  if (!Number.isFinite(raw) || raw <= 0) return 1.4
+  if (String(value).trim().toLowerCase().endsWith("px") && fontSize > 0) {
+    return raw / fontSize
+  }
+  return raw
+}
+
+function parseLetterSpacingPx(value: string, fontSize: number) {
+  if (!value || value === "normal") return 0
+  const raw = parseFloat(value)
+  if (!Number.isFinite(raw)) return 0
+  const normalized = String(value).trim().toLowerCase()
+  if (normalized.endsWith("em")) return raw * fontSize
+  if (normalized.endsWith("rem")) return raw * 16
+  return raw
+}
+
+function formatTypographyValue(value: number, digits = 1) {
+  const rounded = Number(value.toFixed(digits))
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(digits)
 }
 
 function getFieldCurrentValue(element: EditorElementInfo | null) {
@@ -244,6 +311,47 @@ function detectNodeKind(element: EditorElementInfo | null) {
   }
   if (element.isText || looksLikeTextContainer(element)) return "text" as NodeKind
   return "container" as NodeKind
+}
+
+type TypographyEditableNode = EditorElementInfo | EditorTypographyTargetInfo
+
+function detectTypographyNodeKind(element: TypographyEditableNode | null): NodeKind {
+  if (!element) return "container"
+  const explicit = (element as { nodeType?: string | null }).nodeType
+  if (explicit && ["image", "button", "field", "icon", "text", "container"].includes(explicit)) {
+    return explicit as NodeKind
+  }
+  const tag = String(element.tag || "").toLowerCase()
+  if (tag === "img") return "image"
+  if (["input", "textarea", "select"].includes(tag)) return "field"
+  if ("isActionable" in element && element.isActionable) return "button"
+  if (looksLikeIconElement(element as EditorElementInfo | null)) return "icon"
+  if ("isText" in element && element.isText) return "text"
+  return "container"
+}
+
+function getTypographyTargetTextValue(element: TypographyEditableNode | null) {
+  if (!element) return ""
+  if (element.tag === "textarea") return String(element.text || "")
+  if (["input", "select"].includes(element.tag)) {
+    return String(element.attrs?.value || element.attrs?.placeholder || "")
+  }
+  return String(element.text || "").replace(/\s+/g, " ").trim()
+}
+
+function buildSelfTypographyTarget(element: EditorElementInfo | null, nodeKind: NodeKind): EditorTypographyTargetInfo | null {
+  if (!element || !element.eid) return null
+  if (!["text", "button", "field", "icon"].includes(nodeKind)) return null
+  return {
+    eid: element.eid,
+    nodeType: nodeKind as EditorTypographyTargetInfo["nodeType"],
+    tag: element.tag,
+    label: formatLayerTitle(element.tag, getTypographyTargetTextValue(element), element.id === "he-import-root"),
+    text: element.text,
+    classes: element.classes,
+    attrs: { ...element.attrs },
+    styles: { ...element.styles },
+  }
 }
 
 function getQuickInsertTemplates(): QuickInsertTemplate[] {
@@ -440,6 +548,124 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
+function StyleCard({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ background: "#1a1a1a", border: "0.5px solid #242424", borderRadius: 12, padding: "13px 13px 12px" }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#ccc", marginBottom: 13, display: "flex", alignItems: "center", gap: 7 }}>
+        <span style={{ width: 20, height: 20, borderRadius: 6, background: "#242424", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, flexShrink: 0 }}>{icon}</span>
+        {title}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
+    </div>
+  )
+}
+
+function StyleLabel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".08em", color: "#555", textTransform: "uppercase" as const, marginBottom: 5, marginTop: 0, ...style }}>{children}</p>
+}
+
+function StyleSlider({ min, max, value, unit = "px", onChange }: { min: number; max: number; value: number; unit?: string; onChange: (n: number) => void }) {
+  const clamped = Math.max(min, Math.min(max, value))
+  const pct = max > min ? Math.round(((clamped - min) / (max - min)) * 100) : 0
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ flex: 1, position: "relative", height: 4, background: "#242424", borderRadius: 2 }}>
+        <div style={{ position: "absolute", top: 0, left: 0, height: 4, width: `${pct}%`, background: "#E84040", borderRadius: 2, pointerEvents: "none" }} />
+        <input
+          type="range" min={min} max={max} value={clamped}
+          onChange={e => onChange(Number(e.target.value))}
+          style={{ position: "absolute", top: -4, left: 0, width: "100%", height: 12, background: "transparent", outline: "none", cursor: "pointer", WebkitAppearance: "none", appearance: "none" as React.CSSProperties["appearance"] }}
+        />
+      </div>
+      <span style={{ fontSize: 11, fontWeight: 600, color: "#888", minWidth: 34, textAlign: "right" as const }}>{clamped}{unit}</span>
+    </div>
+  )
+}
+
+function StyleChips({ items, active, onPick }: { items: { label: string; val: string }[]; active: string; onPick: (v: string) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 5 }}>
+      {items.map(o => (
+        <button key={o.val} type="button" onClick={() => onPick(o.val)} style={{
+          flex: 1, border: `0.5px solid ${active === o.val ? "#E84040" : "#2a2a2a"}`,
+          borderRadius: 7, padding: "6px 0", fontSize: 11, textAlign: "center" as const,
+          cursor: "pointer", background: active === o.val ? "#E84040" : "#111",
+          color: active === o.val ? "#fff" : "#666", transition: "all .12s", fontFamily: "inherit",
+        }}>{o.label}</button>
+      ))}
+    </div>
+  )
+}
+
+function StyleReset({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} style={{ width: "100%", background: "transparent", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: 9, fontSize: 11, color: "#666", cursor: "pointer", fontFamily: "inherit", transition: "all .15s", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+      {children}
+    </button>
+  )
+}
+
+function StyleHAlignIcon({ type }: { type: string }) {
+  if (type === "center") return (
+    <svg width="13" height="10" viewBox="0 0 13 10" fill="none">
+      <rect x="0" y="0" width="13" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="2" y="4" width="9" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="1" y="8" width="11" height="1.5" rx="0.75" fill="currentColor" />
+    </svg>
+  )
+  if (type === "flex-end") return (
+    <svg width="13" height="10" viewBox="0 0 13 10" fill="none">
+      <rect x="3" y="0" width="10" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="5" y="4" width="8" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="1" y="8" width="12" height="1.5" rx="0.75" fill="currentColor" />
+    </svg>
+  )
+  if (type === "space-between") return (
+    <svg width="13" height="10" viewBox="0 0 13 10" fill="none">
+      <rect x="0" y="2" width="4" height="6" rx="1" fill="currentColor" />
+      <rect x="9" y="2" width="4" height="6" rx="1" fill="currentColor" />
+    </svg>
+  )
+  return (
+    <svg width="13" height="10" viewBox="0 0 13 10" fill="none">
+      <rect x="0" y="0" width="10" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="0" y="4" width="8" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="0" y="8" width="12" height="1.5" rx="0.75" fill="currentColor" />
+    </svg>
+  )
+}
+
+function StyleVAlignIcon({ type }: { type: string }) {
+  if (type === "center") return (
+    <svg width="10" height="13" viewBox="0 0 10 13" fill="none">
+      <rect x="0" y="0" width="10" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="1" y="4" width="8" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="0" y="8" width="10" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="1" y="11.5" width="8" height="1.5" rx="0.75" fill="currentColor" />
+    </svg>
+  )
+  if (type === "flex-end") return (
+    <svg width="10" height="13" viewBox="0 0 10 13" fill="none">
+      <rect x="1" y="0" width="8" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="2" y="4" width="6" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="0" y="11.5" width="10" height="1.5" rx="0.75" fill="currentColor" />
+    </svg>
+  )
+  if (type === "stretch") return (
+    <svg width="10" height="13" viewBox="0 0 10 13" fill="none">
+      <rect x="0" y="0" width="10" height="13" rx="1.5" fill="currentColor" opacity="0.25" />
+      <rect x="2" y="3" width="6" height="7" rx="1" fill="currentColor" />
+    </svg>
+  )
+  return (
+    <svg width="10" height="13" viewBox="0 0 10 13" fill="none">
+      <rect x="0" y="0" width="10" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="1" y="4" width="8" height="1.5" rx="0.75" fill="currentColor" />
+      <rect x="2" y="8" width="6" height="1.5" rx="0.75" fill="currentColor" />
+    </svg>
+  )
+}
+
 function FieldInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
@@ -474,16 +700,78 @@ function ColorPicker({
   displayValue?: string
 }) {
   const hex = displayValue || (isTransparent(value) ? "#000000" : toHex(value))
+  const [mobileFriendlyPicker, setMobileFriendlyPicker] = React.useState(false)
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return
+    const media = window.matchMedia("(pointer: coarse), (max-width: 820px)")
+    const sync = () => setMobileFriendlyPicker(media.matches)
+    sync()
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", sync)
+      return () => media.removeEventListener("change", sync)
+    }
+    media.addListener(sync)
+    return () => media.removeListener(sync)
+  }, [])
+
+  if (mobileFriendlyPicker) {
+    const swatches = Array.from(new Set([hex.toLowerCase(), ...MOBILE_COLOR_SWATCHES]))
+    return (
+      <div className="space-y-2" data-he-mobile-drawer-lock="1" data-he-mobile-drawer-interactive="1">
+        <div className="grid grid-cols-4 gap-2">
+          {swatches.map((swatch) => {
+            const active = swatch.toLowerCase() === hex.toLowerCase()
+            return (
+              <button
+                key={swatch}
+                type="button"
+                data-he-mobile-drawer-lock="1"
+                data-he-mobile-drawer-interactive="1"
+                onClick={() => onChange(swatch)}
+                className={cn(
+                  "h-9 rounded-xl border transition-all",
+                  active ? "border-primary shadow-[0_0_0_1px_rgba(232,57,42,0.35)]" : "border-white/10 hover:border-primary/35"
+                )}
+                style={{ backgroundColor: swatch }}
+                aria-label={`Color ${swatch}`}
+              />
+            )
+          })}
+        </div>
+        <FieldInput
+          value={hex}
+          inputMode="text"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          data-he-mobile-drawer-lock="1"
+          data-he-mobile-drawer-interactive="1"
+          onChange={(event) => onChange(event.target.value)}
+          className="h-9 px-3 text-[11px]"
+        />
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5" data-he-mobile-drawer-lock="1" data-he-mobile-drawer-interactive="1">
       <input
         type="color"
+        data-he-mobile-drawer-lock="1"
+        data-he-mobile-drawer-interactive="1"
         className="h-7 w-7 cursor-pointer rounded border border-white/10 bg-transparent"
         value={hex}
         onInput={(event) => onChange((event.target as HTMLInputElement).value)}
         onChange={(event) => onChange(event.target.value)}
       />
-      <FieldInput value={hex} onChange={(event) => onChange(event.target.value)} className="h-8 min-w-[120px] flex-1 px-2 text-[11px]" />
+      <FieldInput
+        value={hex}
+        data-he-mobile-drawer-lock="1"
+        data-he-mobile-drawer-interactive="1"
+        onChange={(event) => onChange(event.target.value)}
+        className="h-8 min-w-[120px] flex-1 px-2 text-[11px]"
+      />
       {isTransparent(value) ? <span className="text-[9px] text-white/25">auto</span> : null}
     </div>
   )
@@ -504,7 +792,40 @@ function Slider({
   step?: number
   unit?: string
 }) {
-  const number = parsePx(value)
+  const externalNumber = parsePx(value)
+  const [localValue, setLocalValue] = React.useState(externalNumber)
+  const dragging = React.useRef(false)
+  const rafId = React.useRef<number | null>(null)
+  const pending = React.useRef<string | null>(null)
+  // Always keep latest onChange in a ref to avoid stale-closure bugs
+  const onChangeRef = React.useRef(onChange)
+  React.useLayoutEffect(() => { onChangeRef.current = onChange })
+
+  // Sync from parent only when not dragging
+  React.useEffect(() => {
+    if (!dragging.current) setLocalValue(externalNumber)
+  }, [externalNumber])
+
+  // Cleanup RAF on unmount
+  React.useEffect(() => () => { if (rafId.current !== null) cancelAnimationFrame(rafId.current) }, [])
+
+  const flush = () => {
+    if (pending.current !== null) {
+      onChangeRef.current(pending.current)
+      pending.current = null
+    }
+    rafId.current = null
+  }
+
+  const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const raw = (e.target as HTMLInputElement).value
+    setLocalValue(parseFloat(raw))
+    pending.current = `${raw}${unit}`
+    if (rafId.current === null) rafId.current = requestAnimationFrame(flush)
+  }
+
+  const display = unit === "px" ? Math.round(localValue) : Math.round(localValue * 10) / 10
+
   return (
     <div className="flex items-center gap-2">
       <input
@@ -513,13 +834,18 @@ function Slider({
         max={max}
         step={step}
         className="h-1 flex-1 accent-primary"
-        value={number}
-        onInput={(event) => onChange(`${(event.target as HTMLInputElement).value}${unit}`)}
-        onChange={(event) => onChange(`${event.target.value}${unit}`)}
+        value={localValue}
+        onInput={handleInput}
+        onChange={() => { /* controlled via onInput */ }}
+        onPointerDown={() => { dragging.current = true }}
+        onPointerUp={() => {
+          dragging.current = false
+          if (rafId.current !== null) { cancelAnimationFrame(rafId.current); rafId.current = null }
+          flush()
+        }}
       />
       <span className="w-12 text-right text-[10px] tabular-nums text-white/45">
-        {number}
-        {unit}
+        {display}{unit}
       </span>
     </div>
   )
@@ -559,27 +885,86 @@ function OptionGroup({
   )
 }
 
+function TypographyMetricSlider({
+  value,
+  min,
+  max,
+  step,
+  leftLabel,
+  rightLabel,
+  display,
+  onChange,
+}: {
+  value: number
+  min: number
+  max: number
+  step: number
+  leftLabel: string
+  rightLabel: string
+  display: string
+  onChange: (value: number) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <span className="w-12 text-[10px] font-medium text-white/32">{leftLabel}</span>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onInput={(event) => onChange(parseFloat((event.target as HTMLInputElement).value))}
+          onChange={(event) => onChange(parseFloat(event.target.value))}
+          className="h-1 flex-1 accent-primary"
+        />
+        <span className="w-12 text-right text-[10px] font-medium text-white/32">{rightLabel}</span>
+      </div>
+      <div className="text-right text-[11px] font-semibold tabular-nums text-white/62">{display}</div>
+    </div>
+  )
+}
+
+function TextAlignGlyph({ value }: { value: "left" | "center" | "right" | "justify" }) {
+  const top = value === "left" ? [0, 16] : value === "center" ? [3, 13] : value === "right" ? [6, 16] : [0, 16]
+  const middle = value === "left" ? [0, 16] : value === "center" ? [0, 16] : value === "right" ? [0, 16] : [0, 16]
+  const bottom = value === "left" ? [0, 13] : value === "center" ? [1.5, 14.5] : value === "right" ? [3, 16] : [0, 16]
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d={`M${top[0]} 4h${top[1] - top[0]}`} />
+      <path d={`M${middle[0]} 8h${middle[1] - middle[0]}`} />
+      <path d={`M${bottom[0]} 12h${bottom[1] - bottom[0]}`} />
+    </svg>
+  )
+}
+
 function InspectorTabButton({
   active,
   children,
   onClick,
+  onPointerDown,
+  onTouchStart,
 }: {
   active: boolean
   children: React.ReactNode
   onClick: () => void
+  onPointerDown?: React.PointerEventHandler<HTMLButtonElement>
+  onTouchStart?: React.TouchEventHandler<HTMLButtonElement>
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      onPointerDown={onPointerDown}
+      onTouchStart={onTouchStart}
       className={cn(
-        "flex-1 rounded-xl px-3 py-2 text-xs font-semibold transition-all",
+        "touch-manipulation flex-1 rounded-xl px-3 py-2 text-xs font-semibold transition-all",
         active
           ? "bg-white text-slate-950 shadow-sm"
           : "bg-transparent text-white/35 hover:bg-white/5 hover:text-white"
       )}
     >
-      {children}
+      <span>{children}</span>
     </button>
   )
 }
@@ -590,10 +975,31 @@ interface Props {
   iframeRef: React.RefObject<HTMLIFrameElement>
   onClose: () => void
   view?: InspectorView
+  showCloseButton?: boolean
+  onActiveTabChange?: (tab: InspectorTab) => void
 }
 
-export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, view = "full" }: Props) {
+export function HtmlElementInspector({
+  element,
+  isEditing,
+  iframeRef,
+  onClose,
+  view = "full",
+  showCloseButton = true,
+  onActiveTabChange,
+}: Props) {
   const [tab, setTab] = useState<InspectorTab>("content")
+  const [isTouchInspectorLayout, setIsTouchInspectorLayout] = useState(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false
+    return window.matchMedia("(pointer: coarse), (max-width: 820px)").matches
+  })
+  const [typographyDraft, setTypographyDraft] = useState<Record<string, string>>({})
+  const [typographyTargetEid, setTypographyTargetEid] = useState("")
+  const [fontSizeMode, setFontSizeMode] = useState<"preset" | "custom">("preset")
+  const [customFontSize, setCustomFontSize] = useState("")
+  const [fontSearchQuery, setFontSearchQuery] = useState("")
+  const [fontSelectorOpen, setFontSelectorOpen] = useState(false)
+  const [recentFontValues, setRecentFontValues] = useState<string[]>([])
   const [localText, setLocalText] = useState("")
   const [localHref, setLocalHref] = useState("")
   const [localTarget, setLocalTarget] = useState("")
@@ -616,7 +1022,6 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
   const [localAlt, setLocalAlt] = useState("")
   const [localTitle, setLocalTitle] = useState("")
   const [dragOn, setDragOn] = useState(false)
-  const [iconMode, setIconMode] = useState<"replace" | "prepend">("replace")
   const [insertPlacement, setInsertPlacement] = useState<InsertPlacement>("beforeend")
   const [customInsertHtml, setCustomInsertHtml] = useState("")
   const [iconImageSrc, setIconImageSrc] = useState("")
@@ -627,11 +1032,19 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
   const actionSectionRef = useRef<HTMLDivElement>(null)
   const insertSectionRef = useRef<HTMLDivElement>(null)
   const layersSectionRef = useRef<HTMLDivElement>(null)
+  const typographySectionRef = useRef<HTMLDivElement>(null)
   const containerContentRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const iconImageInputRef = useRef<HTMLInputElement>(null)
   const insertImageInputRef = useRef<HTMLInputElement>(null)
   const iconSectionRef = useRef<HTMLDivElement>(null)
+  const typographyColorInputRef = useRef<HTMLInputElement>(null)
+  const lastAutoTabSelectionRef = useRef<string | null>(null)
+  const manualTabSelectionRef = useRef<{ selectionKey: string | null; tab: InspectorTab | null }>({
+    selectionKey: null,
+    tab: null,
+  })
+  const lastTouchActionRef = useRef<{ key: string; at: number }>({ key: "", at: 0 })
 
   const nodeKind = useMemo(() => detectNodeKind(element), [element])
   const isImportRoot = element?.id === "he-import-root"
@@ -642,6 +1055,8 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
       ? "style"
       : view === "content"
         ? "content"
+        : view === "typography"
+          ? "typography"
         : null
   const activeTab = lockedTab ?? tab
   const detectedEmojis = useMemo(() => findKnownEmojis(`${element?.text || ""} ${element?.html || ""}`), [element?.text, element?.html])
@@ -651,7 +1066,7 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
     () => Array.from(new Set([...(currentIcon ? [currentIcon] : []), ...existingIcons])),
     [currentIcon, existingIcons]
   )
-  const supportsIconTools = nodeKind === "button" || nodeKind === "text" || nodeKind === "icon"
+  const hasDetectedIconContext = nodeKind === "icon" || detectedEmojis.length > 0 || visibleIconRefs.length > 0
   const canInsertInside = !!element && CONTAINER_TAGS.has(element.tag)
   const quickInsertTemplates = useMemo(() => getQuickInsertTemplates(), [])
   const selectOptionEntries = useMemo(() => parseSelectOptionEntries(localSelectOptions), [localSelectOptions])
@@ -661,6 +1076,103 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
   const supportsAutocomplete = !!element && (element.tag === "input" || element.tag === "textarea")
   const supportsNumericRange = !!element && element.tag === "input" && ["number", "date", "time", "month", "week"].includes(activeFieldType)
   const supportsRows = !!element && element.tag === "textarea"
+  const supportsTypography = nodeKind === "text" || nodeKind === "button" || nodeKind === "field" || nodeKind === "icon"
+  const nestedTypographyTargets = useMemo(
+    () => (!supportsTypography ? (element?.typographyTargets ?? []).filter((target) => !!target?.eid) : []),
+    [element?.typographyTargets, supportsTypography]
+  )
+  const activeTypographyElement = useMemo<TypographyEditableNode | null>(() => {
+    if (supportsTypography) {
+      return buildSelfTypographyTarget(element, nodeKind)
+    }
+    if (!nestedTypographyTargets.length) return null
+    return nestedTypographyTargets.find((target) => target.eid === typographyTargetEid) ?? nestedTypographyTargets[0] ?? null
+  }, [element, nestedTypographyTargets, nodeKind, supportsTypography, typographyTargetEid])
+  const activeTypographyKind = detectTypographyNodeKind(activeTypographyElement)
+  const canRenderTypographyPanel = !!activeTypographyElement
+
+  const currentSelectionKey = view === "full" && element?.eid ? element.eid : null
+
+  const updateInspectorTab = useCallback(
+    (nextTab: InspectorTab, options?: { manual?: boolean }) => {
+      if (options?.manual && currentSelectionKey) {
+        manualTabSelectionRef.current = { selectionKey: currentSelectionKey, tab: nextTab }
+        lastAutoTabSelectionRef.current = currentSelectionKey
+      }
+      setTab(nextTab)
+    },
+    [currentSelectionKey]
+  )
+
+  const runTouchSafeAction = useCallback((key: string, action: () => void, source: "click" | "press") => {
+    const now = Date.now()
+    const lastAction = lastTouchActionRef.current
+    if (source === "click" && lastAction.key === key && now - lastAction.at < 700) {
+      return
+    }
+    if (source === "press") {
+      if (lastAction.key === key && now - lastAction.at < 350) {
+        return
+      }
+      lastTouchActionRef.current = { key, at: now }
+    }
+    action()
+  }, [])
+
+  const getTouchSafeButtonProps = useCallback(
+    (key: string, action: () => void) => ({
+      onClick: () => runTouchSafeAction(key, action, "click"),
+      onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
+        if (!isTouchInspectorLayout || event.pointerType !== "touch") return
+        event.preventDefault()
+        event.stopPropagation()
+        runTouchSafeAction(key, action, "press")
+      },
+      onTouchStart: (event: React.TouchEvent<HTMLButtonElement>) => {
+        if (!isTouchInspectorLayout) return
+        event.preventDefault()
+        event.stopPropagation()
+        runTouchSafeAction(key, action, "press")
+      },
+    }),
+    [isTouchInspectorLayout, runTouchSafeAction]
+  )
+
+  const rememberRecentFont = useCallback((fontValue: string) => {
+    setRecentFontValues((current) => {
+      const next = [fontValue, ...current.filter((value) => value !== fontValue)].slice(0, 3)
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(TYPOGRAPHY_RECENT_FONTS_STORAGE_KEY, JSON.stringify(next))
+      }
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return
+    const media = window.matchMedia("(pointer: coarse), (max-width: 820px)")
+    const sync = () => setIsTouchInspectorLayout(media.matches)
+    sync()
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", sync)
+      return () => media.removeEventListener("change", sync)
+    }
+    media.addListener(sync)
+    return () => media.removeListener(sync)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      const stored = window.localStorage.getItem(TYPOGRAPHY_RECENT_FONTS_STORAGE_KEY)
+      if (!stored) return
+      const parsed = JSON.parse(stored)
+      if (!Array.isArray(parsed)) return
+      setRecentFontValues(parsed.filter((value): value is string => typeof value === "string").slice(0, 3))
+    } catch {
+      // Ignore invalid persisted state.
+    }
+  }, [])
 
   useEffect(() => {
     setLocalText(element?.text ?? "")
@@ -685,8 +1197,10 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
     setLocalAlt(element?.attrs?.alt ?? "")
     setLocalTitle(element?.attrs?.title ?? "")
     setIconImageSrc("")
-    setIconMode(treatsAsButton && existingIcons.length === 0 && detectedEmojis.length === 0 ? "prepend" : "replace")
     setInsertPlacement(canInsertInside ? "beforeend" : "afterend")
+    setTypographyTargetEid("")
+    setTypographyDraft({})
+    setFontSearchQuery("")
   }, [
     element?.eid,
     element?.text,
@@ -709,22 +1223,53 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
     element?.attrs?.src,
     element?.attrs?.alt,
     element?.attrs?.title,
+    element?.styles.fontSize,
+    element?.styles.width,
     element?.html,
     existingIcons.length,
     detectedEmojis.length,
     canInsertInside,
-    treatsAsButton,
   ])
 
   useEffect(() => {
+    const targetStyles = activeTypographyElement?.styles
+    const nextFontSize = Math.round(parsePx(targetStyles?.fontSize || targetStyles?.width || "16px") || 16)
+    setTypographyDraft({})
+    setCustomFontSize(String(nextFontSize))
+    setFontSizeMode(TYPOGRAPHY_SIZE_PRESETS.includes(nextFontSize as (typeof TYPOGRAPHY_SIZE_PRESETS)[number]) ? "preset" : "custom")
+  }, [activeTypographyElement?.eid, activeTypographyElement?.styles.fontSize, activeTypographyElement?.styles.width])
+
+  useEffect(() => {
     if (lockedTab) {
-      setTab(lockedTab)
+      updateInspectorTab(lockedTab)
+      lastAutoTabSelectionRef.current = null
       return
     }
-    if (view === "full" && element?.eid) {
-      setTab("content")
+    if (view !== "full" || !element?.eid) {
+      lastAutoTabSelectionRef.current = null
+      manualTabSelectionRef.current = { selectionKey: null, tab: null }
+      return
     }
-  }, [element?.eid, lockedTab, view])
+    const selectionKey = currentSelectionKey
+    if (!selectionKey) return
+    if (
+      manualTabSelectionRef.current.selectionKey === selectionKey &&
+      manualTabSelectionRef.current.tab
+    ) {
+      setTab((current) =>
+        current === manualTabSelectionRef.current.tab ? current : manualTabSelectionRef.current.tab!
+      )
+      return
+    }
+    if (lastAutoTabSelectionRef.current === selectionKey) return
+    lastAutoTabSelectionRef.current = selectionKey
+    const canAutoOpenTypography = !isTouchInspectorLayout && (supportsTypography || nestedTypographyTargets.length > 0)
+    setTab(canAutoOpenTypography ? "typography" : "content")
+  }, [currentSelectionKey, element?.eid, isTouchInspectorLayout, lockedTab, nestedTypographyTargets.length, supportsTypography, updateInspectorTab, view])
+
+  useEffect(() => {
+    onActiveTabChange?.(activeTab)
+  }, [activeTab, onActiveTabChange])
 
   useEffect(() => {
     if (view !== "full") return
@@ -732,6 +1277,8 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
       const target =
         activeTab === "layers"
           ? layersSectionRef.current
+          : activeTab === "typography"
+            ? typographySectionRef.current
           : activeTab === "style"
             ? rootRef.current
             : nodeKind === "icon"
@@ -755,10 +1302,20 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
     iframeRef.current?.contentWindow?.postMessage(command, "*")
   }, [iframeRef])
 
-  const style = (prop: string, value: string) => {
-    if (!element?.eid) return
-    send({ __editor_cmd: true, cmd: "style", eid: element.eid, prop, value })
+  const style = (prop: string, value: string, eid = element?.eid || null) => {
+    if (!eid) return
+    send({ __editor_cmd: true, cmd: "style", eid, prop, value })
   }
+
+  const liveStyle = useCallback((prop: string, value: string, eid?: string | null) => {
+    setTypographyDraft((current) => (current[prop] === value ? current : { ...current, [prop]: value }))
+    style(prop, value, eid || undefined)
+  }, [style])
+
+  const applyTypographyFont = useCallback((fontOption: TypographyFontOption, typographyTargetId: string | null) => {
+    rememberRecentFont(fontOption.value)
+    liveStyle("fontFamily", fontOption.value, typographyTargetId)
+  }, [liveStyle, rememberRecentFont])
 
   const queryStyle = (selector: string, prop: string, value: string) => {
     if (!element?.eid) return
@@ -770,10 +1327,25 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
     send({ __editor_cmd: true, cmd: "style_batch", eid: element.eid, updates })
   }
 
-  const patchIcon = (patch: { color?: string; size?: string; strokeWidth?: string }) => {
-    if (!element?.eid) return
-    send({ __editor_cmd: true, cmd: "icon_patch", eid: element.eid, ...patch } as EditorCommand)
+  const patchIcon = (patch: { color?: string; size?: string; strokeWidth?: string }, eid = element?.eid || null) => {
+    if (!eid) return
+    send({ __editor_cmd: true, cmd: "icon_patch", eid, ...patch } as EditorCommand)
   }
+
+  const livePatchIcon = useCallback((patch: { color?: string; size?: string; strokeWidth?: string }, eid?: string | null) => {
+    setTypographyDraft((current) => {
+      const next = { ...current }
+      if (patch.color) next.color = patch.color
+      if (patch.size) {
+        next.width = patch.size
+        next.height = patch.size
+        next.fontSize = patch.size
+      }
+      if (patch.strokeWidth) next.strokeWidth = patch.strokeWidth
+      return next
+    })
+    patchIcon(patch, eid || undefined)
+  }, [patchIcon])
 
   const getIconHostClassName = () => {
     const classTokens = String(element?.classes || "")
@@ -996,35 +1568,6 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
     ])
   }
 
-  const applyIconColor = (value: string) => {
-    patchIcon({ color: value })
-  }
-
-  const applyIconSize = (value: string) => {
-    const safeSize = `${Math.max(12, Math.min(220, parsePx(value) || 20))}px`
-    patchIcon({ size: safeSize })
-  }
-
-  const applyIconStrokeWidth = (value: string) => {
-    const safeStroke = String(Math.max(0.75, Math.min(4, parseFloat(value) || 1.9)))
-    patchIcon({ strokeWidth: safeStroke })
-  }
-
-  const applyDetectedEmojiReplacement = (forceIcon?: SiteIconName) => {
-    if (!element?.eid) return
-    if (nodeKind === "icon") {
-      const forcedIcon = forceIcon || currentIcon || "sparkles"
-      replaceElementHtml(buildCurrentIconMarkup(forcedIcon))
-      return
-    }
-    const sourceHtml = (element.html && element.html.trim()) || escapeHtml(element.text || "")
-    if (!sourceHtml) return
-    const nextHtml = replaceKnownEmojisInHtmlFragment(sourceHtml, forceIcon ? { forceIcon } : undefined)
-    if (nextHtml && nextHtml !== sourceHtml) {
-      setHtml(nextHtml)
-    }
-  }
-
   const applyIcon = (iconName: SiteIconName) => {
     if (!element?.eid) return
     const strokeWidth = resolveSafeIconStrokeWidth(element)
@@ -1035,14 +1578,7 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
     const sourceHtml = (element.html && element.html.trim()) || escapeHtml(element.text || "")
     let nextHtml = sourceHtml
 
-    if (iconMode === "prepend") {
-      const iconMarkup = renderSiteIconHtml(iconName, {
-        size: treatsAsButton ? 18 : 20,
-        strokeWidth,
-        className: "he-inline-icon",
-      })
-      nextHtml = `${iconMarkup}<span data-he-icon-label="1">${sourceHtml}</span>`
-    } else if (existingIcons.length > 0 || detectedEmojis.length > 0) {
+    if (existingIcons.length > 0 || detectedEmojis.length > 0) {
       nextHtml = replaceFirstIconInHtmlFragment(sourceHtml, iconName, {
         size: treatsAsButton ? 18 : 20,
         strokeWidth,
@@ -1122,115 +1658,481 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
 
   const renderTypographySection = () => {
     if (!element) return null
-    if (nodeKind === "icon") {
+    const typographyElement = activeTypographyElement
+    const typographyTargetId = typographyElement?.eid || null
+    const usingNestedTypographyTarget = !supportsTypography && nestedTypographyTargets.length > 0
+    const showTypographyTargetPicker = usingNestedTypographyTarget && nestedTypographyTargets.length > 1
+    if (!typographyElement || !canRenderTypographyPanel) {
       return (
-        <SectionCard title="Iconografia" hint="Controla color, tamano y grosor del trazo del icono como en una libreria SVG moderna.">
-          <Row label="Color del icono">
-            <ColorPicker value={element.styles.color} onChange={applyIconColor} />
-          </Row>
-          <Row label="Tamano del icono">
-            <Slider value={element.styles.width || element.styles.fontSize || "18px"} min={12} max={220} onChange={applyIconSize} />
-          </Row>
-          <Row label="Trazo del icono">
-            <Slider value={element.styles.strokeWidth || "1.9"} min={0.8} max={4} step={0.1} unit="" onChange={applyIconStrokeWidth} />
-          </Row>
-        </SectionCard>
+        <div ref={typographySectionRef} className="space-y-3">
+          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-5 text-center text-[11px] leading-5 text-white/45">
+            Este elemento no expone propiedades tipograficas.
+            <div className="mt-1">Selecciona un texto, boton, campo, selector o icono desde el canvas o desde Capas.</div>
+          </div>
+        </div>
       )
     }
-    return (
-      <SectionCard title="Tipografia" hint="Controla tipo de letra, tamano, grosor, color y alineacion del texto.">
-        <Row label="Color del texto">
-          <ColorPicker value={element.styles.color} onChange={(value) => style("color", value)} />
-        </Row>
-        <Row label="Tipo de letra">
-          <select
-            className="h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-xs text-white focus:border-primary/50 focus:outline-none"
-            value={element.styles.fontFamily || FONT_OPTIONS[0].value}
-            onChange={(event) => style("fontFamily", event.target.value)}
-          >
-            {FONT_OPTIONS.map((option) => (
-              <option key={option.label} value={option.value}>
-                {option.label}
-              </option>
+    const mergedStyles = { ...typographyElement.styles, ...typographyDraft }
+    const currentFontFamily = mergedStyles.fontFamily || FONT_OPTIONS[0].value
+    const currentFontWeight = String(Math.round(parsePx(mergedStyles.fontWeight)) || 400)
+    const currentFontStyle = mergedStyles.fontStyle || "normal"
+    const currentTextTransform = mergedStyles.textTransform || "none"
+    const currentTextAlign = (mergedStyles.textAlign || "left") as "left" | "center" | "right" | "justify"
+    const currentFontSize = Math.max(
+      activeTypographyKind === "icon" ? 12 : 8,
+      Math.round(parsePx(mergedStyles.fontSize || mergedStyles.width || "16px") || (activeTypographyKind === "icon" ? 24 : 16))
+    )
+    const currentLineHeight = clampNumber(parseLineHeightRatio(mergedStyles.lineHeight || "", currentFontSize), 1, 3)
+    const currentLetterSpacing = clampNumber(parseLetterSpacingPx(mergedStyles.letterSpacing || "", currentFontSize), -2, 10)
+    const currentDecoration = String(mergedStyles.textDecoration || "none")
+    const hasUnderline = currentDecoration.includes("underline")
+    const hasStrike = currentDecoration.includes("line-through")
+    const currentColor = getVisiblePaintColor(
+      mergedStyles.color || typographyElement.styles.color || "#111111",
+      mergedStyles.backgroundImage || typographyElement.styles.backgroundImage
+    )
+    const normalizedFontSearch = fontSearchQuery.trim().toLowerCase()
+    const recentFontOptions = recentFontValues
+      .map((fontValue) => TYPOGRAPHY_FONT_OPTIONS.find((option) => option.value === fontValue))
+      .filter((option): option is TypographyFontOption => {
+        if (!option) return false
+        if (option.value === TYPOGRAPHY_SITE_FONT.value) return false
+        if (!normalizedFontSearch) return true
+        return `${option.label} ${option.preview} ${option.note}`.toLowerCase().includes(normalizedFontSearch)
+      })
+    const siteFontMatchesSearch =
+      !normalizedFontSearch ||
+      `${TYPOGRAPHY_SITE_FONT.label} ${TYPOGRAPHY_SITE_FONT.preview} ${TYPOGRAPHY_SITE_FONT.note}`.toLowerCase().includes(normalizedFontSearch)
+    const filteredFontGroups = TYPOGRAPHY_FONT_GROUPS
+      .map((group) => ({
+        ...group,
+        fonts: group.fonts.filter((fontOption) => {
+          if (!normalizedFontSearch) return true
+          const haystack = `${fontOption.label} ${fontOption.preview} ${fontOption.note}`.toLowerCase()
+          return haystack.includes(normalizedFontSearch)
+        }),
+      }))
+      .filter((group) => group.fonts.length > 0)
+    const toggleDecoration = (token: "underline" | "line-through") => {
+      const nextTokens = new Set(
+        String((typographyDraft.textDecoration ?? typographyElement.styles.textDecoration) || "none")
+          .split(/\s+/)
+          .filter((part) => part && part !== "none")
+      )
+      if (nextTokens.has(token)) {
+        nextTokens.delete(token)
+      } else {
+        nextTokens.add(token)
+      }
+      liveStyle("textDecoration", nextTokens.size ? Array.from(nextTokens).join(" ") : "none", typographyTargetId)
+    }
+
+    const typographyTargetControl = usingNestedTypographyTarget ? (
+      <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">Texto detectado dentro del bloque</div>
+        <div className="text-[11px] leading-5 text-white/45">
+          El bloque seleccionado es contenedor. La tipografia se aplicara al texto detectado automaticamente.
+        </div>
+        {showTypographyTargetPicker ? (
+          <div className="flex flex-wrap gap-2">
+            {nestedTypographyTargets.map((target) => (
+              <button
+                key={target.eid}
+                type="button"
+                {...getTouchSafeButtonProps(`typography-target:${target.eid}`, () => setTypographyTargetEid(target.eid))}
+                className={cn(
+                  "inline-flex min-h-[44px] items-center rounded-2xl border px-3 py-2 text-left text-[11px] font-medium transition-all",
+                  (typographyTargetEid || nestedTypographyTargets[0]?.eid) === target.eid
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-white/10 bg-white/[0.03] text-white/60 hover:border-primary/30 hover:text-white"
+                )}
+              >
+                {target.label}
+              </button>
             ))}
-          </select>
-        </Row>
-        <Row label="Tamano del texto">
-          <Slider value={element.styles.fontSize} min={8} max={96} onChange={(value) => style("fontSize", value)} />
-        </Row>
-        <Row label="Grosor del texto">
-          <OptionGroup
-            small
-            value={String(Math.round(parsePx(element.styles.fontWeight)) || 400)}
-            options={["400", "500", "600", "700", "800"].map((value) => ({ value, label: value }))}
-            onChange={(value) => style("fontWeight", value)}
-          />
-        </Row>
-        <Row label="Estilo">
-          <OptionGroup
-            small
-            value={element.styles.fontStyle || "normal"}
-            options={[
-              { value: "normal", label: "normal" },
-              { value: "italic", label: "cursiva" },
-            ]}
-            onChange={(value) => style("fontStyle", value)}
-          />
-        </Row>
-        <Row label="Decoracion">
-          <OptionGroup
-            small
-            value={(element.styles.textDecoration || "none").includes("underline") ? "underline" : "none"}
-            options={[
-              { value: "none", label: "sin" },
-              { value: "underline", label: "subrayado" },
-            ]}
-            onChange={(value) => style("textDecoration", value)}
-          />
-        </Row>
-        <Row label="Transformacion">
-          <OptionGroup
-            small
-            value={element.styles.textTransform || "none"}
-            options={[
-              { value: "none", label: "normal" },
-              { value: "uppercase", label: "mayus" },
-              { value: "capitalize", label: "titulo" },
-              { value: "lowercase", label: "minus" },
-            ]}
-            onChange={(value) => style("textTransform", value)}
-          />
-        </Row>
-        <Row label="Alineacion">
-          <OptionGroup
-            small
-            value={element.styles.textAlign || "left"}
-            options={[
-              { value: "left", label: "izquierda" },
-              { value: "center", label: "centro" },
-              { value: "right", label: "derecha" },
-              { value: "justify", label: "justificado" },
-            ]}
-            onChange={(value) => style("textAlign", value)}
-          />
-        </Row>
-        <Row label="Altura entre lineas">
-          <FieldInput
-            value={element.styles.lineHeight || ""}
-            placeholder="1.4 / 24px"
-            onChange={(event) => style("lineHeight", event.target.value)}
-            className="h-8 px-2 text-[11px]"
-          />
-        </Row>
-        <Row label="Espaciado entre letras">
-          <FieldInput
-            value={element.styles.letterSpacing || ""}
-            placeholder="0.02em"
-            onChange={(event) => style("letterSpacing", event.target.value)}
-            className="h-8 px-2 text-[11px]"
-          />
-        </Row>
-      </SectionCard>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-white/8 bg-[#0b1220] px-3 py-2 text-[11px] text-white/70">
+            Editando: <span className="font-semibold text-white">{nestedTypographyTargets[0]?.label || "Texto detectado"}</span>
+          </div>
+        )}
+      </div>
+    ) : null
+
+    const renderFontRow = (fontOption: TypographyFontOption) => {
+      const active = currentFontFamily === fontOption.value
+      return (
+        <button
+          key={fontOption.id}
+          type="button"
+          onClick={() => applyTypographyFont(fontOption, typographyTargetId)}
+          className={cn(
+            "w-full rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 text-left transition-all",
+            active
+              ? "border-primary bg-primary/8 shadow-[inset_3px_0_0_rgba(232,57,42,1)]"
+              : "hover:border-primary/25 hover:bg-white/[0.045]"
+          )}
+        >
+          <div className="flex items-start gap-3">
+            <div className="min-w-[88px] pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/28">
+              {fontOption.label}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[18px] leading-tight text-white" style={{ fontFamily: fontOption.value }}>
+                {fontOption.label}
+              </div>
+              <div className="mt-1 truncate text-[22px] leading-tight text-white/92" style={{ fontFamily: fontOption.value }}>
+                {fontOption.preview}
+              </div>
+              <div className="mt-1 text-[10px] text-white/35">{fontOption.note}</div>
+            </div>
+          </div>
+        </button>
+      )
+    }
+
+    const currentFontDisplayName = currentFontFamily.split(",")[0].replace(/['"]/g, "").trim()
+    const typoIBtn = (active: boolean): React.CSSProperties => ({
+      width: 34, height: 34, borderRadius: 7,
+      border: `0.5px solid ${active ? "#E84040" : "#333"}`,
+      background: active ? "#E84040" : "#1e1e1e",
+      color: active ? "#fff" : "#777",
+      cursor: "pointer", fontSize: 13,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      transition: "all .12s", flexShrink: 0, fontFamily: "inherit",
+    })
+    const typoChip = (active: boolean): React.CSSProperties => ({
+      flex: 1, border: `0.5px solid ${active ? "#E84040" : "#333"}`,
+      borderRadius: 7, padding: "5px 0", fontSize: 11, textAlign: "center" as const,
+      cursor: "pointer", background: active ? "#E84040" : "#1e1e1e",
+      color: active ? "#fff" : "#888", transition: "all .12s", fontFamily: "inherit",
+    })
+    const typoSzChip = (active: boolean): React.CSSProperties => ({
+      border: `0.5px solid ${active ? "#E84040" : "#333"}`,
+      borderRadius: 7, padding: "4px 8px", fontSize: 11,
+      cursor: "pointer", background: active ? "#E84040" : "#1e1e1e",
+      color: active ? "#fff" : "#888", transition: "all .12s", fontFamily: "inherit",
+    })
+    const divider = <div style={{ height: 0.5, background: "#1e1e1e", margin: "2px 0" }} />
+
+    return (
+      <div ref={typographySectionRef} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {typographyTargetControl}
+
+        {/* ── Vista previa ── */}
+        {activeTypographyKind !== "icon" ? (
+          <div style={{ background: "#181818", border: "0.5px solid #2a2a2a", borderRadius: 10, padding: "12px 14px", minHeight: 48, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span style={{
+              fontFamily: currentFontFamily,
+              fontSize: Math.min(currentFontSize, 32),
+              fontWeight: currentFontWeight as React.CSSProperties["fontWeight"],
+              fontStyle: currentFontStyle === "italic" ? "italic" : "normal",
+              textAlign: currentTextAlign,
+              textTransform: currentTextTransform as React.CSSProperties["textTransform"],
+              color: currentColor,
+              lineHeight: currentLineHeight,
+              letterSpacing: `${currentLetterSpacing}px`,
+              display: "block", width: "100%", wordBreak: "break-word", transition: "all .15s",
+            }}>
+              HACKEVANS
+            </span>
+          </div>
+        ) : null}
+
+        {/* ── Icono: biblioteca ── */}
+        {activeTypographyKind === "icon" ? (
+          <StyleCard icon="◈" title="Biblioteca del icono">
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {visibleIconRefs.length > 0
+                  ? visibleIconRefs.map((icon) => (
+                    <span key={icon} style={{ borderRadius: 20, border: "0.5px solid rgba(232,57,42,.25)", background: "rgba(232,57,42,.1)", padding: "3px 10px", fontSize: 10, color: "#E84040" }}>{icon}</span>
+                  ))
+                  : <span style={{ borderRadius: 20, border: "0.5px solid #2a2a2a", padding: "3px 10px", fontSize: 10, color: "#555" }}>Sin icono del sistema detectado</span>
+                }
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                <button type="button" onClick={() => iconImageInputRef.current?.click()}
+                  style={{ padding: "9px", borderRadius: 8, border: "0.5px solid rgba(232,57,42,.3)", background: "rgba(232,57,42,.1)", color: "#E84040", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                  Cambiar imagen
+                </button>
+                <button type="button"
+                  onClick={() => currentIcon ? replaceElementHtml(buildCurrentIconMarkup(currentIcon, { color: currentColor, size: currentFontSize })) : null}
+                  disabled={!currentIcon}
+                  style={{ padding: "9px", borderRadius: 8, border: "0.5px solid #2a2a2a", background: "transparent", color: currentIcon ? "#999" : "#444", fontSize: 12, cursor: currentIcon ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+                  Restaurar icono
+                </button>
+              </div>
+              <input ref={iconImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleIconImageUpload} />
+              <div>
+                <StyleLabel>Imagen o URL</StyleLabel>
+                <FieldInput value={iconImageSrc} placeholder="https://... o data:image/..." onChange={(event) => setIconImageSrc(event.target.value)} onBlur={() => replaceIconWithImage(iconImageSrc)} />
+              </div>
+              <IconPicker value={currentIcon} onSelect={applyIcon} />
+            </div>
+          </StyleCard>
+        ) : (
+          /* ── Fuente ── */
+          <div>
+            <StyleLabel>Fuente</StyleLabel>
+            <button type="button" onClick={() => setFontSelectorOpen(!fontSelectorOpen)} style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+              background: "#1e1e1e", border: `0.5px solid ${fontSelectorOpen ? "#E84040" : "#333"}`,
+              borderRadius: 9, padding: "9px 12px", cursor: "pointer", transition: "border-color .15s",
+            }}>
+              <span style={{ fontFamily: currentFontFamily, fontSize: 15, color: "#e0e0e0" }}>{currentFontDisplayName}</span>
+              <span style={{ color: "#555", fontSize: 9, transform: fontSelectorOpen ? "rotate(180deg)" : "none", transition: "transform .2s", display: "inline-block" }}>▼</span>
+            </button>
+            {fontSelectorOpen && (
+              <div style={{ marginTop: 4, background: "#141414", border: "0.5px solid #2a2a2a", borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ padding: "8px 10px", borderBottom: "0.5px solid #1e1e1e" }}>
+                  <div style={{ display: "flex", alignItems: "center", background: "#1e1e1e", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: "0 10px", gap: 6 }}>
+                    <span style={{ color: "#444", fontSize: 11 }}>⌕</span>
+                    <input value={fontSearchQuery} onChange={(e) => setFontSearchQuery(e.target.value)} placeholder="Buscar fuente..."
+                      style={{ flex: 1, background: "transparent", border: "none", color: "#ccc", fontSize: 13, padding: "7px 0", outline: "none", fontFamily: "inherit" }} />
+                  </div>
+                </div>
+                <div style={{ maxHeight: 300, overflowY: "auto" }}>
+                  {recentFontOptions.length > 0 ? (
+                    <div>
+                      <div style={{ padding: "7px 14px 3px", fontSize: 9, fontWeight: 700, letterSpacing: ".1em", color: "#333", textTransform: "uppercase" as const, background: "#141414", position: "sticky" as const, top: 0 }}>Recientes</div>
+                      {recentFontOptions.map((fontOption) => (
+                        <button key={fontOption.id} type="button" onClick={() => { applyTypographyFont(fontOption, typographyTargetId); setFontSelectorOpen(false); setFontSearchQuery("") }} style={{
+                          display: "flex", alignItems: "center", width: "100%", minHeight: 40, padding: "0 14px", cursor: "pointer",
+                          background: currentFontFamily === fontOption.value ? "#1a0808" : "transparent",
+                          border: "none", borderLeft: `3px solid ${currentFontFamily === fontOption.value ? "#E84040" : "transparent"}`,
+                          textAlign: "left" as const,
+                        }}>
+                          <span style={{ width: 14, fontSize: 10, color: "#E84040", opacity: currentFontFamily === fontOption.value ? 1 : 0, marginRight: 8, flexShrink: 0 }}>✓</span>
+                          <span style={{ fontFamily: fontOption.value, fontSize: 16, color: currentFontFamily === fontOption.value ? "#E84040" : "#c8c8c8" }}>{fontOption.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {siteFontMatchesSearch ? (
+                    <div>
+                      <div style={{ padding: "7px 14px 3px", fontSize: 9, fontWeight: 700, letterSpacing: ".1em", color: "#333", textTransform: "uppercase" as const, background: "#141414", position: "sticky" as const, top: 0 }}>Fuente del sitio</div>
+                      <button type="button" onClick={() => { applyTypographyFont(TYPOGRAPHY_SITE_FONT, typographyTargetId); setFontSelectorOpen(false); setFontSearchQuery("") }} style={{
+                        display: "flex", alignItems: "center", width: "100%", minHeight: 40, padding: "0 14px", cursor: "pointer",
+                        background: currentFontFamily === TYPOGRAPHY_SITE_FONT.value ? "#1a0808" : "transparent",
+                        border: "none", borderLeft: `3px solid ${currentFontFamily === TYPOGRAPHY_SITE_FONT.value ? "#E84040" : "transparent"}`,
+                        textAlign: "left" as const,
+                      }}>
+                        <span style={{ width: 14, fontSize: 10, color: "#E84040", opacity: currentFontFamily === TYPOGRAPHY_SITE_FONT.value ? 1 : 0, marginRight: 8, flexShrink: 0 }}>✓</span>
+                        <span style={{ fontFamily: TYPOGRAPHY_SITE_FONT.value, fontSize: 16, color: currentFontFamily === TYPOGRAPHY_SITE_FONT.value ? "#E84040" : "#c8c8c8" }}>{TYPOGRAPHY_SITE_FONT.label}</span>
+                      </button>
+                    </div>
+                  ) : null}
+                  {filteredFontGroups.map((group) => (
+                    <div key={group.id}>
+                      <div style={{ padding: "7px 14px 3px", fontSize: 9, fontWeight: 700, letterSpacing: ".1em", color: "#333", textTransform: "uppercase" as const, background: "#141414", position: "sticky" as const, top: 0 }}>{group.label}</div>
+                      {group.fonts.map((fontOption) => (
+                        <button key={fontOption.id} type="button" onClick={() => { applyTypographyFont(fontOption, typographyTargetId); setFontSelectorOpen(false); setFontSearchQuery("") }} style={{
+                          display: "flex", alignItems: "center", width: "100%", minHeight: 40, padding: "0 14px", cursor: "pointer",
+                          background: currentFontFamily === fontOption.value ? "#1a0808" : "transparent",
+                          border: "none", borderLeft: `3px solid ${currentFontFamily === fontOption.value ? "#E84040" : "transparent"}`,
+                          textAlign: "left" as const,
+                        }}>
+                          <span style={{ width: 14, fontSize: 10, color: "#E84040", opacity: currentFontFamily === fontOption.value ? 1 : 0, marginRight: 8, flexShrink: 0 }}>✓</span>
+                          <span style={{ fontFamily: fontOption.value, fontSize: 16, color: currentFontFamily === fontOption.value ? "#E84040" : "#c8c8c8" }}>{fontOption.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                  {!siteFontMatchesSearch && !filteredFontGroups.length ? (
+                    <div style={{ padding: "18px 14px", textAlign: "center" as const, color: "#444", fontSize: 13 }}>Sin resultados</div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tamaño + Peso ── */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <StyleLabel>{activeTypographyKind === "icon" ? "Tamano icono" : "Tamano"}</StyleLabel>
+            <div style={{ display: "flex", alignItems: "center", background: "#1e1e1e", border: "0.5px solid #333", borderRadius: 8, overflow: "hidden", height: 34 }}>
+              <button type="button" onClick={() => {
+                const next = Math.max(activeTypographyKind === "icon" ? 12 : 8, currentFontSize - 1)
+                setCustomFontSize(String(next))
+                activeTypographyKind === "icon" ? livePatchIcon({ size: `${next}px` }, typographyTargetId) : liveStyle("fontSize", `${next}px`, typographyTargetId)
+              }} style={{ width: 30, height: "100%", background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 16 }}>−</button>
+              <input type="number" min={activeTypographyKind === "icon" ? 12 : 8} max={220} value={customFontSize || currentFontSize}
+                onChange={(e) => {
+                  const nextValue = e.target.value.replace(/[^\d]/g, "").slice(0, 3)
+                  setFontSizeMode("custom")
+                  setCustomFontSize(nextValue)
+                  if (!nextValue) return
+                  const safeSize = clampNumber(parseInt(nextValue, 10) || currentFontSize, activeTypographyKind === "icon" ? 12 : 8, activeTypographyKind === "icon" ? 220 : 160)
+                  activeTypographyKind === "icon" ? livePatchIcon({ size: `${safeSize}px` }, typographyTargetId) : liveStyle("fontSize", `${safeSize}px`, typographyTargetId)
+                }}
+                style={{ flex: 1, background: "transparent", border: "none", color: "#fff", fontSize: 14, fontWeight: 500, textAlign: "center" as const, outline: "none", fontFamily: "inherit" }} />
+              <button type="button" onClick={() => {
+                const next = Math.min(activeTypographyKind === "icon" ? 220 : 160, currentFontSize + 1)
+                setCustomFontSize(String(next))
+                activeTypographyKind === "icon" ? livePatchIcon({ size: `${next}px` }, typographyTargetId) : liveStyle("fontSize", `${next}px`, typographyTargetId)
+              }} style={{ width: 30, height: "100%", background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 16 }}>+</button>
+            </div>
+          </div>
+          {activeTypographyKind !== "icon" ? (
+            <div style={{ flex: 1 }}>
+              <StyleLabel>Peso</StyleLabel>
+              <select value={currentFontWeight} onChange={(e) => liveStyle("fontWeight", e.target.value, typographyTargetId)}
+                style={{ width: "100%", height: 34, background: "#1e1e1e", border: "0.5px solid #333", borderRadius: 8, padding: "0 10px", color: "#ddd", fontSize: 13, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+                {TYPOGRAPHY_WEIGHT_PRESETS.map((w) => (
+                  <option key={w.value} value={w.value}>{w.label}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+        </div>
+
+        {/* ── Chips tamaño rápido ── */}
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {(activeTypographyKind === "icon" ? [16, 20, 24, 32, 40, 56] : [...TYPOGRAPHY_SIZE_PRESETS]).map((size) => (
+            <button key={size} type="button"
+              onClick={() => {
+                setFontSizeMode("preset")
+                setCustomFontSize(String(size))
+                activeTypographyKind === "icon" ? livePatchIcon({ size: `${size}px` }, typographyTargetId) : liveStyle("fontSize", `${size}px`, typographyTargetId)
+              }}
+              style={typoSzChip(currentFontSize === size)}>
+              {size}
+            </button>
+          ))}
+        </div>
+
+        {activeTypographyKind !== "icon" ? (
+          <>
+            {divider}
+
+            {/* ── Estilo + Alineacion en misma fila ── */}
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <div>
+                <StyleLabel>Estilo</StyleLabel>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button type="button" onClick={() => liveStyle("fontStyle", currentFontStyle === "italic" ? "normal" : "italic", typographyTargetId)}
+                    style={typoIBtn(currentFontStyle === "italic")} title="Cursiva">
+                    <i style={{ fontStyle: "italic", fontFamily: "Georgia,serif" }}>I</i>
+                  </button>
+                  <button type="button" onClick={() => toggleDecoration("underline")}
+                    style={typoIBtn(hasUnderline)} title="Subrayado">
+                    <u>U</u>
+                  </button>
+                  <button type="button" onClick={() => toggleDecoration("line-through")}
+                    style={typoIBtn(hasStrike)} title="Tachado">
+                    <s>S</s>
+                  </button>
+                </div>
+              </div>
+              <div style={{ width: 0.5, height: 34, background: "#2a2a2a", flexShrink: 0, alignSelf: "flex-end" }} />
+              <div style={{ flex: 1 }}>
+                <StyleLabel>Alineacion</StyleLabel>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {(["left", "center", "right", "justify"] as const).map((alignment) => (
+                    <button key={alignment} type="button" onClick={() => liveStyle("textAlign", alignment, typographyTargetId)}
+                      style={{ ...typoIBtn(currentTextAlign === alignment), flex: 1 }} title={alignment}>
+                      <TextAlignGlyph value={alignment} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Transformacion ── */}
+            <div>
+              <StyleLabel>Transformacion</StyleLabel>
+              <div style={{ display: "flex", gap: 4 }}>
+                {([
+                  { value: "none", label: "Aa" },
+                  { value: "uppercase", label: "AA" },
+                  { value: "lowercase", label: "aa" },
+                  { value: "capitalize", label: "Aa·" },
+                ] as const).map((option) => (
+                  <button key={option.value} type="button" onClick={() => liveStyle("textTransform", option.value, typographyTargetId)}
+                    style={typoChip(currentTextTransform === option.value)}>
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {divider}
+
+        {/* ── Color ── */}
+        <div>
+          <StyleLabel>{activeTypographyKind === "icon" ? "Color del icono" : "Color del texto"}</StyleLabel>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {TYPOGRAPHY_COLOR_SWATCHES.map((swatch) => (
+              <button key={swatch} type="button"
+                onClick={() => activeTypographyKind === "icon" ? livePatchIcon({ color: swatch }, typographyTargetId) : liveStyle("color", swatch, typographyTargetId)}
+                style={{
+                  width: 26, height: 26, borderRadius: "50%", background: swatch,
+                  cursor: "pointer", flexShrink: 0, transition: "all .12s",
+                  border: currentColor.toLowerCase() === swatch.toLowerCase() ? "2.5px solid #E84040" : swatch === "#ffffff" ? "1px solid #444" : "2px solid transparent",
+                  transform: currentColor.toLowerCase() === swatch.toLowerCase() ? "scale(1.18)" : "scale(1)",
+                }} aria-label={`Color ${swatch}`} />
+            ))}
+            <label style={{ width: 26, height: 26, borderRadius: "50%", cursor: "pointer", flexShrink: 0, background: "conic-gradient(red,yellow,lime,cyan,blue,magenta,red)", border: "0.5px solid #444", overflow: "hidden", display: "block" }}>
+              <input ref={typographyColorInputRef} type="color" value={currentColor}
+                onInput={(event) => activeTypographyKind === "icon" ? livePatchIcon({ color: (event.target as HTMLInputElement).value }, typographyTargetId) : liveStyle("color", (event.target as HTMLInputElement).value, typographyTargetId)}
+                onChange={(event) => activeTypographyKind === "icon" ? livePatchIcon({ color: event.target.value }, typographyTargetId) : liveStyle("color", event.target.value, typographyTargetId)}
+                style={{ opacity: 0, width: "100%", height: "100%", cursor: "pointer" }} />
+            </label>
+          </div>
+        </div>
+
+        {/* ── Trazo (icono) / Interlineado + Espaciado (texto) ── */}
+        {activeTypographyKind === "icon" ? (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <StyleLabel style={{ margin: 0 }}>Trazo</StyleLabel>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#ccc" }}>{formatTypographyValue(clampNumber(parseFloat(mergedStyles.strokeWidth || "1.9") || 1.9, 0.8, 4), 1)}</span>
+            </div>
+            <input type="range" min={0.8} max={4} step={0.1}
+              value={clampNumber(parseFloat(mergedStyles.strokeWidth || "1.9") || 1.9, 0.8, 4)}
+              onChange={(e) => livePatchIcon({ strokeWidth: formatTypographyValue(parseFloat(e.target.value), 1) }, typographyTargetId)}
+              style={{ width: "100%", accentColor: "#E84040" }} />
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
+              <span style={{ fontSize: 10, color: "#444" }}>Fino</span>
+              <span style={{ fontSize: 10, color: "#444" }}>Fuerte</span>
+            </div>
+          </div>
+        ) : (
+          <>
+            {divider}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <StyleLabel style={{ margin: 0 }}>Interlineado</StyleLabel>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#ccc" }}>{formatTypographyValue(currentLineHeight, 1)}</span>
+              </div>
+              <input type="range" min={1} max={3} step={0.05} value={currentLineHeight}
+                onChange={(e) => liveStyle("lineHeight", formatTypographyValue(parseFloat(e.target.value), 2), typographyTargetId)}
+                style={{ width: "100%", accentColor: "#E84040" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
+                <span style={{ fontSize: 10, color: "#444" }}>Compacto</span>
+                <span style={{ fontSize: 10, color: "#444" }}>Amplio</span>
+              </div>
+            </div>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <StyleLabel style={{ margin: 0 }}>Espaciado de letras</StyleLabel>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#ccc" }}>{formatTypographyValue(currentLetterSpacing, 1)}px</span>
+              </div>
+              <input type="range" min={-2} max={10} step={0.25} value={currentLetterSpacing}
+                onChange={(e) => liveStyle("letterSpacing", `${formatTypographyValue(parseFloat(e.target.value), 2)}px`, typographyTargetId)}
+                style={{ width: "100%", accentColor: "#E84040" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
+                <span style={{ fontSize: 10, color: "#444" }}>−2px</span>
+                <span style={{ fontSize: 10, color: "#444" }}>+10px</span>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     )
   }
 
@@ -1300,30 +2202,17 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
       )
     }
 
-    if (nodeKind === "icon") {
-      return (
-        <SectionCard title="Acciones rapidas" hint="Aplica colores base del sistema al icono seleccionado.">
-          <div className="grid grid-cols-1 gap-2">
-            <button type="button" onClick={() => applyIconColor("var(--he-primary, #E8392A)")} className={PRESET_BUTTON_CLS}>
-              Color de marca
-            </button>
-            <button type="button" onClick={() => applyIconColor("var(--he-foreground, #E2EAF0)")} className={PRESET_BUTTON_CLS}>
-              Color claro
-            </button>
-          </div>
-        </SectionCard>
-      )
-    }
-
     return null
   }
 
   const renderBoxSection = (title = "Superficie") => {
     if (!element) return null
+    const shadowActive = !element.styles.boxShadow || element.styles.boxShadow === "none" ? "none" : element.styles.boxShadow.includes("38") ? "strong" : "soft"
     return (
-      <SectionCard title={title} hint="Ajusta fondo, bordes, esquinas y sombra del elemento.">
-        <Row label="Color de fondo">
-          <div className="flex items-center gap-2">
+      <StyleCard icon="◈" title={title}>
+        <div>
+          <StyleLabel>Color de fondo</StyleLabel>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <ColorPicker
               value={element.styles.backgroundColor}
               displayValue={getVisiblePaintColor(element.styles.backgroundColor, element.styles.backgroundImage)}
@@ -1335,296 +2224,352 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
                 style("backgroundImage", "none")
                 style("backgroundColor", "transparent")
               }}
-              className="rounded-xl border border-white/10 px-2 py-1 text-[10px] text-white/35 hover:text-white"
+              style={{ background: "#242424", border: "0.5px solid #2e2e2e", borderRadius: 6, padding: "4px 9px", fontSize: 11, color: "#666", cursor: "pointer", whiteSpace: "nowrap" as const, fontFamily: "inherit" }}
             >
               auto
             </button>
           </div>
-        </Row>
-        {element.styles.backgroundImage && element.styles.backgroundImage !== "none" ? (
-          <div className="text-[10px] leading-5 text-white/30">
-            Gradiente detectado. Al cambiar el color se convertira en un fondo solido editable.
+          {element.styles.backgroundImage && element.styles.backgroundImage !== "none" ? (
+            <div style={{ fontSize: 10, color: "#555", marginTop: 5, lineHeight: 1.5 }}>Gradiente detectado. Al cambiar el color se convierte en fondo solido.</div>
+          ) : null}
+        </div>
+        <div>
+          <StyleLabel>Color del borde</StyleLabel>
+          <ColorPicker value={element.styles.borderColor || "#000000"} onChange={(value) => style("borderColor", value)} />
+        </div>
+        {nodeKind === "field" ? (
+          <div>
+            <StyleLabel>Color de acento</StyleLabel>
+            <ColorPicker value={element.styles.accentColor || element.styles.color || "#000000"} onChange={(value) => style("accentColor", value)} />
           </div>
         ) : null}
-        <Row label="Color del borde">
-          <ColorPicker value={element.styles.borderColor || "#000000"} onChange={(value) => style("borderColor", value)} />
-        </Row>
-        {nodeKind === "field" ? (
-          <Row label="Color de acento">
-            <ColorPicker value={element.styles.accentColor || element.styles.color || "#000000"} onChange={(value) => style("accentColor", value)} />
-          </Row>
-        ) : null}
-        <Row label="Grosor del borde">
-          <Slider value={element.styles.borderWidth} min={0} max={12} onChange={(value) => style("borderWidth", value)} />
-        </Row>
-        <Row label="Redondeado">
-          <Slider value={element.styles.borderRadius} min={0} max={48} onChange={(value) => style("borderRadius", value)} />
-        </Row>
-        <Row label="Sombra">
-          <OptionGroup
-            small
-            value={element.styles.boxShadow ? "soft" : "none"}
-            options={[
-              { value: "none", label: "sin" },
-              { value: "soft", label: "soft" },
-              { value: "strong", label: "fuerte" },
+        <div>
+          <StyleLabel>Grosor del borde</StyleLabel>
+          <StyleSlider min={0} max={12} value={parseInt(element.styles.borderWidth || "0") || 0} onChange={(n) => style("borderWidth", `${n}px`)} />
+        </div>
+        <div>
+          <StyleLabel>Redondeado</StyleLabel>
+          <StyleSlider min={0} max={48} value={parseInt(element.styles.borderRadius || "0") || 0} onChange={(n) => style("borderRadius", `${n}px`)} />
+        </div>
+        <div>
+          <StyleLabel>Sombra</StyleLabel>
+          <StyleChips
+            items={[
+              { label: "Sin", val: "none" },
+              { label: "Suave", val: "soft" },
+              { label: "Fuerte", val: "strong" },
             ]}
-            onChange={(value) =>
+            active={shadowActive}
+            onPick={(val) =>
               style(
                 "boxShadow",
-                value === "none"
-                  ? "none"
-                  : value === "strong"
-                    ? "0 16px 38px rgba(0,0,0,.32)"
-                    : "0 10px 24px rgba(0,0,0,.18)"
+                val === "none" ? "none" : val === "strong" ? "0 16px 38px rgba(0,0,0,.32)" : "0 10px 24px rgba(0,0,0,.18)"
               )
             }
           />
-        </Row>
-      </SectionCard>
+        </div>
+      </StyleCard>
     )
   }
 
   const renderSpacingSection = () => {
     if (!element) return null
     return (
-      <SectionCard title="Espaciado" hint="Controla espacio interno, externo y separacion entre elementos.">
-        <Row label="Espacio interno">
-          <Slider value={element.styles.padding} min={0} max={96} onChange={(value) => style("padding", value)} />
-        </Row>
-        <Row label="Espacio externo">
-          <Slider value={element.styles.margin} min={0} max={96} onChange={(value) => style("margin", value)} />
-        </Row>
+      <StyleCard icon="↔" title="Espaciado">
+        <div>
+          <StyleLabel>Espacio interno (padding)</StyleLabel>
+          <StyleSlider min={0} max={96} value={parseInt(element.styles.padding || "0") || 0} onChange={(n) => style("padding", `${n}px`)} />
+        </div>
+        <div>
+          <StyleLabel>Espacio externo (margin)</StyleLabel>
+          <StyleSlider min={0} max={96} value={parseInt(element.styles.margin || "0") || 0} onChange={(n) => style("margin", `${n}px`)} />
+        </div>
         {nodeKind === "container" || nodeKind === "button" || nodeKind === "icon" ? (
-          <Row label="Separacion entre elementos">
-            <Slider value={element.styles.gap} min={0} max={40} onChange={(value) => style("gap", value)} />
-          </Row>
+          <div>
+            <StyleLabel>Separacion entre elementos (gap)</StyleLabel>
+            <StyleSlider min={0} max={40} value={parseInt(element.styles.gap || "0") || 0} onChange={(n) => style("gap", `${n}px`)} />
+          </div>
         ) : null}
-        <button
-          type="button"
-          onClick={() => {
-            style("padding", "0px")
-            style("margin", "0px")
-            if (nodeKind === "container" || nodeKind === "button" || nodeKind === "icon") {
-              style("gap", "0px")
-            }
-          }}
-          className="w-full rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-white/55 transition-all hover:border-primary/35 hover:text-white"
-        >
-          Restablecer espaciado
-        </button>
-      </SectionCard>
+        <StyleReset onClick={() => {
+          style("padding", "0px")
+          style("margin", "0px")
+          if (nodeKind === "container" || nodeKind === "button" || nodeKind === "icon") {
+            style("gap", "0px")
+          }
+        }}>
+          ↺ Restablecer espaciado
+        </StyleReset>
+      </StyleCard>
     )
   }
 
   const renderDimensionSection = () => {
     if (!element) return null
+    const currentWidth = element.styles.width || "auto"
+    const widthOpts = [
+      { label: "auto", val: "auto" },
+      { label: "100%", val: "100%" },
+      { label: "50%", val: "50%" },
+      { label: "ajustado", val: "fit-content" },
+    ]
+    const textInputStyle: React.CSSProperties = { width: "100%", background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: "7px 10px", color: "#ccc", fontSize: 12, fontFamily: "inherit", outline: "none" }
     return (
-      <SectionCard title="Tamano" hint="Controla ancho, alto y limites del elemento seleccionado.">
-        <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-[10px] leading-5 text-white/35">
-          Tambien puedes redimensionar directo en el canvas arrastrando la esquina inferior derecha del marco rojo.
+      <StyleCard icon="⤡" title="Tamano">
+        <div style={{ background: "#111", border: "0.5px solid #222", borderRadius: 8, padding: "9px 11px", fontSize: 11, color: "#555", lineHeight: 1.5 }}>
+          Arrastra la esquina inferior derecha del marco rojo en el canvas para redimensionar.
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            style("position", "")
-            style("left", "")
-            style("top", "")
-            style("transform", "")
-            style("width", "")
-            style("height", "")
-            style("maxWidth", "")
-            style("maxHeight", "")
-            style("fontSize", "")
-            style("zIndex", "")
-            style("margin", "0px")
-            attr("data-he-free-move", "")
-            attr("data-he-free-move-mode", "")
-            attr("data-he-move-x", "")
-            attr("data-he-move-y", "")
-            attr("data-he-base-transform", "")
-            attr("data-he-base-position", "")
-          }}
-          className="w-full rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-white/55 transition-all hover:border-primary/35 hover:text-white"
-        >
-          Restablecer posicion y tamano
-        </button>
-        <Row label="Ancho">
-          <OptionGroup
-            small
-            value={element.styles.width || "auto"}
-            options={[
-              { value: "auto", label: "auto" },
-              { value: "100%", label: "100%" },
-              { value: "50%", label: "50%" },
-              { value: "fit-content", label: "ajustado" },
-            ]}
-            onChange={(value) => style("width", value)}
-          />
-        </Row>
-        <Row label="Ancho maximo">
-          <FieldInput
-            value={element.styles.maxWidth || ""}
-            placeholder="ej. 640px"
-            onChange={(event) => style("maxWidth", event.target.value)}
-            className="h-8 px-2 text-[11px]"
-          />
-        </Row>
-        {(nodeKind === "image" || nodeKind === "container") ? (
-          <Row label="Alto">
-            <FieldInput
-              value={element.styles.height || ""}
-              placeholder="auto"
-              onChange={(event) => style("height", event.target.value)}
-              className="h-8 px-2 text-[11px]"
+        <div>
+          <StyleLabel>Ancho</StyleLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
+            {widthOpts.map(o => (
+              <button key={o.val} type="button" onClick={() => style("width", o.val)} style={{
+                border: `0.5px solid ${currentWidth === o.val ? "#E84040" : "#2a2a2a"}`,
+                borderRadius: 7, padding: "6px 0", fontSize: 11,
+                textAlign: "center" as const, cursor: "pointer",
+                background: currentWidth === o.val ? "#1a0808" : "#111",
+                color: currentWidth === o.val ? "#E84040" : "#666",
+                transition: "all .12s", fontFamily: "inherit",
+              }}>{o.label}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div>
+            <StyleLabel>Ancho maximo</StyleLabel>
+            <input
+              value={element.styles.maxWidth || ""}
+              placeholder="ej. 640px"
+              onChange={(event) => style("maxWidth", event.target.value)}
+              style={textInputStyle}
             />
-          </Row>
-        ) : null}
-      </SectionCard>
+          </div>
+          {(nodeKind === "image" || nodeKind === "container") ? (
+            <div>
+              <StyleLabel>Alto</StyleLabel>
+              <input
+                value={element.styles.height || ""}
+                placeholder="auto"
+                onChange={(event) => style("height", event.target.value)}
+                style={textInputStyle}
+              />
+            </div>
+          ) : null}
+        </div>
+        <StyleReset onClick={() => {
+          style("position", "")
+          style("left", "")
+          style("top", "")
+          style("transform", "")
+          style("width", "")
+          style("height", "")
+          style("maxWidth", "")
+          style("maxHeight", "")
+          style("fontSize", "")
+          style("zIndex", "")
+          style("margin", "0px")
+          attr("data-he-free-move", "")
+          attr("data-he-free-move-mode", "")
+          attr("data-he-move-x", "")
+          attr("data-he-move-y", "")
+          attr("data-he-base-transform", "")
+          attr("data-he-base-position", "")
+        }}>
+          ↺ Restablecer posicion y tamano
+        </StyleReset>
+      </StyleCard>
     )
   }
 
   const renderLayoutSection = () => {
     if (!element) return null
+    const currentDisplay = element.styles.display || "block"
+    const currentJustify = element.styles.justifyContent || "flex-start"
+    const currentAlign = element.styles.alignItems || "stretch"
+    const layoutOpts = [
+      { label: "Vertical", val: "block", icon: "⬍" },
+      { label: "Horizontal", val: "flex", icon: "⬌" },
+      { label: "Cuadricula", val: "grid", icon: "⊞" },
+      { label: "Libre", val: "inline-block", icon: "⤢" },
+    ] as const
+    const hAlignOpts: { val: string; label: string }[] = [
+      { val: "flex-start", label: "Izq" },
+      { val: "center", label: "Centro" },
+      { val: "space-between", label: "Sep" },
+      { val: "flex-end", label: "Der" },
+    ]
+    const vAlignOpts: { val: string; label: string }[] = [
+      { val: "flex-start", label: "Arriba" },
+      { val: "center", label: "Centro" },
+      { val: "flex-end", label: "Abajo" },
+      { val: "stretch", label: "Estirar" },
+    ]
+    const alignBtnBase: React.CSSProperties = { flex: 1, height: 32, border: "0.5px solid", borderRadius: 7, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all .12s", fontSize: 10, fontFamily: "inherit" }
     return (
-      <SectionCard title="Organizacion" hint="Decide como se acomodan y alinean los elementos dentro del bloque.">
-        <Row label="Como se acomodan">
-          <OptionGroup
-            small
-            value={element.styles.display || "block"}
-            options={[
-              { value: "block", label: "vertical" },
-              { value: "flex", label: "horizontal" },
-              { value: "grid", label: "cuadricula" },
-              { value: "inline-block", label: "libre" },
-            ]}
-            onChange={(value) => style("display", value)}
-          />
-        </Row>
-        <Row label="Alineacion horizontal">
-          <OptionGroup
-            small
-            value={element.styles.justifyContent || "flex-start"}
-            options={[
-              { value: "flex-start", label: "izquierda" },
-              { value: "center", label: "centro" },
-              { value: "space-between", label: "separado" },
-              { value: "flex-end", label: "derecha" },
-            ]}
-            onChange={(value) => style("justifyContent", value)}
-          />
-        </Row>
-        <Row label="Alineacion vertical">
-          <OptionGroup
-            small
-            value={element.styles.alignItems || "stretch"}
-            options={[
-              { value: "flex-start", label: "arriba" },
-              { value: "center", label: "centro" },
-              { value: "flex-end", label: "abajo" },
-              { value: "stretch", label: "estirar" },
-            ]}
-            onChange={(value) => style("alignItems", value)}
-          />
-        </Row>
-      </SectionCard>
+      <StyleCard icon="⊞" title="Organizacion">
+        <div>
+          <StyleLabel>Distribucion</StyleLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
+            {layoutOpts.map(o => (
+              <button key={o.val} type="button" onClick={() => style("display", o.val)} style={{
+                border: `0.5px solid ${currentDisplay === o.val ? "#E84040" : "#2a2a2a"}`,
+                borderRadius: 8, padding: "8px 0", fontSize: 11,
+                textAlign: "center" as const, cursor: "pointer",
+                background: currentDisplay === o.val ? "#1a0808" : "#111",
+                color: currentDisplay === o.val ? "#E84040" : "#666",
+                transition: "all .12s", display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 3,
+                fontFamily: "inherit",
+              }}>
+                <span style={{ fontSize: 14 }}>{o.icon}</span>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <StyleLabel>Alineacion H</StyleLabel>
+            <div style={{ display: "flex", gap: 3 }}>
+              {hAlignOpts.map(o => (
+                <button key={o.val} type="button" onClick={() => style("justifyContent", o.val)} title={o.label} style={{
+                  ...alignBtnBase,
+                  background: currentJustify === o.val ? "#E84040" : "#111",
+                  color: currentJustify === o.val ? "#fff" : "#555",
+                  borderColor: currentJustify === o.val ? "#E84040" : "#2a2a2a",
+                }}>
+                  <StyleHAlignIcon type={o.val} />
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <StyleLabel>Alineacion V</StyleLabel>
+            <div style={{ display: "flex", gap: 3 }}>
+              {vAlignOpts.map(o => (
+                <button key={o.val} type="button" onClick={() => style("alignItems", o.val)} title={o.label} style={{
+                  ...alignBtnBase,
+                  background: currentAlign === o.val ? "#E84040" : "#111",
+                  color: currentAlign === o.val ? "#fff" : "#555",
+                  borderColor: currentAlign === o.val ? "#E84040" : "#2a2a2a",
+                }}>
+                  <StyleVAlignIcon type={o.val} />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </StyleCard>
     )
   }
 
-  const renderImageContent = () => (
-    <div ref={imageSectionRef} className="space-y-3">
-      <SectionCard title="Contenido visual" hint="Cambia la imagen, el texto alternativo y el origen del recurso.">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-all hover:bg-primary/15"
-          >
-            Subir desde PC
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setLocalSrc("")
-              attr("src", "")
-            }}
-            className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/45 transition-all hover:border-white/20 hover:text-white"
-          >
-            Limpiar src
-          </button>
-        </div>
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-        <Row label="Archivo o URL">
-          <FieldInput
-            value={localSrc}
-            placeholder="https://... o data:image/..."
-            onChange={(event) => setLocalSrc(event.target.value)}
-            onBlur={() => attr("src", localSrc)}
-          />
-        </Row>
-        <Row label="Texto alternativo">
-          <FieldInput
-            value={localAlt}
-            placeholder="Descripcion accesible"
-            onChange={(event) => setLocalAlt(event.target.value)}
-            onBlur={() => attr("alt", localAlt)}
-          />
-        </Row>
-        <Row label="Texto emergente">
-          <FieldInput
-            value={localTitle}
-            placeholder="Tooltip opcional"
-            onChange={(event) => setLocalTitle(event.target.value)}
-            onBlur={() => attr("title", localTitle)}
-          />
-        </Row>
-      </SectionCard>
-      <SectionCard title="Ajuste visual" hint="Controla recorte, esquinas y dimensiones de la imagen.">
-        <Row label="Como se ajusta">
-          <OptionGroup
-            small
-            value={element?.styles.objectFit || "cover"}
-            options={[
-              { value: "cover", label: "rellenar" },
-              { value: "contain", label: "contener" },
-              { value: "fill", label: "estirar" },
-              { value: "none", label: "original" },
-            ]}
-            onChange={(value) => style("objectFit", value)}
-          />
-        </Row>
-        <Row label="Redondeado">
-          <Slider value={element?.styles.borderRadius || "0px"} min={0} max={40} onChange={(value) => style("borderRadius", value)} />
-        </Row>
-        <Row label="Ancho">
-          <FieldInput
-            value={element?.styles.width || ""}
-            placeholder="auto / 180px / 100%"
-            onChange={(event) => style("width", event.target.value)}
-            className="h-8 px-2 text-[11px]"
-          />
-        </Row>
-        <Row label="Alto">
-          <FieldInput
-            value={element?.styles.height || ""}
-            placeholder="auto / 80px"
-            onChange={(event) => style("height", event.target.value)}
-            className="h-8 px-2 text-[11px]"
-          />
-        </Row>
-      </SectionCard>
-    </div>
-  )
+  const renderImageContent = () => {
+    const ci: React.CSSProperties = { width: "100%", background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: "8px 11px", color: "#ccc", fontSize: 12, fontFamily: "inherit", outline: "none", display: "block" }
+    return (
+      <div ref={imageSectionRef} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <StyleCard icon="⊡" title="Contenido visual">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              style={{ background: "#E84040", border: "none", borderRadius: 8, padding: "9px", fontSize: 12, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, transition: "all .15s" }}
+            >
+              Subir desde PC
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLocalSrc("")
+                attr("src", "")
+              }}
+              style={{ padding: "9px", borderRadius: 8, border: "0.5px solid #2a2a2a", background: "transparent", color: "#999", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              Limpiar src
+            </button>
+          </div>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+          <div>
+            <StyleLabel>Archivo o URL</StyleLabel>
+            <input
+              style={ci}
+              value={localSrc}
+              placeholder="https://... o data:image/..."
+              onChange={(event) => setLocalSrc(event.target.value)}
+              onBlur={() => attr("src", localSrc)}
+            />
+          </div>
+          <div>
+            <StyleLabel>Texto alternativo</StyleLabel>
+            <input
+              style={ci}
+              value={localAlt}
+              placeholder="Descripcion accesible"
+              onChange={(event) => setLocalAlt(event.target.value)}
+              onBlur={() => attr("alt", localAlt)}
+            />
+          </div>
+          <div>
+            <StyleLabel>Texto emergente</StyleLabel>
+            <input
+              style={ci}
+              value={localTitle}
+              placeholder="Tooltip opcional"
+              onChange={(event) => setLocalTitle(event.target.value)}
+              onBlur={() => attr("title", localTitle)}
+            />
+          </div>
+        </StyleCard>
+        <StyleCard icon="◑" title="Ajuste visual">
+          <div>
+            <StyleLabel>Como se ajusta</StyleLabel>
+            <StyleChips
+              items={[
+                { label: "rellenar", val: "cover" },
+                { label: "contener", val: "contain" },
+                { label: "estirar", val: "fill" },
+                { label: "original", val: "none" },
+              ]}
+              active={element?.styles.objectFit || "cover"}
+              onPick={(v) => style("objectFit", v)}
+            />
+          </div>
+          <div>
+            <StyleLabel>Redondeado</StyleLabel>
+            <StyleSlider min={0} max={40} value={parseInt(element?.styles.borderRadius || "0") || 0} onChange={(n) => style("borderRadius", `${n}px`)} />
+          </div>
+          <div>
+            <StyleLabel>Ancho</StyleLabel>
+            <input
+              style={ci}
+              value={element?.styles.width || ""}
+              placeholder="auto / 180px / 100%"
+              onChange={(event) => style("width", event.target.value)}
+            />
+          </div>
+          <div>
+            <StyleLabel>Alto</StyleLabel>
+            <input
+              style={ci}
+              value={element?.styles.height || ""}
+              placeholder="auto / 80px"
+              onChange={(event) => style("height", event.target.value)}
+            />
+          </div>
+        </StyleCard>
+      </div>
+    )
+  }
 
   const renderActionSection = () => {
     if (!treatsAsButton || !element) return null
+    const ci: React.CSSProperties = { width: "100%", background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: "8px 11px", color: "#ccc", fontSize: 12, fontFamily: "inherit", outline: "none", display: "block" }
+    const cs: React.CSSProperties = { width: "100%", background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: "8px 11px", color: "#ccc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer", appearance: "none" as React.CSSProperties["appearance"], backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23555' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 11px center", paddingRight: 30 }
     return (
       <div ref={actionSectionRef}>
-      <SectionCard title="Destino del boton" hint="Define hacia donde lleva este boton o enlace.">
+      <StyleCard icon="▶" title="Destino del boton">
         {element.tag === "button" ? (
-          <Row label="Tipo de boton">
+          <div>
+            <StyleLabel>Tipo de boton</StyleLabel>
             <select
-              className="h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-xs text-white focus:border-primary/50 focus:outline-none"
+              style={cs}
               value={element.attrs?.type || "button"}
               onChange={(event) => attr("type", event.target.value)}
             >
@@ -1632,19 +2577,22 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
               <option value="submit">submit</option>
               <option value="reset">reset</option>
             </select>
-          </Row>
+          </div>
         ) : null}
-        <Row label="Enlace">
-          <FieldInput
+        <div>
+          <StyleLabel>Enlace</StyleLabel>
+          <input
+            style={ci}
             value={localHref}
             placeholder={element.isLink ? "/ruta o https://..." : "Opcional"}
             onChange={(event) => setLocalHref(event.target.value)}
             onBlur={() => attr("href", localHref)}
           />
-        </Row>
-        <Row label="Como se abre">
+        </div>
+        <div>
+          <StyleLabel>Como se abre</StyleLabel>
           <select
-            className="h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-xs text-white focus:border-primary/50 focus:outline-none"
+            style={cs}
             value={localTarget}
             onChange={(event) => {
               setLocalTarget(event.target.value)
@@ -1654,254 +2602,274 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
             <option value="">En esta pagina</option>
             <option value="_blank">En una pestana nueva</option>
           </select>
-        </Row>
-      </SectionCard>
+        </div>
+      </StyleCard>
       </div>
     )
   }
 
-  const renderFieldContent = () => (
-    <div ref={fieldSectionRef}>
-    <SectionCard title="Contenido del campo" hint="Configura datos, estados, opciones y comportamiento del formulario sin tocar el HTML manualmente.">
-      {element?.tag === "input" ? (
-        <Row label="Tipo de input">
-          <select
-            className="h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-xs text-white focus:border-primary/50 focus:outline-none"
-            value={localFieldType || "text"}
-            onChange={(event) => {
-              const nextType = event.target.value
-              setLocalFieldType(nextType)
-              attr("type", nextType)
-            }}
-          >
-            {["text", "email", "tel", "number", "password", "date", "checkbox", "radio"].map((value) => (
-              <option key={value} value={value}>{value}</option>
-            ))}
-          </select>
-        </Row>
-      ) : (
-        <Row label="Tipo de campo">
-          <FieldInput value={element?.tag || ""} readOnly className="h-8 px-2 text-[11px] text-white/45" />
-        </Row>
-      )}
-
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Row label="ID del campo">
-          <FieldInput
-            value={localId}
-            placeholder="id-del-campo"
-            onChange={(event) => setLocalId(event.target.value)}
-            onBlur={() => attr("id", localId)}
-          />
-        </Row>
-        <Row label="Nombre tecnico">
-          <FieldInput
-            value={localName}
-            placeholder="name del campo"
-            onChange={(event) => setLocalName(event.target.value)}
-            onBlur={() => attr("name", localName)}
-          />
-        </Row>
-      </div>
-
-      {supportsAutocomplete ? (
-        <Row label="Autocomplete">
-          <FieldInput
-            value={localAutocomplete}
-            placeholder="on / off / name / email / tel"
-            onChange={(event) => setLocalAutocomplete(event.target.value)}
-            onBlur={() => attr("autocomplete", localAutocomplete)}
-          />
-        </Row>
-      ) : null}
-
-      {supportsPlaceholder ? (
-        <Row label="Texto de ayuda">
-          <FieldInput
-            value={localPlaceholder}
-            placeholder="Texto de ayuda"
-            onChange={(event) => setLocalPlaceholder(event.target.value)}
-            onBlur={() => attr("placeholder", localPlaceholder)}
-          />
-        </Row>
-      ) : null}
-
-      {element?.tag === "select" ? (
-        <>
-          <Row label="Valor seleccionado">
+  const renderFieldContent = () => {
+    const ci: React.CSSProperties = { width: "100%", background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: "8px 11px", color: "#ccc", fontSize: 12, fontFamily: "inherit", outline: "none", display: "block" }
+    const ca: React.CSSProperties = { width: "100%", background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: "10px 11px", color: "#ccc", fontSize: 12, fontFamily: "inherit", outline: "none", resize: "none", minHeight: 84, lineHeight: 1.6, display: "block" }
+    const cs: React.CSSProperties = { width: "100%", background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: "8px 11px", color: "#ccc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer", appearance: "none" as React.CSSProperties["appearance"], backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23555' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 11px center", paddingRight: 30 }
+    const toggleBtn = (active: boolean) => ({ border: `0.5px solid ${active ? "#E84040" : "#2a2a2a"}`, borderRadius: 8, padding: "8px 0", fontSize: 12, fontWeight: 500, textAlign: "center" as const, cursor: "pointer", background: active ? "#E84040" : "#111", color: active ? "#fff" : "#666", transition: "all .12s", fontFamily: "inherit", width: "100%" })
+    return (
+      <div ref={fieldSectionRef}>
+      <StyleCard icon="⊟" title="Contenido del campo">
+        {element?.tag === "input" ? (
+          <div>
+            <StyleLabel>Tipo de input</StyleLabel>
             <select
-              className="h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-xs text-white focus:border-primary/50 focus:outline-none"
-              value={localValue}
+              style={cs}
+              value={localFieldType || "text"}
               onChange={(event) => {
-                const nextValue = event.target.value
-                setLocalValue(nextValue)
-                applyFieldValue(nextValue)
+                const nextType = event.target.value
+                setLocalFieldType(nextType)
+                attr("type", nextType)
               }}
             >
-              <option value="">Sin valor inicial</option>
-              {selectOptionEntries.map((option) => (
-                <option key={`${option.value}-${option.label}`} value={option.value}>
-                  {option.label}
-                </option>
+              {["text", "email", "tel", "number", "password", "date", "checkbox", "radio"].map((value) => (
+                <option key={value} value={value}>{value}</option>
               ))}
             </select>
-          </Row>
-          <Row label="Opciones">
-            <FieldArea
-              value={localSelectOptions}
-              onChange={(event) => setLocalSelectOptions(event.target.value)}
-              onBlur={applySelectOptions}
-              placeholder={"matematicas|Matematicas\nlengua|Lengua\nciencias|Ciencias"}
-              className="min-h-[110px]"
-            />
-          </Row>
-        </>
-      ) : (
-        <Row label={isChoiceField ? "Valor enviado" : "Valor por defecto"}>
-          <FieldInput
-            value={localValue}
-            placeholder={isChoiceField ? "valor-opcion" : "Valor inicial"}
-            onChange={(event) => setLocalValue(event.target.value)}
-            onBlur={() => applyFieldValue(localValue)}
-          />
-        </Row>
-      )}
+          </div>
+        ) : (
+          <div>
+            <StyleLabel>Tipo de campo</StyleLabel>
+            <input style={ci} value={element?.tag || ""} readOnly />
+          </div>
+        )}
 
-      {supportsRows ? (
-        <Row label="Filas visibles">
-          <FieldInput
-            type="number"
-            min={1}
-            value={localRows}
-            placeholder="4"
-            onChange={(event) => setLocalRows(event.target.value)}
-            onBlur={() => attr("rows", localRows)}
-          />
-        </Row>
-      ) : null}
-
-      {supportsNumericRange ? (
-        <div className="grid gap-2 sm:grid-cols-3">
-          <Row label="Minimo">
-            <FieldInput
-              value={localMin}
-              placeholder="0"
-              onChange={(event) => setLocalMin(event.target.value)}
-              onBlur={() => attr("min", localMin)}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div>
+            <StyleLabel>ID del campo</StyleLabel>
+            <input
+              style={ci}
+              value={localId}
+              placeholder="id-del-campo"
+              onChange={(event) => setLocalId(event.target.value)}
+              onBlur={() => attr("id", localId)}
             />
-          </Row>
-          <Row label="Maximo">
-            <FieldInput
-              value={localMax}
-              placeholder="100"
-              onChange={(event) => setLocalMax(event.target.value)}
-              onBlur={() => attr("max", localMax)}
+          </div>
+          <div>
+            <StyleLabel>Nombre tecnico</StyleLabel>
+            <input
+              style={ci}
+              value={localName}
+              placeholder="name del campo"
+              onChange={(event) => setLocalName(event.target.value)}
+              onBlur={() => attr("name", localName)}
             />
-          </Row>
-          <Row label="Paso">
-            <FieldInput
-              value={localStep}
-              placeholder="1"
-              onChange={(event) => setLocalStep(event.target.value)}
-              onBlur={() => attr("step", localStep)}
-            />
-          </Row>
+          </div>
         </div>
-      ) : null}
 
-      <div className={cn("grid gap-2", element?.tag === "select" || isChoiceField ? "sm:grid-cols-4" : "sm:grid-cols-2")}>
-        <button
-          type="button"
-          onClick={() => {
-            const next = !isRequired
-            setIsRequired(next)
-            toggleAttr("required", next)
-          }}
-          className={cn(
-            PRESET_BUTTON_CLS,
-            isRequired ? "border-primary/35 bg-primary/10 text-primary" : ""
-          )}
-        >
-          Requerido
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            const next = !isDisabled
-            setIsDisabled(next)
-            toggleAttr("disabled", next)
-          }}
-          className={cn(
-            PRESET_BUTTON_CLS,
-            isDisabled ? "border-primary/35 bg-primary/10 text-primary" : ""
-          )}
-        >
-          Deshabilitado
-        </button>
+        {supportsAutocomplete ? (
+          <div>
+            <StyleLabel>Autocomplete</StyleLabel>
+            <input
+              style={ci}
+              value={localAutocomplete}
+              placeholder="on / off / name / email / tel"
+              onChange={(event) => setLocalAutocomplete(event.target.value)}
+              onBlur={() => attr("autocomplete", localAutocomplete)}
+            />
+          </div>
+        ) : null}
+
+        {supportsPlaceholder ? (
+          <div>
+            <StyleLabel>Texto de ayuda</StyleLabel>
+            <input
+              style={ci}
+              value={localPlaceholder}
+              placeholder="Texto de ayuda"
+              onChange={(event) => setLocalPlaceholder(event.target.value)}
+              onBlur={() => attr("placeholder", localPlaceholder)}
+            />
+          </div>
+        ) : null}
+
         {element?.tag === "select" ? (
+          <>
+            <div>
+              <StyleLabel>Valor seleccionado</StyleLabel>
+              <select
+                style={cs}
+                value={localValue}
+                onChange={(event) => {
+                  const nextValue = event.target.value
+                  setLocalValue(nextValue)
+                  applyFieldValue(nextValue)
+                }}
+              >
+                <option value="">Sin valor inicial</option>
+                {selectOptionEntries.map((option) => (
+                  <option key={`${option.value}-${option.label}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <StyleLabel>Opciones</StyleLabel>
+              <textarea
+                style={ca}
+                value={localSelectOptions}
+                onChange={(event) => setLocalSelectOptions(event.target.value)}
+                onBlur={applySelectOptions}
+                placeholder={"matematicas|Matematicas\nlengua|Lengua\nciencias|Ciencias"}
+              />
+            </div>
+          </>
+        ) : (
+          <div>
+            <StyleLabel>{isChoiceField ? "Valor enviado" : "Valor por defecto"}</StyleLabel>
+            <input
+              style={ci}
+              value={localValue}
+              placeholder={isChoiceField ? "valor-opcion" : "Valor inicial"}
+              onChange={(event) => setLocalValue(event.target.value)}
+              onBlur={() => applyFieldValue(localValue)}
+            />
+          </div>
+        )}
+
+        {supportsRows ? (
+          <div>
+            <StyleLabel>Filas visibles</StyleLabel>
+            <input
+              style={ci}
+              type="number"
+              min={1}
+              value={localRows}
+              placeholder="4"
+              onChange={(event) => setLocalRows(event.target.value)}
+              onBlur={() => attr("rows", localRows)}
+            />
+          </div>
+        ) : null}
+
+        {supportsNumericRange ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            <div>
+              <StyleLabel>Minimo</StyleLabel>
+              <input
+                style={ci}
+                value={localMin}
+                placeholder="0"
+                onChange={(event) => setLocalMin(event.target.value)}
+                onBlur={() => attr("min", localMin)}
+              />
+            </div>
+            <div>
+              <StyleLabel>Maximo</StyleLabel>
+              <input
+                style={ci}
+                value={localMax}
+                placeholder="100"
+                onChange={(event) => setLocalMax(event.target.value)}
+                onBlur={() => attr("max", localMax)}
+              />
+            </div>
+            <div>
+              <StyleLabel>Paso</StyleLabel>
+              <input
+                style={ci}
+                value={localStep}
+                placeholder="1"
+                onChange={(event) => setLocalStep(event.target.value)}
+                onBlur={() => attr("step", localStep)}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <div style={{ display: "grid", gridTemplateColumns: element?.tag === "select" || isChoiceField ? "1fr 1fr 1fr 1fr" : "1fr 1fr", gap: 8 }}>
           <button
             type="button"
             onClick={() => {
-              const next = !isMultiple
-              setIsMultiple(next)
-              toggleAttr("multiple", next)
+              const next = !isRequired
+              setIsRequired(next)
+              toggleAttr("required", next)
             }}
-            className={cn(
-              PRESET_BUTTON_CLS,
-              isMultiple ? "border-primary/35 bg-primary/10 text-primary" : ""
-            )}
+            style={toggleBtn(isRequired)}
           >
-            Multiple
+            Requerido
           </button>
-        ) : null}
-        {isChoiceField ? (
           <button
             type="button"
             onClick={() => {
-              const next = !isChecked
-              setIsChecked(next)
-              toggleAttr("checked", next)
+              const next = !isDisabled
+              setIsDisabled(next)
+              toggleAttr("disabled", next)
             }}
-            className={cn(
-              PRESET_BUTTON_CLS,
-              isChecked ? "border-primary/35 bg-primary/10 text-primary" : ""
-            )}
+            style={toggleBtn(isDisabled)}
           >
-            Marcado
+            Deshabilitado
           </button>
-        ) : null}
-      </div>
-
-      <Row label="Texto emergente">
-        <FieldInput
-          value={localTitle}
-          placeholder="Tooltip opcional"
-          onChange={(event) => setLocalTitle(event.target.value)}
-          onBlur={() => attr("title", localTitle)}
-        />
-      </Row>
-
-      {element?.tag === "select" ? (
-        <div className="text-[10px] leading-5 text-white/30">
-          El selector ya permite editar opciones, valor inicial, modo multiple, color, borde y estado desde el panel visual.
+          {element?.tag === "select" ? (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !isMultiple
+                setIsMultiple(next)
+                toggleAttr("multiple", next)
+              }}
+              style={toggleBtn(isMultiple)}
+            >
+              Multiple
+            </button>
+          ) : null}
+          {isChoiceField ? (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !isChecked
+                setIsChecked(next)
+                toggleAttr("checked", next)
+              }}
+              style={toggleBtn(isChecked)}
+            >
+              Marcado
+            </button>
+          ) : null}
         </div>
-      ) : null}
-    </SectionCard>
-    </div>
-  )
+
+        <div>
+          <StyleLabel>Texto emergente</StyleLabel>
+          <input
+            style={ci}
+            value={localTitle}
+            placeholder="Tooltip opcional"
+            onChange={(event) => setLocalTitle(event.target.value)}
+            onBlur={() => attr("title", localTitle)}
+          />
+        </div>
+
+        {element?.tag === "select" ? (
+          <div style={{ background: "#111", border: "0.5px solid #222", borderRadius: 8, padding: "9px 11px", fontSize: 11, color: "#555", lineHeight: 1.5 }}>
+            El selector ya permite editar opciones, valor inicial, modo multiple, color, borde y estado desde el panel visual.
+          </div>
+        ) : null}
+      </StyleCard>
+      </div>
+    )
+  }
 
   const renderTextContent = () => {
     if (!element) return null
+    const ca: React.CSSProperties = { width: "100%", background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: "10px 11px", color: "#ccc", fontSize: 12, fontFamily: "inherit", outline: "none", resize: "none", minHeight: 84, lineHeight: 1.6, display: "block" }
     return (
       <div ref={textSectionRef}>
-      <SectionCard title="Contenido" hint="Edita el texto visible del elemento sin tocar el codigo fuente.">
+      <StyleCard icon="¶" title="Contenido">
         {isEditing ? (
-          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-3 text-[11px] text-emerald-400">
+          <div style={{ background: "#111", border: "0.5px solid #222", borderRadius: 8, padding: "9px 11px", fontSize: 11, color: "#555", lineHeight: 1.5 }}>
             Editando inline en el canvas. Pulsa Esc para salir y luego ajusta el contenido aqui.
           </div>
         ) : treatsAsText ? (
           <>
-            <FieldArea
+            <textarea
+              style={ca}
               value={localText}
               onChange={(event) => {
                 setLocalText(event.target.value)
@@ -1910,14 +2878,14 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
               onBlur={() => setText(localText)}
               placeholder="Texto visible del elemento"
             />
-            <div className="text-[10px] text-white/25">Tambien puedes hacer doble clic sobre el texto dentro del canvas.</div>
+            <div style={{ fontSize: 11, color: "#555", lineHeight: 1.5 }}>Tambien puedes hacer doble clic sobre el texto dentro del canvas.</div>
           </>
         ) : (
-          <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-3 text-[11px] text-white/30">
+          <div style={{ background: "#111", border: "0.5px dashed #2a2a2a", borderRadius: 8, padding: "12px", fontSize: 11, color: "#555", lineHeight: 1.6 }}>
             Este bloque no tiene contenido directo. Entra a sus elementos internos desde Capas o inserta contenido nuevo mas abajo.
           </div>
         )}
-      </SectionCard>
+      </StyleCard>
       </div>
     )
   }
@@ -1926,109 +2894,67 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
     if (!element) return null
     return (
       <div ref={containerContentRef}>
-        <SectionCard title="Contenido del bloque" hint="Este bloque agrupa otros elementos editables dentro del HTML importado.">
-          <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-3 text-[11px] leading-5 text-white/35">
-            Este bloque no tiene contenido directo. Usa la pestana <span className="font-semibold text-white">Capas</span> para seleccionar un texto, boton, imagen o campo dentro del bloque, o agrega nuevos elementos mas abajo.
+        <StyleCard icon="▭" title="Contenido del bloque">
+          <div style={{ background: "#111", border: "0.5px dashed #2a2a2a", borderRadius: 8, padding: "12px", fontSize: 11, color: "#555", lineHeight: 1.6 }}>
+            Este bloque no tiene contenido directo. Usa la pestana <span style={{ fontWeight: 600, color: "#aaa" }}>Capas</span> para seleccionar un texto, boton, imagen o campo dentro del bloque, o agrega nuevos elementos mas abajo.
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setTab("layers")} className={PRESET_BUTTON_CLS}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <button
+              type="button"
+              {...getTouchSafeButtonProps("route:layers", () => updateInspectorTab("layers", { manual: true }))}
+              style={{ padding: "9px", borderRadius: 8, border: "0.5px solid #2a2a2a", background: "transparent", color: "#999", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+            >
               Ir a capas
             </button>
-            <button type="button" onClick={() => cleanupLayout(element.eid)} className={PRESET_BUTTON_CLS}>
+            <button
+              type="button"
+              onClick={() => cleanupLayout(element.eid)}
+              style={{ padding: "9px", borderRadius: 8, border: "0.5px solid #2a2a2a", background: "transparent", color: "#999", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+            >
               Compactar bloque
             </button>
           </div>
-        </SectionCard>
+        </StyleCard>
       </div>
     )
   }
 
   const renderIconSection = () => {
-    if (!supportsIconTools || !element) return null
+    if (!hasDetectedIconContext || !element) return null
+    const isDirectIcon = nodeKind === "icon"
     return (
       <div ref={iconSectionRef}>
-        <SectionCard title="Icono" hint="Cambia el icono, su color, su tamano o sustituyelo por una imagen.">
-          <div className="flex flex-wrap gap-2">
+        <StyleCard icon="★" title={isDirectIcon ? "Ruta del icono" : "Iconos detectados"}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {detectedEmojis.map((emoji) => (
-              <span key={emoji} className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] text-white/70">
+              <span key={emoji} style={{ borderRadius: 20, border: "0.5px solid #2a2a2a", background: "#111", padding: "3px 9px", fontSize: 10, color: "#aaa" }}>
                 {emoji}
               </span>
             ))}
             {visibleIconRefs.map((icon) => (
-              <span key={icon} className="rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-[10px] text-primary">
+              <span key={icon} style={{ borderRadius: 20, border: "0.5px solid #E84040", background: "rgba(232,64,64,0.08)", padding: "3px 9px", fontSize: 10, color: "#E84040" }}>
                 {icon}
               </span>
             ))}
             {detectedEmojis.length === 0 && visibleIconRefs.length === 0 ? (
-              <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] text-white/35">
+              <span style={{ borderRadius: 20, border: "0.5px solid #2a2a2a", background: "#111", padding: "3px 9px", fontSize: 10, color: "#555" }}>
                 Sin iconos detectados
               </span>
             ) : null}
           </div>
-
-          <Row label="Como quieres aplicarlo">
-            <OptionGroup
-              small
-              value={iconMode}
-              options={[
-                { value: "replace", label: "reemplazar" },
-                { value: "prepend", label: "anteponer" },
-              ]}
-              onChange={(value) => setIconMode(value as "replace" | "prepend")}
-            />
-          </Row>
-
-          {nodeKind === "icon" ? (
-            <>
-              <Row label="Color del icono">
-                <ColorPicker value={element.styles.color} onChange={applyIconColor} />
-              </Row>
-              <Row label="Tamano del icono">
-                <Slider value={element.styles.width || element.styles.fontSize || "18px"} min={12} max={220} onChange={applyIconSize} />
-              </Row>
-              <Row label="Trazo del icono">
-                <Slider value={element.styles.strokeWidth || "1.9"} min={0.8} max={4} step={0.1} unit="" onChange={applyIconStrokeWidth} />
-              </Row>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => iconImageInputRef.current?.click()}
-                  className="rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-all hover:bg-primary/15"
-                >
-                  Cambiar por imagen
-                </button>
-                <button
-                  type="button"
-                  onClick={() => currentIcon ? replaceElementHtml(buildCurrentIconMarkup(currentIcon)) : null}
-                  className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/60 transition-all hover:border-white/20 hover:text-white"
-                >
-                  Restaurar icono
-                </button>
-              </div>
-              <input ref={iconImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleIconImageUpload} />
-              <Row label="Imagen o URL">
-                <FieldInput
-                  value={iconImageSrc}
-                  placeholder="https://... o data:image/..."
-                  onChange={(event) => setIconImageSrc(event.target.value)}
-                  onBlur={() => replaceIconWithImage(iconImageSrc)}
-                />
-              </Row>
-            </>
-          ) : null}
-
-          {detectedEmojis.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => applyDetectedEmojiReplacement()}
-              className="w-full rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-all hover:bg-primary/15"
-            >
-              Convertir emojis detectados en iconos del sitio
-            </button>
-          ) : null}
-
-          <IconPicker value={currentIcon} onSelect={applyIcon} />
-        </SectionCard>
+          <div style={{ background: "#111", border: "0.5px solid #222", borderRadius: 8, padding: "9px 11px", fontSize: 11, color: "#555", lineHeight: 1.5 }}>
+            {isDirectIcon
+              ? "Abre Tipografia para cambiar libreria, color, tamano, trazo o reemplazar este icono por imagen."
+              : "Este bloque contiene iconos o emojis. Para editarlos sin duplicar herramientas, selecciona el icono puntual en el canvas y usa Tipografia."}
+          </div>
+          <button
+            type="button"
+            {...getTouchSafeButtonProps("route:typography", () => updateInspectorTab("typography", { manual: true }))}
+            style={{ width: "100%", background: "#E84040", border: "none", borderRadius: 8, padding: "10px", fontSize: 12, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, transition: "all .15s" }}
+          >
+            Ir a Tipografia
+          </button>
+        </StyleCard>
       </div>
     )
   }
@@ -2057,25 +2983,32 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
 
     return (
       <div ref={insertSectionRef}>
-      <SectionCard
-        title="Agregar elemento"
-        hint="Si eliminaste algo del HTML importado, desde aqui puedes insertar otro titulo, boton, tarjeta, imagen o tu propio HTML."
-      >
+      <StyleCard icon="＋" title="Agregar elemento">
+        <div style={{ background: "#111", border: "0.5px solid #222", borderRadius: 8, padding: "9px 11px", fontSize: 11, color: "#555", lineHeight: 1.5 }}>
+          Si eliminaste algo del HTML importado, desde aqui puedes insertar otro titulo, boton, tarjeta, imagen o tu propio HTML.
+        </div>
         <input ref={insertImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleInsertImageUpload} />
-        <Row label="Lugar">
-          <OptionGroup
-            small
-            value={insertPlacement}
-            options={placementOptions}
-            onChange={(value) => setInsertPlacement(value as InsertPlacement)}
-          />
-        </Row>
+        <div>
+          <StyleLabel>Lugar</StyleLabel>
+          <div style={{ display: "grid", gridTemplateColumns: placementOptions.length === 4 ? "1fr 1fr 1fr 1fr" : "1fr 1fr", gap: 6 }}>
+            {placementOptions.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setInsertPlacement(opt.value as InsertPlacement)}
+                style={{ border: `0.5px solid ${insertPlacement === opt.value ? "#E84040" : "#2a2a2a"}`, borderRadius: 8, padding: "8px 0", fontSize: 12, fontWeight: 500, textAlign: "center" as const, cursor: "pointer", background: insertPlacement === opt.value ? "#E84040" : "#111", color: insertPlacement === opt.value ? "#fff" : "#666", transition: "all .12s", fontFamily: "inherit", width: "100%" }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        <div className="space-y-3">
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {Object.entries(templatesByGroup).map(([group, templates]) => (
-            <div key={group} className="space-y-2">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-white/30">{group}</div>
-              <div className="grid grid-cols-2 gap-2">
+            <div key={group}>
+              <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em", color: "#3a3a3a", textTransform: "uppercase" as const, margin: "10px 0 7px" }}>{group}</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 {templates.map((template) => (
                   <button
                     key={template.key}
@@ -2087,10 +3020,10 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
                       }
                       insertHtml(template.html)
                     }}
-                    className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-3 text-left transition-all hover:border-primary/35 hover:bg-primary/5"
+                    style={{ background: "#111", border: "0.5px solid #242424", borderRadius: 9, padding: "10px 11px", cursor: "pointer", textAlign: "left" as const, fontFamily: "inherit", width: "100%", display: "block" }}
                   >
-                    <div className="text-[11px] font-semibold text-white">{template.label}</div>
-                    <div className="mt-1 text-[10px] leading-4 text-white/35">{template.hint}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#ccc" }}>{template.label}</div>
+                    <div style={{ marginTop: 4, fontSize: 10, lineHeight: 1.4, color: "#555" }}>{template.hint}</div>
                   </button>
                 ))}
               </div>
@@ -2098,13 +3031,13 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
           ))}
         </div>
 
-        <div className="space-y-2 rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-3">
-          <div className="text-[10px] uppercase tracking-wide text-white/30">HTML libre</div>
-          <FieldArea
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em", color: "#3a3a3a", textTransform: "uppercase" as const, margin: "4px 0 3px" }}>HTML libre</p>
+          <textarea
+            style={{ width: "100%", background: "#111", border: "0.5px dashed #2a2a2a", borderRadius: 8, padding: "10px 11px", color: "#666", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none", resize: "none" as const, lineHeight: 1.6, minHeight: 72, display: "block" }}
             value={customInsertHtml}
             onChange={(event) => setCustomInsertHtml(event.target.value)}
             placeholder={'<div class="mi-bloque">Nuevo contenido</div>'}
-            className="min-h-[90px]"
           />
           <button
             type="button"
@@ -2113,17 +3046,15 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
               setCustomInsertHtml("")
             }}
             disabled={!customInsertHtml.trim()}
-            className={cn(
-              "w-full rounded-xl border py-2 text-sm font-semibold transition-all",
-              customInsertHtml.trim()
-                ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15"
-                : "border-white/10 text-white/25"
-            )}
+            style={customInsertHtml.trim()
+              ? { width: "100%", background: "#E84040", border: "none", borderRadius: 8, padding: "10px", fontSize: 12, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, transition: "all .15s", marginTop: 7 }
+              : { width: "100%", background: "transparent", border: "0.5px solid #2a2a2a", borderRadius: 8, padding: "10px", fontSize: 12, color: "#444", cursor: "not-allowed", fontFamily: "inherit", fontWeight: 500, marginTop: 7 }
+            }
           >
             Insertar HTML libre
           </button>
         </div>
-      </SectionCard>
+      </StyleCard>
       </div>
     )
   }
@@ -2133,19 +3064,19 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
     const isRootNode = element.id === "he-import-root"
     return (
       <div ref={layersSectionRef}>
-      <SectionCard title="Capas" hint="Navega, selecciona y organiza elementos del HTML importado como en un panel visual.">
-        <div className="space-y-2">
-          <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wide text-primary/80">Seleccion actual</div>
-            <div className="mt-1 text-sm font-semibold text-white">{formatLayerTitle(element.tag, element.text || "", isRootNode)}</div>
-            <div className="mt-1 text-[10px] text-white/35">
+      <StyleCard icon="◫" title="Capas">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ background: "#1a0808", border: "0.5px solid #E84040", borderRadius: 10, padding: "12px" }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em", color: "#E84040", textTransform: "uppercase" as const }}>Seleccion actual</div>
+            <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600, color: "#ccc" }}>{formatLayerTitle(element.tag, element.text || "", isRootNode)}</div>
+            <div style={{ marginTop: 4, fontSize: 10, color: "#666" }}>
               {formatNodeKindLabel(nodeKind)} · {element.tag}
               {element.eid ? ` [${element.eid}]` : ""}
             </div>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <button type="button" onClick={() => moveNode("up", element.eid)} className={PRESET_BUTTON_CLS}>Subir</button>
-              <button type="button" onClick={() => moveNode("down", element.eid)} className={PRESET_BUTTON_CLS}>Bajar</button>
-              <button type="button" onClick={() => cleanupLayout(element.eid)} className={PRESET_BUTTON_CLS}>Compactar</button>
+            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+              <button type="button" onClick={() => moveNode("up", element.eid)} style={{ padding: "9px", borderRadius: 8, border: "0.5px solid #2a2a2a", background: "transparent", color: "#999", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Subir</button>
+              <button type="button" onClick={() => moveNode("down", element.eid)} style={{ padding: "9px", borderRadius: 8, border: "0.5px solid #2a2a2a", background: "transparent", color: "#999", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Bajar</button>
+              <button type="button" onClick={() => cleanupLayout(element.eid)} style={{ padding: "9px", borderRadius: 8, border: "0.5px solid #2a2a2a", background: "transparent", color: "#999", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Compactar</button>
             </div>
           </div>
 
@@ -2153,187 +3084,73 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
             <button
               type="button"
               onClick={() => selectNode(element.parentEid)}
-              className="w-full rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-left transition-all hover:border-primary/35 hover:bg-primary/5"
+              style={{ background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 9, padding: "10px 12px", transition: "all .12s", textAlign: "left" as const, cursor: "pointer", fontFamily: "inherit", width: "100%" }}
             >
-              <div className="text-[10px] uppercase tracking-wide text-white/30">Bloque padre</div>
-              <div className="mt-1 text-xs font-semibold text-white">{formatLayerTitle(element.parentTag || "div")}</div>
-              <div className="mt-1 text-[10px] text-white/35">{element.parentTag}{element.parentEid ? ` [${element.parentEid}]` : ""}</div>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em", color: "#555", textTransform: "uppercase" as const }}>Bloque padre</div>
+              <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600, color: "#ccc" }}>{formatLayerTitle(element.parentTag || "div")}</div>
+              <div style={{ marginTop: 3, fontSize: 10, color: "#555" }}>{element.parentTag}{element.parentEid ? ` [${element.parentEid}]` : ""}</div>
             </button>
           ) : null}
 
-          <div className="space-y-2 rounded-xl border border-white/8 bg-white/[0.03] p-3">
-            <div className="text-[10px] uppercase tracking-wide text-white/30">Elementos internos</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 9, padding: "10px 12px" }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em", color: "#555", textTransform: "uppercase" as const }}>Elementos internos</div>
             {element.children?.length ? (
-              <div className="space-y-2">
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {element.children.slice(0, 16).map((child) => (
                   <div
                     key={`${child.eid}-${child.tag}`}
-                    className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 transition-all hover:border-primary/35 hover:bg-primary/5"
+                    style={{ background: "#111", border: "0.5px solid #2a2a2a", borderRadius: 9, padding: "10px 12px", transition: "all .12s" }}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <button type="button" onClick={() => selectNode(child.eid)} className="min-w-0 flex-1 text-left">
-                        <div className="text-xs font-semibold text-white">{formatLayerTitle(child.tag, child.label)}</div>
-                        <div className="mt-1 truncate text-[10px] text-white/35">
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                      <button type="button" onClick={() => selectNode(child.eid)} style={{ minWidth: 0, flex: 1, textAlign: "left" as const, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "#ccc" }}>{formatLayerTitle(child.tag, child.label)}</div>
+                        <div style={{ marginTop: 3, fontSize: 10, color: "#555", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {formatLayerTitle(child.tag)}
                           {child.eid ? ` [${child.eid}]` : ""}
                         </div>
                       </button>
-                      <div className="flex items-center gap-1">
-                        <button type="button" onClick={() => moveNode("up", child.eid)} className="rounded-lg border border-white/10 px-2 py-1 text-[10px] text-white/55 hover:border-primary/35 hover:text-white">↑</button>
-                        <button type="button" onClick={() => moveNode("down", child.eid)} className="rounded-lg border border-white/10 px-2 py-1 text-[10px] text-white/55 hover:border-primary/35 hover:text-white">↓</button>
-                        <button type="button" onClick={() => deleteNode(child.eid)} className="rounded-lg border border-red-400/20 px-2 py-1 text-[10px] text-red-300 hover:border-red-400/35 hover:text-red-200">Borrar</button>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <button type="button" onClick={() => moveNode("up", child.eid)} style={{ borderRadius: 6, border: "0.5px solid #2a2a2a", padding: "4px 8px", fontSize: 10, background: "transparent", color: "#666", cursor: "pointer" }}>↑</button>
+                        <button type="button" onClick={() => moveNode("down", child.eid)} style={{ borderRadius: 6, border: "0.5px solid #2a2a2a", padding: "4px 8px", fontSize: 10, background: "transparent", color: "#666", cursor: "pointer" }}>↓</button>
+                        <button type="button" onClick={() => deleteNode(child.eid)} style={{ borderRadius: 6, border: "0.5px solid rgba(248,113,113,.25)", padding: "4px 8px", fontSize: 10, background: "transparent", color: "#f87171", cursor: "pointer" }}>Borrar</button>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-[11px] leading-5 text-white/35">
+              <div style={{ fontSize: 11, color: "#555", lineHeight: 1.5 }}>
                 Este elemento no tiene hijos directos. Selecciona otro nodo del canvas o cambia al bloque padre.
               </div>
             )}
           </div>
 
-          <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-3 text-[10px] leading-5 text-white/35">
+          <div style={{ background: "#111", border: "0.5px solid #222", borderRadius: 8, padding: "9px 11px", fontSize: 11, color: "#555", lineHeight: 1.5 }}>
             Usa esta vista para moverte por el bloque sin perderte en el canvas. Desde aqui puedes seleccionar, subir, bajar, borrar y compactar partes del bloque.
           </div>
         </div>
-      </SectionCard>
+      </StyleCard>
       </div>
     )
   }
 
   const renderDragSection = () => (
-    <SectionCard title="Mover en el canvas" hint="Activa el reorden visual entre hermanos. Para mover libremente, usa el boton Mover del canvas: ahora el bloque mantiene mejor su sitio y hace snap al centro y bordes del contenedor.">
+    <StyleCard icon="⇅" title="Mover en el canvas">
       <button
         type="button"
         onClick={enableDrag}
-        className={cn(
-          "w-full rounded-xl border py-2 text-sm font-semibold transition-all",
-          dragOn ? "border-primary bg-primary/10 text-primary" : "border-white/10 text-white/40 hover:border-primary/35 hover:text-white"
-        )}
+        style={dragOn
+          ? { width: "100%", background: "#E84040", border: "none", borderRadius: 8, padding: "10px", fontSize: 12, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, transition: "all .15s" }
+          : { width: "100%", background: "#E84040", border: "none", borderRadius: 8, padding: "10px", fontSize: 12, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 500, transition: "all .15s" }
+        }
       >
         {dragOn ? "Reorden visual activo" : "Activar mover entre bloques"}
       </button>
-      <div className="text-[10px] leading-5 text-white/30">
+      <div style={{ fontSize: 11, color: "#555", lineHeight: 1.5 }}>
         Arrastra desde el canvas y suelta encima del bloque objetivo. Los cambios quedan solo en el borrador hasta que guardes o publiques.
       </div>
-    </SectionCard>
+    </StyleCard>
   )
-
-  const renderQuickTypographySection = () => {
-    if (!element || (nodeKind !== "text" && nodeKind !== "button" && nodeKind !== "icon")) return null
-    return (
-      <SectionCard title="Tipografia rapida" hint="Ajusta texto, tamano, color, grosor y formato visual como una barra rapida de edicion.">
-        {nodeKind !== "icon" ? (
-          <Row label="Texto visible">
-            <FieldInput
-              value={localText}
-              placeholder="Texto visible"
-              onChange={(event) => {
-                setLocalText(event.target.value)
-                setText(event.target.value)
-              }}
-              onBlur={() => setText(localText)}
-            />
-          </Row>
-        ) : null}
-        {nodeKind !== "icon" ? (
-          <Row label="Tipo de letra">
-            <select
-              className="h-9 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-xs text-white focus:border-primary/50 focus:outline-none"
-              value={element.styles.fontFamily || FONT_OPTIONS[0].value}
-              onChange={(event) => style("fontFamily", event.target.value)}
-            >
-              {FONT_OPTIONS.map((option) => (
-                <option key={option.label} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </Row>
-        ) : null}
-        <Row label={nodeKind === "icon" ? "Tamano del icono" : "Tamano del texto"}>
-          <Slider
-            value={nodeKind === "icon" ? element.styles.width || element.styles.fontSize || "18px" : element.styles.fontSize || "16px"}
-            min={nodeKind === "icon" ? 12 : 8}
-            max={nodeKind === "icon" ? 220 : 96}
-            onChange={(value) => (nodeKind === "icon" ? applyIconSize(value) : style("fontSize", value))}
-          />
-        </Row>
-        {nodeKind !== "icon" ? (
-          <Row label="Grosor">
-            <OptionGroup
-              small
-              value={String(Math.round(parsePx(element.styles.fontWeight)) || 400)}
-              options={["400", "500", "600", "700", "800"].map((value) => ({ value, label: value }))}
-              onChange={(value) => style("fontWeight", value)}
-            />
-          </Row>
-        ) : null}
-        {nodeKind !== "icon" ? (
-          <Row label="Formato">
-            <OptionGroup
-              small
-              value={[
-                (element.styles.fontStyle || "normal") === "italic" ? "italic" : "normal",
-                (element.styles.textDecoration || "").includes("underline") ? "underline" : "none",
-              ].join("|")}
-              options={[
-                { value: "normal|none", label: "normal" },
-                { value: "italic|none", label: "cursiva" },
-                { value: "normal|underline", label: "subrayado" },
-              ]}
-              onChange={(value) => {
-                const [fontStyle, textDecoration] = value.split("|")
-                style("fontStyle", fontStyle || "normal")
-                style("textDecoration", textDecoration || "none")
-              }}
-            />
-          </Row>
-        ) : null}
-        {nodeKind !== "icon" ? (
-          <Row label="Mayusculas">
-            <OptionGroup
-              small
-              value={element.styles.textTransform || "none"}
-              options={[
-                { value: "none", label: "normal" },
-                { value: "uppercase", label: "mayus" },
-                { value: "capitalize", label: "titulo" },
-              ]}
-              onChange={(value) => style("textTransform", value)}
-            />
-          </Row>
-        ) : null}
-        {nodeKind !== "icon" ? (
-          <Row label="Alineacion">
-            <OptionGroup
-              small
-              value={element.styles.textAlign || "left"}
-              options={[
-                { value: "left", label: "izq" },
-                { value: "center", label: "centro" },
-                { value: "right", label: "der" },
-              ]}
-              onChange={(value) => style("textAlign", value)}
-            />
-          </Row>
-        ) : null}
-        <Row label={nodeKind === "icon" ? "Color del icono" : "Color del texto"}>
-          <ColorPicker
-            value={element.styles.color}
-            onChange={(value) => (nodeKind === "icon" ? applyIconColor(value) : style("color", value))}
-          />
-        </Row>
-        {nodeKind === "icon" ? (
-          <Row label="Trazo">
-            <Slider value={element.styles.strokeWidth || "1.9"} min={0.8} max={4} step={0.1} unit="" onChange={applyIconStrokeWidth} />
-          </Row>
-        ) : null}
-      </SectionCard>
-    )
-  }
 
   if (!element) {
     return (
@@ -2365,15 +3182,26 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
         {isEditing ? (
           <span className="rounded-full bg-emerald-400/10 px-2 py-0.5 text-[9px] font-bold text-emerald-400">Editando</span>
         ) : null}
-        <button onClick={onClose} className="text-sm leading-none text-white/25 transition-colors hover:text-white">
-          x
-        </button>
+        {showCloseButton ? (
+          <button onClick={onClose} className="text-sm leading-none text-white/25 transition-colors hover:text-white">
+            x
+          </button>
+        ) : null}
       </div>
 
       {view === "full" ? (
-        <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-[#0b1220] p-1">
+        <div
+          className={cn(
+            "grid gap-2 rounded-2xl border border-white/10 bg-[#0b1220] p-1",
+            INSPECTOR_TABS.length >= 4 ? "grid-cols-4" : "grid-cols-3"
+          )}
+        >
           {INSPECTOR_TABS.map((item) => (
-            <InspectorTabButton key={item.key} active={activeTab === item.key} onClick={() => setTab(item.key)}>
+            <InspectorTabButton
+              key={item.key}
+              active={activeTab === item.key}
+              {...getTouchSafeButtonProps(`tab:${item.key}`, () => updateInspectorTab(item.key, { manual: true }))}
+            >
               {item.label}
             </InspectorTabButton>
           ))}
@@ -2381,30 +3209,39 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
       ) : null}
 
       {activeTab === "style" ? (
+        nodeKind === "icon" ? (
+          <div className="space-y-3">
+            {renderIconSection()}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {renderPresetSection()}
+            {(nodeKind === "button" || nodeKind === "field" || nodeKind === "container" || nodeKind === "image") ? renderBoxSection(nodeKind === "image" ? "Marco visual" : "Apariencia") : null}
+            {nodeKind === "container" ? renderLayoutSection() : null}
+            {renderSpacingSection()}
+            {nodeKind === "button" || nodeKind === "image" || nodeKind === "container" || nodeKind === "field" ? renderDimensionSection() : null}
+            {nodeKind === "image" ? (
+              <SectionCard title="Comportamiento visual" hint="Ajusta como se recorta o se adapta la imagen dentro del bloque.">
+                <Row label="Como se ajusta">
+                  <OptionGroup
+                    small
+                    value={element.styles.objectFit || "contain"}
+                    options={[
+                      { value: "contain", label: "contener" },
+                      { value: "cover", label: "rellenar" },
+                      { value: "fill", label: "estirar" },
+                      { value: "none", label: "original" },
+                    ]}
+                    onChange={(value) => style("objectFit", value)}
+                  />
+                </Row>
+              </SectionCard>
+            ) : null}
+          </div>
+        )
+      ) : activeTab === "typography" ? (
         <div className="space-y-3">
-          {renderPresetSection()}
-          {(nodeKind === "text" || nodeKind === "button" || nodeKind === "field" || nodeKind === "icon") ? renderTypographySection() : null}
-          {(nodeKind === "button" || nodeKind === "field" || nodeKind === "container" || nodeKind === "image" || nodeKind === "icon") ? renderBoxSection(nodeKind === "image" ? "Marco visual" : "Apariencia") : null}
-          {nodeKind === "container" ? renderLayoutSection() : null}
-          {renderSpacingSection()}
-          {nodeKind === "button" || nodeKind === "image" || nodeKind === "container" || nodeKind === "field" || nodeKind === "icon" ? renderDimensionSection() : null}
-          {nodeKind === "image" ? (
-            <SectionCard title="Comportamiento visual" hint="Ajusta como se recorta o se adapta la imagen dentro del bloque.">
-              <Row label="Como se ajusta">
-                <OptionGroup
-                  small
-                  value={element.styles.objectFit || "contain"}
-                  options={[
-                    { value: "contain", label: "contener" },
-                    { value: "cover", label: "rellenar" },
-                    { value: "fill", label: "estirar" },
-                    { value: "none", label: "original" },
-                  ]}
-                  onChange={(value) => style("objectFit", value)}
-                />
-              </Row>
-            </SectionCard>
-          ) : null}
+          {renderTypographySection()}
         </div>
       ) : activeTab === "layers" ? (
         <div className="space-y-3">
@@ -2414,14 +3251,16 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
       ) : (
         <div className="space-y-3">
           {nodeKind === "icon" ? (
-            renderIconSection()
+            <>
+              {renderIconSection()}
+              {renderDragSection()}
+            </>
           ) : (
             <>
               {nodeKind === "container" ? renderContainerContent() : null}
               {nodeKind === "image" ? renderImageContent() : null}
               {nodeKind === "field" ? renderFieldContent() : null}
               {nodeKind === "text" || nodeKind === "button" ? renderTextContent() : null}
-              {renderQuickTypographySection()}
               {renderActionSection()}
               {renderIconSection()}
               {renderInsertSection()}
@@ -2433,4 +3272,3 @@ export function HtmlElementInspector({ element, isEditing, iframeRef, onClose, v
     </div>
   )
 }
-

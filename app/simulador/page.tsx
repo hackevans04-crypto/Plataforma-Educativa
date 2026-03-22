@@ -19,7 +19,7 @@ export default function SimuladorPage() {
   }
 
   return (
-    <main className="relative min-h-screen bg-transparent">
+    <main className="relative min-h-screen bg-transparent overflow-x-hidden">
       <AnimatedBackground className="fixed inset-0 z-0" />
       <div className="relative z-10">
         <Navbar onLoginClick={openLogin} onRegisterClick={openRegister} />

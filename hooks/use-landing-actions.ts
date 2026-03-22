@@ -57,13 +57,18 @@ export function useLandingActions(config: CMSConfig) {
   const scrollToSection = useCallback((sectionId?: string) => {
     if (!sectionId || typeof document === "undefined") return false
     const candidates = [sectionId, getLandingSectionDomId(sectionId)]
+    const navbarOffset = 82 // extra offset for sticky navbar height + margin
+
     for (const candidate of candidates) {
       const target = document.getElementById(candidate)
       if (target) {
-        target.scrollIntoView({ behavior: "smooth", block: "start" })
+        const rect = target.getBoundingClientRect()
+        const targetY = window.pageYOffset + rect.top - navbarOffset
+        window.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" })
         return true
       }
     }
+    window.scrollTo({ top: 0, behavior: "smooth" })
     return false
   }, [])
 

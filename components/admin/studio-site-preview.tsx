@@ -142,6 +142,7 @@ function SectionShell({
     ? { backgroundColor: section.style.bg }
     : undefined
   const meta = getSectionMeta(section.type)
+  const suppressCompactFloatingChrome = compactToolbar && selected && section.type === "customCode"
   const handleToolbarClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     event.stopPropagation()
@@ -187,30 +188,33 @@ function SectionShell({
               : "border-transparent group-hover/section:border-primary/25 group-hover/section:bg-primary/[0.012]"
           )}
         >
-          <span
-            className={cn(
-              "pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-primary/18 bg-[#09111b]/94 px-2.5 py-1 text-[10px] font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)] transition-opacity",
-              selected ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"
-            )}
-            >
-              <span className="text-primary">{meta.icon}</span>
-              {meta.label}
-            </span>
-
-          <div
-            className={cn(
-              "pointer-events-none absolute z-20 transition-opacity",
-              compactToolbar ? "inset-x-3 bottom-3 flex justify-center" : "right-4 top-4",
-              selected ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"
-            )}
-          >
-            <div
-              data-he-editor-ui="true"
+          {!suppressCompactFloatingChrome ? (
+            <span
               className={cn(
-                "pointer-events-auto flex items-center gap-1 border border-white/10 bg-[#09111b]/92 shadow-lg",
-                compactToolbar ? "rounded-[20px] px-2 py-2 shadow-[0_18px_48px_rgba(0,0,0,0.38)]" : "rounded-2xl p-1"
+                "pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-primary/18 bg-[#09111b]/94 px-2.5 py-1 text-[10px] font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)] transition-opacity",
+                selected ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"
+              )}
+              >
+                <span className="text-primary">{meta.icon}</span>
+                {meta.label}
+              </span>
+          ) : null}
+
+          {!suppressCompactFloatingChrome ? (
+            <div
+              className={cn(
+                "pointer-events-none absolute z-20 transition-opacity",
+                compactToolbar ? "inset-x-3 bottom-3 flex justify-center" : "right-4 top-4",
+                selected ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"
               )}
             >
+              <div
+                data-he-editor-ui="true"
+                className={cn(
+                  "pointer-events-auto flex items-center gap-1 border border-white/10 bg-[#09111b]/92 shadow-lg",
+                  compactToolbar ? "rounded-[20px] px-2 py-2 shadow-[0_18px_48px_rgba(0,0,0,0.38)]" : "rounded-2xl p-1"
+                )}
+              >
             <button
               type="button"
               onClick={(event) => {
@@ -311,8 +315,9 @@ function SectionShell({
                 <Trash2 className={cn(compactToolbar ? "h-4 w-4" : "h-3.5 w-3.5")} />
               </button>
             )}
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
       )}
       <div className={cn("relative", bg, pad)} style={customBg}>
@@ -327,6 +332,8 @@ function renderSectionContent(
   config: CMSConfig,
   datasets: ReturnType<typeof useLandingBuilderData>,
   selected: boolean,
+  viewportMode: "desktop" | "tablet" | "mobile",
+  editable: boolean,
   htmlIframeRef?: React.MutableRefObject<HTMLIFrameElement | null>,
   onSelect?: (id: string) => void,
   onInlineUpdate?: (sectionId: string, patch: Record<string, any>) => void,
@@ -334,7 +341,8 @@ function renderSectionContent(
   onHtmlElementSelect?: (info: EditorElementInfo | null) => void,
   onHtmlEditingChange?: (editing: boolean) => void,
   onHtmlSnapshot?: (html: string) => void,
-  onHtmlInteractionLockChange?: (locked: boolean) => void
+  onHtmlInteractionLockChange?: (locked: boolean) => void,
+  onHtmlOpenInspector?: () => void
 ) {
   switch (section.type) {
     case "hero":
@@ -398,10 +406,11 @@ function renderSectionContent(
     case "stats":
       return <StatsSection data={section.data} />
     case "customCode":
-      const htmlRuntimeEnabled = Boolean(onSelect)
+      const htmlRuntimeEnabled = Boolean(onSelect) && editable
       return (
         <CustomCodeSection
           data={section.data}
+          viewportMode={viewportMode}
           editMode={htmlRuntimeEnabled}
           iframeRef={htmlRuntimeEnabled && htmlIframeRef ? htmlIframeRef as React.RefObject<HTMLIFrameElement> : undefined}
           onActivate={!htmlRuntimeEnabled && !selected ? () => onSelect?.(section.id) : undefined}
@@ -416,6 +425,7 @@ function renderSectionContent(
           onEditorSnapshot={htmlRuntimeEnabled ? onHtmlSnapshot : undefined}
           onAction={(action, fallbackHref) => onAction?.(action, fallbackHref)}
           onInteractionLockChange={htmlRuntimeEnabled ? onHtmlInteractionLockChange : undefined}
+          onOpenInspector={htmlRuntimeEnabled ? onHtmlOpenInspector : undefined}
         />
       )
     case "pageHero":
@@ -558,6 +568,7 @@ export default function StudioSitePreview({
   onHtmlEditingChange,
   onHtmlSnapshot,
   onHtmlInteractionLockChange,
+  onHtmlOpenInspector,
 }: {
   config: CMSConfig
   sections: CMSSection[]
@@ -579,6 +590,7 @@ export default function StudioSitePreview({
   onHtmlEditingChange?: (editing: boolean) => void
   onHtmlSnapshot?: (html: string) => void
   onHtmlInteractionLockChange?: (locked: boolean) => void
+  onHtmlOpenInspector?: () => void
 }) {
   const datasets = useLandingBuilderData()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -854,7 +866,7 @@ export default function StudioSitePreview({
           {previewNotice}
         </div>
       ) : null}
-      <div className={cn("relative z-10", editable && viewportMode === "mobile" && "pb-24")}>
+      <div className="relative z-10">
         <div
           data-he-edit-id="navbar"
           className={cn(
@@ -939,7 +951,7 @@ export default function StudioSitePreview({
                     dragging={draggingId === section.id}
                   >
                     <div id={getLandingSectionDomId(section.id)}>
-                      {renderSectionContent(section, config, datasets, editable && selectedId === section.id, htmlIframeRef, onSelect, onInlineUpdate, executePreviewAction, onHtmlElementSelect, onHtmlEditingChange, onHtmlSnapshot, onHtmlInteractionLockChange)}
+                      {renderSectionContent(section, config, datasets, editable && selectedId === section.id, viewportMode, editable, htmlIframeRef, onSelect, onInlineUpdate, executePreviewAction, onHtmlElementSelect, onHtmlEditingChange, onHtmlSnapshot, onHtmlInteractionLockChange, onHtmlOpenInspector)}
                     </div>
                   </SectionShell>
                   {editable && renderInsertSlot(trailingInsertIndex, `slot-after-${section.id}`)}

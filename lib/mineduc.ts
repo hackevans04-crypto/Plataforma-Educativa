@@ -146,11 +146,24 @@ export async function loadMineducIndex(): Promise<MineducIndex> {
   if (loadingPromise) return loadingPromise
 
   loadingPromise = (async () => {
-    const module = await import("@/mineduc_selectores.json")
-    const data = (module.default || []) as MineducProvincia[]
-    const index = buildIndex(data)
-    cachedIndex = index
-    return index
+    try {
+      const module = await import("@/mineduc_selectores.json")
+      const data = (module.default || []) as MineducProvincia[]
+      const index = buildIndex(data)
+      cachedIndex = index
+      return index
+    } catch (error) {
+      console.error("Error cargando datos de Mineduc:", error)
+      loadingPromise = null // Permitir reintento
+      return {
+        options: { provincias: [], cantones: [], parroquias: [], instituciones: [] },
+        cantonesByProvincia: {},
+        parroquiasByProvinciaCanton: {},
+        parroquiasByCanton: {},
+        institucionesByProvinciaCantonParroquia: {},
+        institucionesByParroquia: {},
+      }
+    }
   })()
 
   return loadingPromise

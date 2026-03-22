@@ -3,6 +3,7 @@ import { Bebas_Neue, Barlow } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/contexts/auth-context'
 import ThemeGuard from '@/components/theme-guard'
+import { TYPOGRAPHY_GOOGLE_FONTS_HREF } from '@/lib/typography-fonts'
 import './globals.css'
 
 const bebasNeue = Bebas_Neue({ 
@@ -66,6 +67,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className="dark" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href={TYPOGRAPHY_GOOGLE_FONTS_HREF} />
+      </head>
       <body className={`${bebasNeue.variable} ${barlow.variable} font-sans antialiased`}>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <AuthProvider>

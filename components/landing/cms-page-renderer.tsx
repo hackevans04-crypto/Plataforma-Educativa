@@ -100,6 +100,21 @@ const PAD_CLASSES: Record<string, string> = {
 function buildSrcDoc(html: string) {
   if (/<html[\s>]/i.test(html)) return html
 
+  const scrollBridge = `<script>
+(function(){
+  document.addEventListener('wheel',function(e){
+    try{
+      var el=document.scrollingElement||document.documentElement;
+      var maxY=Math.max(0,el.scrollHeight-el.clientHeight);
+      var maxX=Math.max(0,el.scrollWidth-el.clientWidth);
+      var fwdY=(maxY<=1)||(e.deltaY<0&&el.scrollTop<=0)||(e.deltaY>0&&el.scrollTop>=maxY-1);
+      var fwdX=(maxX<=1)||(e.deltaX<0&&el.scrollLeft<=0)||(e.deltaX>0&&el.scrollLeft>=maxX-1);
+      if(fwdY||fwdX){e.preventDefault();try{(window.parent||window).scrollBy({top:fwdY?e.deltaY:0,left:fwdX?e.deltaX:0});}catch(err){}}
+    }catch(err){}
+  },{passive:false});
+})();
+</script>`
+
   return [
     "<!DOCTYPE html>",
     "<html>",
@@ -110,6 +125,7 @@ function buildSrcDoc(html: string) {
     "</head>",
     "<body>",
     html,
+    scrollBridge,
     "</body>",
     "</html>",
   ].join("\n")
