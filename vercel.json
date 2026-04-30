@@ -1,7 +1,7 @@
 {
-  "buildCommand": "next build",
+  "buildCommand": "bash build.sh",
+  "installCommand": "pnpm install --no-frozen-lockfile",
   "env": {
     "PNPM_HOME": ".pnpm"
-  },
-  "installCommand": "pnpm install --no-frozen-lockfile"
+  }
 }
