@@ -3,22 +3,23 @@
 export const dynamic = "force-dynamic"
 export const fetchCache = "force-no-store"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { isAuthenticated, isLoading } = useAuth()
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    if (isLoading) return
-    if (isAuthenticated) {
+    if (typeof window === "undefined") return
+    const storedUser = window.localStorage.getItem("hackevans_user")
+    if (storedUser) {
       router.replace("/dashboard/checkout")
       return
     }
+    setIsLoading(false)
     router.replace("/login?returnTo=%2Fdashboard%2Fcheckout")
-  }, [isAuthenticated, isLoading, router])
+  }, [router])
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">

@@ -11,14 +11,9 @@ export default function ClientProviders({ children }: { children: ReactNode }) {
     setMounted(true)
   }, [])
 
-  // Prevent rendering of client providers on server to avoid prerender errors
-  if (!mounted) {
-    return children
-  }
-
   return (
     <AuthProvider>
-      <ThemeGuard />
+      {mounted ? <ThemeGuard /> : null}
       {children}
     </AuthProvider>
   )

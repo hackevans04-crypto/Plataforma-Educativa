@@ -4,23 +4,23 @@ export const dynamic = "force-dynamic"
 export const fetchCache = "force-no-store"
 
 import { useEffect } from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import UdemyHeader from "@/components/dashboard/udemy-header"
 import { useAuth } from "@/contexts/auth-context"
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const searchParams = useSearchParams()
   const { isAuthenticated, isLoading } = useAuth()
 
   useEffect(() => {
     if (isLoading || isAuthenticated) return
 
-    const query = searchParams.toString()
+    const query =
+      typeof window !== "undefined" ? new URLSearchParams(window.location.search).toString() : ""
     const returnTo = `${pathname}${query ? `?${query}` : ""}`
     router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`)
-  }, [isAuthenticated, isLoading, pathname, router, searchParams])
+  }, [isAuthenticated, isLoading, pathname, router])
 
   if (isLoading || !isAuthenticated) {
     return (

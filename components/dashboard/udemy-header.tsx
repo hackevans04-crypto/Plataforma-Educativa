@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { usePathname, useSearchParams } from "next/navigation"
+import { usePathname } from "next/navigation"
 import {
   Bell,
   BookOpen,
@@ -38,14 +38,13 @@ import { CATEGORIAS_EVENT, getCategorias, type Categoria } from "@/lib/categoria
 export default function UdemyHeader() {
   const { user, logout } = useAuth()
   const pathname = usePathname()
-  const params = useSearchParams()
-  const activeCategoria = params.get("categoria") || ""
   const [menuOpen, setMenuOpen] = useState(false)
   const [cartOpen, setCartOpen] = useState(false)
   const [items, setItems] = useState<CartCourseItem[]>([])
   const [search, setSearch] = useState("")
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [openCat, setOpenCat] = useState<string | null>(null)
+  const [activeCategoria, setActiveCategoria] = useState("")
 
   useEffect(() => {
     const sync = () => setItems(getCartItems())
@@ -72,6 +71,11 @@ export default function UdemyHeader() {
       window.removeEventListener("focus", syncCats)
     }
   }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    setActiveCategoria(new URLSearchParams(window.location.search).get("categoria") || "")
+  }, [pathname])
 
   const subtotal = useMemo(() => getCartSubtotal(items), [items])
   const savings = useMemo(() => getCartSavings(items), [items])
@@ -220,8 +224,8 @@ export default function UdemyHeader() {
                     <div className="h-px bg-border" />
                     <div className="py-1">
                       {[
-                        { icon: User, label: "Mi perfil", href: "/dashboard/perfil" },
-                        { icon: Receipt, label: "Mis pagos", href: "/dashboard/perfil?tab=pagos" },
+                        { icon: User, label: "Editar perfil", href: "/dashboard/perfil?tab=perfil" },
+                        { icon: Receipt, label: "Historial de compras", href: "/dashboard/perfil?tab=compras" },
                         { icon: CreditCard, label: "Metodos de pago", href: "/dashboard/perfil?tab=metodos" },
                         { icon: Headphones, label: "Soporte", href: "/dashboard/soporte" },
                         { icon: Settings, label: "Configuracion", href: "/dashboard/perfil?tab=configuracion" },

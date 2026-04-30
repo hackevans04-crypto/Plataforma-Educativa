@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic"
 export const fetchCache = "force-no-store"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -99,7 +99,7 @@ function BrandLogo({ brand, active = false }: { brand: string; active?: boolean 
   return null
 }
 
-export default function DashboardCheckoutPage() {
+function DashboardCheckoutContent() {
   const router = useRouter()
   const { user } = useAuth()
   const [items, setItems] = useState<CartCourseItem[]>([])
@@ -728,5 +728,13 @@ export default function DashboardCheckoutPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function DashboardCheckoutPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-6xl py-10 text-sm text-muted-foreground">Cargando checkout...</div>}>
+      <DashboardCheckoutContent />
+    </Suspense>
   )
 }

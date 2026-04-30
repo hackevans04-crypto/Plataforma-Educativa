@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Image from "next/image"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
 import { Eye, EyeOff, Loader2, Chrome, Facebook } from "lucide-react"
@@ -31,12 +31,12 @@ function PasswordStrength({ password }: { password: string }) {
 
 export default function AuthForm({ initialTab = "login" }: AuthFormProps) {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const { login, register, isLoading } = useAuth()
   const [tab, setTab] = useState<AuthTab>(initialTab)
   const [success, setSuccess] = useState(false)
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState("")
+  const [safeReturnTo, setSafeReturnTo] = useState("")
   const [form, setForm] = useState({
     name: "",
     lastName: "",
@@ -48,12 +48,13 @@ export default function AuthForm({ initialTab = "login" }: AuthFormProps) {
   useEffect(() => {
     setTab(initialTab)
   }, [initialTab])
-
-  const returnToParam = searchParams.get("returnTo") || ""
-  const safeReturnTo =
-    returnToParam.startsWith("/") && !returnToParam.startsWith("//")
-      ? returnToParam
-      : ""
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const returnToParam = new URLSearchParams(window.location.search).get("returnTo") || ""
+    setSafeReturnTo(
+      returnToParam.startsWith("/") && !returnToParam.startsWith("//") ? returnToParam : ""
+    )
+  }, [])
   const authPageHref = (next: AuthTab) =>
     safeReturnTo
       ? `/${next === "login" ? "login" : "registro"}?returnTo=${encodeURIComponent(safeReturnTo)}`
