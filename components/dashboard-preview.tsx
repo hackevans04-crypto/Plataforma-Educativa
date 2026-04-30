@@ -210,7 +210,7 @@ export default function DashboardPreview() {
           {/* Subjects Progress */}
           <div className="bg-card border border-border rounded-xl p-6 animate-fade-up" style={{ animationDelay: "0.25s" }}>
             <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-4">
-              📚 Progreso por Area
+              Progreso por Área
             </div>
             <div className="flex flex-col gap-4">
               {SUBJECTS.map((s, i) => (

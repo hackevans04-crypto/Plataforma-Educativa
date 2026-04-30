@@ -1,5 +1,8 @@
 "use client"
 
+export const dynamic = "force-dynamic"
+export const fetchCache = "force-no-store"
+
 import { Suspense, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
@@ -39,6 +42,12 @@ const getTotalMinutes = (sim: SimuladorBuilder) => {
   return `${totalMinutes} min`
 }
 
+const evaluationMatchesCourse = (sim: SimuladorBuilder, courseId: string) => {
+  if (!courseId) return true
+  const linked = Array.from(new Set([...(sim.cursoIds || []), sim.cursoId || ""])).filter(Boolean)
+  return linked.includes(courseId)
+}
+
 function EvaluacionesPageContent() {
   const searchParams = useSearchParams()
   const [searchTerm, setSearchTerm] = useState("")
@@ -47,7 +56,16 @@ function EvaluacionesPageContent() {
   const cursoIdFiltro = searchParams.get("cursoId") || ""
 
   useEffect(() => {
-    setEvaluaciones(getSimuladores())
+    const sync = () => setEvaluaciones(getSimuladores())
+    sync()
+    window.addEventListener("storage", sync)
+    window.addEventListener("simuladores-updated", sync as EventListener)
+    window.addEventListener("focus", sync)
+    return () => {
+      window.removeEventListener("storage", sync)
+      window.removeEventListener("simuladores-updated", sync as EventListener)
+      window.removeEventListener("focus", sync)
+    }
   }, [])
 
   const evaluacionesUI = useMemo<EvaluacionCard[]>(() => {
@@ -55,8 +73,8 @@ function EvaluacionesPageContent() {
       .filter((sim) =>
         sim.estado === "publicado" &&
         sim.categoria === "evaluacion" &&
-        (!cursoIdFiltro || sim.cursoId === cursoIdFiltro) &&
-        isCourseActivityVisibleInDashboard(sim.cursoId, "evaluacion")
+        evaluationMatchesCourse(sim, cursoIdFiltro) &&
+        isCourseActivityVisibleInDashboard(sim.cursoId || sim.cursoIds?.[0], "evaluacion")
       )
       .map((sim) => {
         const resultados = getResultadosPorSimulador(sim.id)

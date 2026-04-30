@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import {
-  Users, Target, ClipboardCheck, BookOpen, Tag,
+  Users, Target, ClipboardCheck, BookOpen,
   BarChart3, TrendingUp, AlertTriangle, ArrowRight,
   CheckCircle2, Clock
 } from "lucide-react"
@@ -16,21 +16,21 @@ const STATS = [
 
 const ACTIVITY = [
   { title: "Se publico el simulador QSM 10 - 2026", time: "Hace 2 horas", status: "ok" },
-  { title: "Actualizacion de plan Pro aplicada", time: "Hace 5 horas", status: "ok" },
+  { title: "Actualizacion de acceso de usuario aplicada", time: "Hace 5 horas", status: "ok" },
   { title: "Pendiente revision de curso: Curriculo Nacional", time: "Ayer", status: "warn" },
 ]
 
 const RECENT_USERS = [
-  { name: "Maria Fernanda", plan: "Pro", progress: 68 },
-  { name: "Carlos Andres", plan: "Free", progress: 22 },
-  { name: "Ana Patricia", plan: "Premium", progress: 81 },
+  { name: "Maria Fernanda", status: "Activa", progress: 68 },
+  { name: "Carlos Andres", status: "En progreso", progress: 22 },
+  { name: "Ana Patricia", status: "Destacada", progress: 81 },
 ]
 
 const QUICK_ACTIONS = [
   { label: "Gestionar usuarios", href: "/admin/usuarios" },
   { label: "Administrar cursos", href: "/admin/cursos" },
   { label: "Clases y actividades", href: "/admin/cursos" },
-  { label: "Actualizar planes", href: "/admin/planes" },
+  { label: "Revisar simuladores", href: "/admin/simuladores" },
 ]
 
 export function AdminPanel() {
@@ -128,14 +128,14 @@ export function AdminPanel() {
             </div>
           </div>
 
-          {/* Plan Mix */}
+          {/* Estado de accesos */}
           <div className="p-5 rounded-xl bg-card border border-border">
-            <h3 className="font-bold text-foreground mb-4">Distribucion de Planes</h3>
+            <h3 className="font-bold text-foreground mb-4">Distribucion de accesos</h3>
             <div className="space-y-3 text-sm">
               {[
-                { label: "Free", value: 52, color: "bg-secondary" },
-                { label: "Pro", value: 34, color: "bg-primary" },
-                { label: "Premium", value: 14, color: "bg-[#F5C842]" },
+                { label: "Activos", value: 52, color: "bg-secondary" },
+                { label: "En progreso", value: 34, color: "bg-primary" },
+                { label: "Completados", value: 14, color: "bg-[#F5C842]" },
               ].map((p) => (
                 <div key={p.label}>
                   <div className="flex justify-between text-muted-foreground mb-1">
@@ -161,7 +161,7 @@ export function AdminPanel() {
               <div key={u.name} className="flex items-center justify-between p-3 rounded-lg bg-secondary/40">
                 <div>
                   <div className="text-foreground font-semibold">{u.name}</div>
-                  <div className="text-xs text-muted-foreground">Plan {u.plan}</div>
+                  <div className="text-xs text-muted-foreground">{u.status}</div>
                 </div>
                 <div className="w-40">
                   <div className="flex justify-between text-xs text-muted-foreground mb-1">
@@ -191,10 +191,6 @@ export function AdminPanel() {
             <div className="flex items-center gap-3">
               <BookOpen className="w-4 h-4 text-primary" />
               <span>Cursos activos: 29</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Tag className="w-4 h-4 text-primary" />
-              <span>Planes vigentes: 3</span>
             </div>
             <div className="flex items-center gap-3">
               <TrendingUp className="w-4 h-4 text-primary" />

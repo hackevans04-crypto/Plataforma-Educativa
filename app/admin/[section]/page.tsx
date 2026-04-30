@@ -1,22 +1,26 @@
-"use client"
-
-import { useParams } from "next/navigation"
 import AdminSimulatorsPanel from "@/components/admin/simulators-panel"
 import AdminCursosPage from "@/components/admin/admin-cursos-page"
 import AdminCMSLauncherPage from "@/components/admin/cms-launcher-page"
+import PagosPanel from "@/components/admin/pagos-panel"
+import SoportePanel from "@/components/admin/soporte-panel"
+
+export const dynamic = "force-dynamic"
 
 const TITLES: Record<string, string> = {
   usuarios: "Usuarios",
   evaluaciones: "Evaluaciones",
-  planes: "Planes",
+  planes: "Accesos",
   reportes: "Reportes",
   configuracion: "Configuracion",
   notificaciones: "Notificaciones",
 }
 
-export default function AdminSectionPage() {
-  const params = useParams()
-  const section = Array.isArray(params.section) ? params.section[0] : params.section
+export default async function AdminSectionPage({
+  params,
+}: {
+  params: Promise<{ section: string }>
+}) {
+  const { section } = await params
 
   if (section === "simuladores") {
     return <AdminSimulatorsPanel />
@@ -28,6 +32,14 @@ export default function AdminSectionPage() {
 
   if (section === "landing" || section === "cms") {
     return <AdminCMSLauncherPage />
+  }
+
+  if (section === "pagos") {
+    return <PagosPanel />
+  }
+
+  if (section === "soporte") {
+    return <SoportePanel />
   }
 
   const title = section ? TITLES[section] || "Admin" : "Admin"

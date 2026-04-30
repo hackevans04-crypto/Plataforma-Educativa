@@ -8,14 +8,18 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
 import {
   LayoutDashboard, Users, BookOpen,
-  Tag, BarChart3, ChevronLeft, Menu, Shield, LayoutTemplate
+  BarChart3, ChevronLeft, Menu, Shield, LayoutTemplate, Layers, Target,
+  CreditCard, Headphones,
 } from "lucide-react"
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Resumen", href: "/admin" },
   { icon: Users, label: "Usuarios", href: "/admin/usuarios" },
   { icon: BookOpen, label: "Cursos", href: "/admin/cursos" },
-  { icon: Tag, label: "Planes", href: "/admin/planes" },
+  { icon: Target, label: "Simuladores", href: "/admin/simuladores" },
+  { icon: Layers, label: "Categorías", href: "/admin/categorias" },
+  { icon: CreditCard, label: "Pagos", href: "/admin/pagos" },
+  { icon: Headphones, label: "Soporte", href: "/admin/soporte" },
   { icon: BarChart3, label: "Reportes", href: "/admin/reportes" },
   { icon: LayoutTemplate, label: "Landing Page", href: "/studio", external: true },
 ]

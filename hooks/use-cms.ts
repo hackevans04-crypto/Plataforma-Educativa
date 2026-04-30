@@ -65,6 +65,8 @@ export interface CMSHeroAppearance {
   secondaryButtonBorder?: string
   surfaceBg?: string
   surfaceBorder?: string
+  heroShellBg?: string
+  shaderSecondaryColor?: string
   sectionPaddingY?: number
   sectionPaddingX?: number
   titleSize?: number
@@ -138,7 +140,7 @@ export type CMSSectionType =
   | "cta" | "imageText" | "video" | "faq"
   | "textBanner" | "gallery" | "stats" | "customCode"
   | "pageHero" | "featureCards" | "richText" | "logoStrip" | "spacer" | "embed"
-  | "simulatorsFeed" | "coursesFeed" | "evaluationsFeed"
+  | "simulatorsFeed" | "coursesFeed" | "evaluationsFeed" | "coursesCatalog"
   | "formBuilder"
 
 export interface CMSSectionStyle {
@@ -237,6 +239,7 @@ export interface CMSPage {
 // ─── Full config ──────────────────────────────────────────────────────────────
 
 export interface CMSConfig {
+  schemaVersion?: number
   nav: {
     items: CMSNavItem[]
     loginLabel: string
@@ -257,24 +260,49 @@ export interface CMSConfig {
   popups: CMSPopup[]
 }
 
+const CURRENT_CMS_SCHEMA_VERSION = 4
+const HOME_ALLOWED_TYPES = new Set<CMSSection["type"]>(["hero"])
+const REFRESHED_BUILTIN_PAGE_SLUGS = new Set(["docentes-ec", "ia", "simulador"])
+
+function cloneCMSSection(section: CMSSection): CMSSection {
+  return {
+    ...section,
+    data: section.data ? { ...section.data } : {},
+    style: section.style ? { ...section.style } : undefined,
+    settings: section.settings ? JSON.parse(JSON.stringify(section.settings)) : undefined,
+  }
+}
+
+function normalizeHomeSections(
+  sections: CMSSection[] | undefined,
+  _schemaVersion?: number
+): CMSSection[] {
+  const baseSections: CMSSection[] = Array.isArray(sections)
+    ? sections.map(cloneCMSSection)
+    : DEFAULT_CMS.sections.map(cloneCMSSection)
+
+  const filteredSections = baseSections.filter((section) => HOME_ALLOWED_TYPES.has(section.type))
+  if (filteredSections.some((section) => section.type === "hero")) return filteredSections
+
+  return [{ id: "hero", type: "hero", visible: true, data: {} }]
+}
+
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
 export const DEFAULT_CMS: CMSConfig = {
+  schemaVersion: CURRENT_CMS_SCHEMA_VERSION,
   nav: {
     items: [
       { id: "n1", label: "Inicio", href: "/" },
       { id: "n2", label: "Docentes EC", href: "/docentes-ec" },
-      { id: "n3", label: "IA", href: "/ia" },
+      { id: "n3", label: "Cursos", href: "/cursos" },
+      { id: "n4", label: "IA", href: "/ia" },
     ],
     loginLabel: "Iniciar Sesion",
     registerLabel: "Registrarse Gratis",
   },
   sections: [
     { id: "hero",         type: "hero",         visible: true, data: {} },
-    { id: "benefits",     type: "benefits",     visible: true, data: {} },
-    { id: "testimonials", type: "testimonials", visible: true, data: {} },
-    { id: "pricing",      type: "pricing",      visible: true, data: {} },
-    { id: "contact",      type: "contact",      visible: true, data: {} },
   ],
   hero: {
     badge: "QSM 10 - 2026 Actualizado",
@@ -330,14 +358,14 @@ export const DEFAULT_CMS: CMSConfig = {
   general: {
     nombrePlataforma: "Hack Evans",
     tagline: "La plataforma #1 para docentes en Ecuador",
-    footerText: "© 2026 Hack Evans. Todos los derechos reservados.",
+    footerText: "(c) 2026 Hack Evans. Todos los derechos reservados.",
     footerLinks: [
       { id: "fl1", label: "Privacidad", href: "#" },
       { id: "fl2", label: "Terminos", href: "#" },
       { id: "fl3", label: "Contacto", href: "#contacto" },
     ],
     navAppearance: {
-      fontFamily: "var(--font-barlow), system-ui, sans-serif",
+      fontFamily: "'Space Grotesk', var(--font-barlow), system-ui, sans-serif",
       fontSize: "13px",
       fontWeight: "600",
       letterSpacing: "0.06em",
@@ -367,22 +395,84 @@ export const DEFAULT_CMS: CMSConfig = {
           visible: true,
           data: {
             badge: "DOCENTES EC",
-            badgeEmoji: "👨‍🏫",
+            badgeIcon: "presentation",
             accentColor: "#E8392A",
             layout: "split",
-            titulo: "Preparacion enfocada en",
-            subtitulo: "docentes ecuatorianos",
-            descripcion: "Accede a simuladores actualizados, evaluaciones por perfil y reportes claros para tu avance. Todo alineado al proceso oficial en Ecuador.",
-            features: ["Simuladores por area y perfil docente", "Rutas de estudio personalizadas", "Seguimiento real de progreso", "Banco de preguntas actualizado"],
-            ctaPrimario: "Comenzar Ahora",
-            ctaSecundario: "Ver Demo",
-            rightPanel: "stats",
-            statsTitle: "Resultados reales",
-            stats: [
-              { emoji: "👥", value: "15K+", label: "Docentes EC" },
-              { emoji: "🏆", value: "98%", label: "Tasa de aprobacion" },
-              { emoji: "📖", value: "5,000+", label: "Preguntas reales" },
+            titulo: "Preparacion clara para",
+            subtitulo: "docentes en Ecuador",
+            descripcion: "Organiza tu avance con simuladores alineados al proceso oficial, reportes por competencia y una ruta de estudio pensada para convocatorias reales.",
+            features: [
+              "Simuladores por perfil y convocatoria",
+              "Prioridades de estudio por competencia",
+              "Seguimiento de progreso en una sola vista",
+              "Acceso guiado desde cualquier dispositivo",
             ],
+            ctaPrimario: "Comenzar ahora",
+            ctaSecundario: "Ver simuladores",
+            rightPanel: "stats",
+            statsTitle: "Indicadores del ecosistema",
+            stats: [
+              { icon: "users", value: "15K+", label: "Docentes activos" },
+              { icon: "award", value: "98%", label: "Aprobacion reportada" },
+              { icon: "clipboard-list", value: "5,000+", label: "Preguntas verificadas" },
+            ],
+          },
+        },
+        {
+          id: "dec-cards",
+          type: "featureCards",
+          visible: true,
+          data: {
+            titulo: "Un flujo mas profesional para preparar tu convocatoria",
+            descripcion: "Cada bloque esta pensado para que el docente sepa que estudiar, cuanto domina y cual es la siguiente accion recomendada.",
+            columns: 3,
+            items: [
+              {
+                id: "dec-f1",
+                icon: "calendar-days",
+                title: "Ruta por convocatoria",
+                description: "El contenido se organiza por etapa, perfil y prioridad para evitar estudiar sin foco.",
+                accentColor: "#E8392A",
+              },
+              {
+                id: "dec-f2",
+                icon: "bar-chart",
+                title: "Panel de avance util",
+                description: "Visualiza fortalezas, brechas y progreso por competencia con una lectura inmediata.",
+                accentColor: "#E8392A",
+              },
+              {
+                id: "dec-f3",
+                icon: "shield",
+                title: "Contenido alineado",
+                description: "Materiales y simuladores revisados para mantenerse conectados con el proceso docente en Ecuador.",
+                accentColor: "#E8392A",
+              },
+            ],
+          },
+        },
+        {
+          id: "dec-rich",
+          type: "richText",
+          visible: true,
+          style: { bg: "dark" },
+          data: {
+            eyebrow: "METODO DE ESTUDIO",
+            titulo: "Una experiencia hecha para tomar mejores decisiones",
+            descripcion: "No se trata solo de practicar mas, sino de practicar mejor y saber donde intervenir primero.",
+            body: "Hack Evans reune simulacion, lectura de resultados y accion recomendada en un mismo flujo. Asi la experiencia se siente mas intuitiva y el docente no pierde tiempo entre pasos desconectados.",
+            bullets: [
+              "Diagnostico inicial para ubicar tu nivel actual",
+              "Practica guiada con bloques que responden a tus errores",
+              "Recomendaciones concretas para la siguiente sesion",
+            ],
+            primaryLabel: "Crear mi cuenta",
+            primaryHref: "/registro",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryLabel: "Ir al simulador",
+            secondaryHref: "/simulador",
+            secondaryAction: { type: "page", href: "/simulador" },
+            alignment: "left",
           },
         },
       ],
@@ -399,15 +489,28 @@ export const DEFAULT_CMS: CMSConfig = {
           type: "pageHero",
           visible: true,
           data: {
-            badge: "IA",
-            badgeEmoji: "⚡",
+            badge: "IA APLICADA",
+            badgeIcon: "sparkles",
             accentColor: "#3b82f6",
-            layout: "center",
-            titulo: "Inteligencia Artificial para tu preparacion",
-            descripcion: "Automatiza el estudio con asistentes inteligentes, diagnosticos rapidos y planes ajustados a tu nivel.",
+            layout: "split",
+            titulo: "Inteligencia artificial para una",
+            subtitulo: "preparacion mas precisa",
+            descripcion: "Activa asistentes que detectan tus brechas, recomiendan el siguiente paso y convierten tu estudio en un flujo mas simple y accionable.",
+            features: [
+              "Diagnostico inicial en pocos pasos",
+              "Sugerencias de estudio segun rendimiento",
+              "Explicaciones y refuerzos al instante",
+              "Ajuste automatico de dificultad",
+            ],
             ctaPrimario: "Probar IA",
-            ctaSecundario: "Ver Demo",
-            rightPanel: "none",
+            ctaSecundario: "Ver recorrido",
+            rightPanel: "stats",
+            statsTitle: "Flujo asistido por IA",
+            stats: [
+              { icon: "lightbulb", value: "24/7", label: "Asistencia para estudiar" },
+              { icon: "file-text", value: "1 clic", label: "Diagnostico inicial" },
+              { icon: "bar-chart", value: "Auto", label: "Ajuste por rendimiento" },
+            ],
           },
         },
         {
@@ -415,23 +518,61 @@ export const DEFAULT_CMS: CMSConfig = {
           type: "featureCards",
           visible: true,
           data: {
-            columns: 3,
+            titulo: "Automatizaciones utiles para estudiar con menos friccion",
+            descripcion: "La IA no complica la experiencia: ordena la informacion, prioriza acciones y deja mas claro que hacer despues.",
+            columns: 4,
             items: [
-              { id: "f1", emoji: "🧠", title: "Rutas inteligentes", description: "La IA detecta tus debilidades y prioriza temas clave.", accentColor: "#3b82f6" },
-              { id: "f2", emoji: "✨", title: "Generacion de preguntas", description: "Banco dinamico con variaciones y explicaciones claras.", accentColor: "#3b82f6" },
-              { id: "f3", emoji: "📊", title: "Analisis avanzado", description: "Reportes visuales con progreso por competencia.", accentColor: "#3b82f6" },
+              {
+                id: "f1",
+                icon: "lightbulb",
+                title: "Planes inteligentes",
+                description: "La IA detecta debilidades y reorganiza los temas que mas impacto tienen en tu avance.",
+                accentColor: "#3b82f6",
+              },
+              {
+                id: "f2",
+                icon: "file-text",
+                title: "Preguntas y explicaciones",
+                description: "Genera refuerzos claros, ejemplos y variaciones para practicar sin repetir siempre lo mismo.",
+                accentColor: "#3b82f6",
+              },
+              {
+                id: "f3",
+                icon: "bar-chart",
+                title: "Reportes accionables",
+                description: "Resume patrones de error y traduce los datos en prioridades faciles de ejecutar.",
+                accentColor: "#3b82f6",
+              },
+              {
+                id: "f4",
+                icon: "monitor",
+                title: "Todo en una sola vista",
+                description: "Menos pasos, mejor lectura del progreso y un flujo continuo desde diagnostico hasta practica.",
+                accentColor: "#3b82f6",
+              },
             ],
           },
         },
         {
-          id: "ia-checks",
-          type: "textBanner",
+          id: "ia-rich",
+          type: "richText",
           visible: true,
+          style: { bg: "dark" },
           data: {
-            titulo: "Todo lo que necesitas",
-            descripcion: "Recomendaciones personalizadas • Feedback inmediato por pregunta • Ajuste automatico del nivel",
-            ctaLabel: "Comenzar gratis",
-            ctaHref: "/registro",
+            eyebrow: "ASISTENTES PRACTICOS",
+            titulo: "La IA acompana sin volver compleja la experiencia",
+            descripcion: "El objetivo es reducir friccion: menos pasos, mejores recomendaciones y una lectura clara del avance.",
+            bullets: [
+              "Sugiere temas segun tus errores mas recientes",
+              "Ajusta la dificultad conforme mejoras",
+              "Resume debilidades antes de cada simulacion",
+            ],
+            primaryLabel: "Crear mi cuenta",
+            primaryHref: "/registro",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryLabel: "Explorar simuladores",
+            secondaryHref: "/simulador",
+            secondaryAction: { type: "page", href: "/simulador" },
             alignment: "center",
           },
         },
@@ -449,30 +590,78 @@ export const DEFAULT_CMS: CMSConfig = {
           type: "pageHero",
           visible: true,
           data: {
-            badge: "SIMULADOR QSM",
-            badgeEmoji: "🎯",
+            badge: "SIMULADORES",
+            badgeIcon: "target",
             accentColor: "#E8392A",
-            layout: "center",
-            titulo: "Practica con simuladores reales",
-            descripcion: "Examenes identicos al INEVAL con retroalimentacion inmediata y analisis de rendimiento detallado.",
-            ctaPrimario: "Comenzar Simulador",
-            ctaHref: "/registro",
-            ctaSecundario: "Ver Precios",
-            ctaSecHref: "/#precios",
-            rightPanel: "none",
+            layout: "split",
+            titulo: "Simuladores listos para practicar con una experiencia mas clara",
+            subtitulo: "PRACTICA GUIADA",
+            descripcion: "Presenta tus simuladores publicados con una portada estructurada, conectada al admin y alineada al mismo sistema visual del sitio.",
+            features: [
+              "Feed conectado a simuladores publicados",
+              "Filtro por categoria sin tocar codigo",
+              "CTA directo al catalogo o al dashboard",
+            ],
+            ctaPrimario: "Ver simuladores",
+            ctaSecundario: "Ir al dashboard",
+            primaryAction: { type: "page", href: "/simulador" },
+            secondaryAction: { type: "page", href: "/dashboard/simuladores" },
+            rightPanel: "stats",
+            statsTitle: "Panel de simuladores",
+            stats: [
+              { icon: "target", value: "Live", label: "Catalogo conectado" },
+              { icon: "bar-chart", value: "Uso", label: "Ranking por actividad" },
+              { icon: "monitor", value: "UX", label: "Sistema visual coherente" },
+            ],
           },
         },
         {
-          id: "sim-features",
-          type: "featureCards",
+          id: "sim-feed",
+          type: "simulatorsFeed",
           visible: true,
           data: {
-            columns: 3,
-            items: [
-              { id: "sf1", emoji: "📝", title: "Preguntas reales INEVAL", description: "Banco actualizado con mas de 5,000 preguntas verificadas del examen oficial.", accentColor: "#E8392A" },
-              { id: "sf2", emoji: "⏱️", title: "Modo examen real", description: "Temporizador, condiciones reales y retroalimentacion inmediata al terminar.", accentColor: "#E8392A" },
-              { id: "sf3", emoji: "📈", title: "Analisis de rendimiento", description: "Estadisticas detalladas por area, competencia y comparacion con otros docentes.", accentColor: "#E8392A" },
+            badge: "Simuladores",
+            titulo: "Simuladores conectados al admin",
+            descripcion: "Este bloque toma solo simuladores publicados para que el contenido salga ordenado y no dependa de HTML manual.",
+            ctaLabel: "Explorar simuladores",
+            ctaHref: "/simulador",
+            ctaAction: { type: "page", href: "/simulador" },
+          },
+          settings: {
+            source: {
+              mode: "auto",
+              order: "latest",
+              limit: 6,
+              display: "grid",
+              columns: 3,
+              showMeta: true,
+              showButton: true,
+              showBadge: true,
+            },
+          },
+        },
+        {
+          id: "sim-rich",
+          type: "richText",
+          visible: true,
+          style: { bg: "dark" },
+          data: {
+            eyebrow: "EDICION ESTRUCTURADA",
+            titulo: "Edita esta pagina con bloques del sistema, no con HTML suelto",
+            descripcion: "La pagina de simuladores ahora sigue el mismo flujo modular que otras vistas del sitio para mantener consistencia visual y de gestion.",
+            body: "Usa el hero, el feed dinamico y los bloques editoriales para ajustar mensajes, llamadas a la accion y contexto sin depender de una landing importada o de codigo pegado manualmente.",
+            bullets: [
+              "Bloques visuales mas faciles de mantener",
+              "Contenido conectado a simuladores publicados",
+              "Misma logica de edicion que IA y Docentes EC",
             ],
+            alignment: "left",
+            primaryLabel: "Ir al catalogo",
+            primaryHref: "/simulador",
+            secondaryLabel: "Volver al inicio",
+            secondaryHref: "/",
+            primaryAction: { type: "page", href: "/simulador" },
+            secondaryAction: { type: "page", href: "/" },
           },
         },
       ],
@@ -516,11 +705,24 @@ function getCMSEventName(source: CMSSource) {
   return source === "draft" ? CMS_DRAFT_EVENT : CMS_PUBLISHED_EVENT
 }
 
-function normalizeCMSPage(page: Partial<CMSPage> | undefined): CMSPage | null {
+function normalizeCMSPage(page: Partial<CMSPage> | undefined, schemaVersion?: number): CMSPage | null {
   if (!page?.slug) return null
 
   const defaultPage = DEFAULT_CMS.pages.find((entry) => entry.slug === page.slug)
   const title = page.title ?? defaultPage?.title ?? "Nueva pagina"
+  const containsLegacyCustomCode =
+    page.slug === "simulador" &&
+    Array.isArray(page.sections) &&
+    page.sections.some((section) => section?.type === "customCode")
+  const shouldRefreshBuiltInSections =
+    Boolean(defaultPage?.builtin) &&
+    (
+      (REFRESHED_BUILTIN_PAGE_SLUGS.has(page.slug) && Number(schemaVersion || 0) < CURRENT_CMS_SCHEMA_VERSION) ||
+      containsLegacyCustomCode
+    )
+  const baseSections = shouldRefreshBuiltInSections
+    ? defaultPage?.sections
+    : page.sections ?? defaultPage?.sections ?? []
 
   return {
     slug: page.slug,
@@ -528,8 +730,26 @@ function normalizeCMSPage(page: Partial<CMSPage> | undefined): CMSPage | null {
     builtin: page.builtin ?? defaultPage?.builtin ?? false,
     showInNav: page.showInNav ?? defaultPage?.showInNav ?? true,
     navLabel: page.navLabel ?? defaultPage?.navLabel ?? title,
-    sections: page.sections ?? defaultPage?.sections ?? [],
+    sections: Array.isArray(baseSections) ? baseSections.map(cloneCMSSection) : [],
   }
+}
+
+function mergeDefaultNavItems(items?: CMSNavItem[]): CMSNavItem[] {
+  const current = Array.isArray(items) && items.length > 0 ? [...items] : [...DEFAULT_CMS.nav.items]
+
+  for (const defaultItem of DEFAULT_CMS.nav.items) {
+    if (current.some((item) => item.href === defaultItem.href)) continue
+
+    const docentesIndex = current.findIndex((item) => item.href === "/docentes-ec")
+    if (defaultItem.href === "/cursos" && docentesIndex >= 0) {
+      current.splice(docentesIndex + 1, 0, defaultItem)
+      continue
+    }
+
+    current.push(defaultItem)
+  }
+
+  return current
 }
 
 export function getCMSConfig(source: CMSSource = "published"): CMSConfig {
@@ -549,12 +769,17 @@ export function getCMSConfig(source: CMSSource = "published"): CMSConfig {
     const p = JSON.parse(raw)
     const normalizedPages = Array.isArray(p.pages)
       ? p.pages
-          .map((page: Partial<CMSPage>) => normalizeCMSPage(page))
+          .map((page: Partial<CMSPage>) => normalizeCMSPage(page, p.schemaVersion))
           .filter((page: CMSPage | null): page is CMSPage => Boolean(page))
       : DEFAULT_CMS.pages
     return {
-      nav:          { ...DEFAULT_CMS.nav,          ...(p.nav          ?? {}) },
-      sections:     p.sections ?? DEFAULT_CMS.sections,
+      schemaVersion: CURRENT_CMS_SCHEMA_VERSION,
+      nav:          {
+        ...DEFAULT_CMS.nav,
+        ...(p.nav ?? {}),
+        items: mergeDefaultNavItems(p.nav?.items),
+      },
+      sections:     normalizeHomeSections(p.sections, p.schemaVersion),
       hero:         { ...DEFAULT_CMS.hero,         ...(p.hero         ?? {}) },
       benefits:     { ...DEFAULT_CMS.benefits,     ...(p.benefits     ?? {}) },
       testimonials: { ...DEFAULT_CMS.testimonials, ...(p.testimonials ?? {}) },
@@ -569,14 +794,14 @@ export function getCMSConfig(source: CMSSource = "published"): CMSConfig {
 
 export function saveCMSConfig(config: CMSConfig, source: CMSSource = "draft"): void {
   if (typeof window === "undefined") return
-  const payload = JSON.stringify(config)
+  const payload = JSON.stringify({ ...config, schemaVersion: CURRENT_CMS_SCHEMA_VERSION })
   localStorage.setItem(getCMSStorageKey(source), payload)
   window.dispatchEvent(new CustomEvent(getCMSEventName(source)))
 }
 
 export function publishCMSConfig(config: CMSConfig): void {
   if (typeof window === "undefined") return
-  const payload = JSON.stringify(config)
+  const payload = JSON.stringify({ ...config, schemaVersion: CURRENT_CMS_SCHEMA_VERSION })
   localStorage.setItem(CMS_DRAFT_KEY, payload)
   localStorage.setItem(CMS_PUBLISHED_KEY, payload)
   window.dispatchEvent(new CustomEvent(CMS_DRAFT_EVENT))

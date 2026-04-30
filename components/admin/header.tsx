@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
 import { cn } from "@/lib/utils"
 import ThemeToggle from "@/components/theme-toggle"
-import { Bell, Search, User, Settings, LogOut, ChevronDown, Plus } from "lucide-react"
+import { Bell, Search, User, Settings, LogOut, ChevronDown } from "lucide-react"
 
 export default function AdminHeader() {
   const { user, logout } = useAuth()
@@ -22,7 +22,7 @@ export default function AdminHeader() {
         <Search className="w-4 h-4 text-muted-foreground" />
         <input
           type="text"
-          placeholder="Buscar usuarios, cursos, planes..."
+          placeholder="Buscar usuarios, cursos, simuladores..."
           className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
@@ -32,14 +32,6 @@ export default function AdminHeader() {
       {/* Right Side */}
       <div className="flex items-center gap-3 ml-auto">
         <ThemeToggle scope="admin" />
-        <Link
-          href="/admin/cursos"
-          className="hidden sm:inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-[#ff4433] transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Nuevo Contenido
-        </Link>
-
         <button className="relative w-10 h-10 rounded-xl bg-secondary/50 hover:bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
           <Bell className="w-5 h-5" />
           <span className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full" />

@@ -1,195 +1,238 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { 
-  Mail, Phone, MapPin, Clock, Send, 
-  MessageSquare, HelpCircle, FileText
+import {
+  ChevronDown,
+  Clock3,
+  Mail,
+  MapPin,
+  MessageSquare,
+  Phone,
+  Send,
+  ShieldCheck,
+  Sparkles,
 } from "lucide-react"
 
 const CONTACT_INFO = [
   { icon: Mail, label: "Email", value: "soporte@hackevans.com" },
   { icon: Phone, label: "Telefono", value: "+593 99 123 4567" },
   { icon: MapPin, label: "Ubicacion", value: "Quito, Ecuador" },
-  { icon: Clock, label: "Horario", value: "Lun - Vie: 8am - 6pm" },
+  { icon: Clock3, label: "Horario", value: "Lun - Vie: 8am - 6pm" },
 ]
 
 const FAQ = [
   {
     question: "Como funcionan los simuladores?",
-    answer: "Los simuladores replican exactamente las condiciones del examen real: mismo tiempo, formato de preguntas y estructura. Al finalizar, recibiras un analisis detallado de tu rendimiento.",
+    answer:
+      "Los simuladores replican estructura, tiempo y ritmo del examen real. Al terminar recibes un analisis claro para estudiar con prioridad.",
   },
   {
     question: "Puedo acceder desde cualquier dispositivo?",
-    answer: "Si, nuestra plataforma es 100% responsive. Puedes practicar desde tu computadora, tablet o celular en cualquier momento.",
+    answer:
+      "Si. La plataforma esta optimizada para escritorio, tablet y movil para que estudies desde cualquier lugar sin perder avance.",
   },
   {
     question: "Con que frecuencia se actualizan las preguntas?",
-    answer: "Actualizamos nuestro banco de preguntas mensualmente, basandonos en las ultimas convocatorias y cambios en el curriculo nacional.",
+    answer:
+      "El banco se actualiza de forma constante para reflejar cambios de normativa, curriculo y patrones recientes de evaluacion.",
   },
   {
-    question: "Ofrecen garantia de aprobacion?",
-    answer: "Aunque no podemos garantizar resultados, el 98% de nuestros usuarios que completan el programa de preparacion aprueban sus evaluaciones.",
+    question: "Incluyen acompanamiento humano?",
+    answer:
+      "Si. Dependiendo del plan, puedes acceder a soporte prioritario, mentoria y asesoria especializada para un seguimiento mas cercano.",
   },
 ]
 
 export default function ContactSection() {
   const [isVisible, setIsVisible] = useState(false)
-  const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const [openFaq, setOpenFaq] = useState<number | null>(0)
   const sectionRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true)
-        }
+        if (entry.isIntersecting) setIsVisible(true)
       },
-      { threshold: 0.1 }
+      { threshold: 0.12 }
     )
 
-    if (sectionRef.current) {
-      observer.observe(sectionRef.current)
-    }
-
+    if (sectionRef.current) observer.observe(sectionRef.current)
     return () => observer.disconnect()
   }, [])
 
   return (
-    <section ref={sectionRef} id="contacto" className="py-24 bg-transparent relative overflow-hidden">
-      {/* Background */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-primary/5 via-transparent to-transparent" />
+    <section ref={sectionRef} id="contacto" className="relative overflow-hidden py-24">
+      <div className="absolute inset-0">
+        <div className="absolute left-[8%] top-20 h-72 w-72 rounded-full bg-primary/8 blur-3xl" />
+        <div className="absolute right-[6%] top-14 h-72 w-72 rounded-full bg-[#38bdf8]/7 blur-3xl" />
+      </div>
 
-      <div className="container mx-auto px-6 lg:px-12 relative">
-        {/* Section Header */}
-        <div className={`text-center max-w-3xl mx-auto mb-16 transition-all duration-700 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-6">
-            <MessageSquare className="w-4 h-4 text-primary" />
-            <span className="text-sm font-semibold text-primary">Contacto</span>
-          </div>
-          <h2 className="font-display text-4xl md:text-5xl text-foreground mb-4">
-            Estamos aqui para
-            <span className="text-primary"> ayudarte</span>
-          </h2>
-          <p className="text-lg text-muted-foreground">
-            Nuestro equipo de soporte esta disponible para resolver todas tus dudas
-          </p>
-        </div>
+      <div className="landing-container relative">
+        <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
+          <div
+            className={isVisible ? "animate-slide-up" : "opacity-0 translate-y-6"}
+            style={{ animationDelay: "60ms" }}
+          >
+            <div className="landing-kicker">Contacto y soporte</div>
+            <h2 className="landing-title mt-4 text-4xl leading-[0.96] text-white md:text-5xl">
+              Un equipo real para acompanarte antes, durante y despues de tu preparacion.
+            </h2>
+            <p className="mt-5 max-w-xl text-lg leading-8 text-[var(--he-landing-muted)]">
+              Si necesitas ayuda con planes, simuladores o tu ruta de estudio, te respondemos con rapidez y contexto.
+            </p>
 
-        <div className="grid lg:grid-cols-2 gap-12">
-          {/* Contact Form */}
-          <div className={`transition-all duration-700 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-            <div className="p-8 rounded-2xl bg-card border border-border">
-              <h3 className="text-xl font-bold text-foreground mb-6">Enviar mensaje</h3>
-              <form className="space-y-5">
-                <div className="grid sm:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">Nombre</label>
-                    <input
-                      type="text"
-                      placeholder="Tu nombre"
-                      className="w-full px-4 py-3 rounded-xl bg-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
-                    />
+            <div className="mt-8 space-y-4">
+              <div className="landing-panel rounded-[30px] p-6">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/12 text-primary">
+                    <MessageSquare className="h-5 w-5" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">Email</label>
-                    <input
-                      type="email"
-                      placeholder="tu@email.com"
-                      className="w-full px-4 py-3 rounded-xl bg-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
-                    />
+                    <div className="text-base font-semibold text-white">Mesa de ayuda prioritaria</div>
+                    <div className="mt-1 text-sm text-white/50">
+                      Respuestas claras sobre acceso, pagos y preparacion.
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">Asunto</label>
-                  <input
-                    type="text"
-                    placeholder="Como podemos ayudarte?"
-                    className="w-full px-4 py-3 rounded-xl bg-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">Mensaje</label>
-                  <textarea
-                    rows={4}
-                    placeholder="Escribe tu mensaje..."
-                    className="w-full px-4 py-3 rounded-xl bg-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors resize-none"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-primary text-white font-bold rounded-xl hover:bg-[#ff4433] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(232,57,42,0.35)] transition-all"
-                >
-                  <Send className="w-5 h-5" />
-                  Enviar Mensaje
-                </button>
-              </form>
 
-              {/* Contact Info */}
-              <div className="grid grid-cols-2 gap-4 mt-8 pt-8 border-t border-border">
-                {CONTACT_INFO.map((item, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <item.icon className="w-5 h-5 text-primary" />
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
+                    <div className="flex items-center gap-2 text-sm text-white/60">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      Tiempo estimado
                     </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">{item.label}</div>
-                      <div className="text-sm font-medium text-foreground">{item.value}</div>
+                    <div className="mt-3 text-2xl font-semibold text-white">Menos de 24h</div>
+                  </div>
+                  <div className="rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
+                    <div className="flex items-center gap-2 text-sm text-white/60">
+                      <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                      Canal seguro
                     </div>
+                    <div className="mt-3 text-2xl font-semibold text-white">Atencion directa</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {CONTACT_INFO.map((item) => (
+                  <div key={item.label} className="landing-panel-soft rounded-[26px] p-5">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/[0.05] text-primary">
+                      <item.icon className="h-5 w-5" />
+                    </div>
+                    <div className="mt-4 text-sm text-white/48">{item.label}</div>
+                    <div className="mt-1 text-base font-semibold text-white">{item.value}</div>
                   </div>
                 ))}
               </div>
             </div>
           </div>
 
-          {/* FAQ */}
-          <div className={`transition-all duration-700 delay-200 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                <HelpCircle className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-foreground">Preguntas Frecuentes</h3>
-                <p className="text-sm text-muted-foreground">Respuestas rapidas a dudas comunes</p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {FAQ.map((item, i) => (
-                <div
-                  key={i}
-                  className="rounded-xl border border-border overflow-hidden transition-colors hover:border-primary/30"
-                >
-                  <button
-                    onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                    className="w-full flex items-center justify-between p-5 text-left"
-                  >
-                    <span className="font-semibold text-foreground pr-4">{item.question}</span>
-                    <FileText className={`w-5 h-5 text-primary flex-shrink-0 transition-transform ${openFaq === i ? 'rotate-45' : ''}`} />
-                  </button>
-                  {openFaq === i && (
-                    <div className="px-5 pb-5 text-muted-foreground animate-fade-in">
-                      {item.answer}
-                    </div>
-                  )}
+          <div className="space-y-5">
+            <div
+              className={isVisible ? "animate-slide-up" : "opacity-0 translate-y-6"}
+              style={{ animationDelay: "140ms" }}
+            >
+              <div className="landing-panel rounded-[32px] p-6 md:p-7">
+                <div className="mb-6">
+                  <div className="text-xl font-semibold text-white">Escribenos</div>
+                  <div className="mt-1 text-sm text-white/52">
+                    Cuentanos que necesitas y te guiaremos al mejor siguiente paso.
+                  </div>
                 </div>
-              ))}
+
+                <form
+                  className="space-y-4"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                  }}
+                >
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-white/72">Nombre</span>
+                      <input
+                        type="text"
+                        placeholder="Tu nombre"
+                        className="h-12 w-full rounded-[20px] border border-white/10 bg-[#09111f]/82 px-4 text-sm text-white placeholder:text-white/25 focus:border-primary/35 focus:outline-none"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-medium text-white/72">Email</span>
+                      <input
+                        type="email"
+                        placeholder="tu@email.com"
+                        className="h-12 w-full rounded-[20px] border border-white/10 bg-[#09111f]/82 px-4 text-sm text-white placeholder:text-white/25 focus:border-primary/35 focus:outline-none"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-white/72">Asunto</span>
+                    <input
+                      type="text"
+                      placeholder="Plan, acceso, simuladores o asesoria"
+                      className="h-12 w-full rounded-[20px] border border-white/10 bg-[#09111f]/82 px-4 text-sm text-white placeholder:text-white/25 focus:border-primary/35 focus:outline-none"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-medium text-white/72">Mensaje</span>
+                    <textarea
+                      rows={5}
+                      placeholder="Describe tu necesidad para responderte mejor..."
+                      className="w-full rounded-[24px] border border-white/10 bg-[#09111f]/82 px-4 py-3 text-sm text-white placeholder:text-white/25 focus:border-primary/35 focus:outline-none"
+                    />
+                  </label>
+
+                  <button
+                    type="submit"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary px-5 py-3.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_36px_rgba(232,57,42,0.28)]"
+                  >
+                    <Send className="h-4 w-4" />
+                    Enviar mensaje
+                  </button>
+                </form>
+              </div>
             </div>
 
-            {/* Additional Help */}
-            <div className="mt-8 p-6 rounded-xl bg-primary/5 border border-primary/20">
-              <h4 className="font-bold text-foreground mb-2">Necesitas mas ayuda?</h4>
-              <p className="text-sm text-muted-foreground mb-4">
-                Nuestro equipo de soporte esta disponible para asistirte personalmente.
-              </p>
-              <a 
-                href="https://wa.me/593991234567" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-[#ff4433] transition-colors"
-              >
-                <MessageSquare className="w-4 h-4" />
-                Chat en WhatsApp
-              </a>
+            <div
+              className={isVisible ? "animate-slide-up" : "opacity-0 translate-y-6"}
+              style={{ animationDelay: "220ms" }}
+            >
+              <div className="landing-panel-soft rounded-[32px] p-6 md:p-7">
+                <div className="mb-5">
+                  <div className="text-xl font-semibold text-white">Preguntas frecuentes</div>
+                  <div className="mt-1 text-sm text-white/52">
+                    Respuestas rapidas para dudas comunes antes de contactar al equipo.
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {FAQ.map((item, index) => {
+                    const open = openFaq === index
+                    return (
+                      <div
+                        key={item.question}
+                        className="overflow-hidden rounded-[24px] border border-white/8 bg-white/[0.03]"
+                      >
+                        <button
+                          onClick={() => setOpenFaq(open ? null : index)}
+                          className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
+                        >
+                          <span className="text-base font-semibold text-white">{item.question}</span>
+                          <ChevronDown
+                            className={open ? "h-5 w-5 shrink-0 rotate-180 text-primary transition-transform" : "h-5 w-5 shrink-0 text-white/35 transition-transform"}
+                          />
+                        </button>
+                        {open ? (
+                          <div className="px-5 pb-5 text-sm leading-7 text-white/58">
+                            {item.answer}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         </div>

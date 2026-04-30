@@ -1,4 +1,21 @@
 export function mapearSimuladorParaPreview(simulador) {
+  if (simulador.contentMode === "html" && String(simulador.htmlContent || "").trim()) {
+    return {
+      id: simulador.id,
+      titulo: simulador.titulo,
+      descripcion: simulador.descripcion,
+      estado: simulador.estado || "borrador",
+      contentMode: "html",
+      htmlContent: simulador.htmlContent,
+      configuracion: {
+        tiempoPorPregunta: simulador.config?.tiempoPregunta || 60,
+        preguntasMaximas: simulador.config?.preguntasMax || 0,
+        retroalimentacion: simulador.config?.retroalimentacion ?? true,
+        revisionFinal: simulador.config?.revisionFinal ?? true,
+      },
+    }
+  }
+
   const preguntas = simulador.preguntas.map((pregunta, index) => ({
     id: pregunta.id || `q_${index}`,
     prompt: pregunta.pregunta,
@@ -15,6 +32,7 @@ export function mapearSimuladorParaPreview(simulador) {
     titulo: simulador.titulo,
     descripcion: simulador.descripcion,
     estado: simulador.estado || "borrador",
+    contentMode: simulador.contentMode || "quiz",
     formularioInicial: {
       mode: simulador.formMode || "personalizado",
       sections: [

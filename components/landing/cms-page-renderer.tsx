@@ -8,7 +8,6 @@ import StudioInlineText from "@/components/studio/studio-inline-text"
 import HeroSection from "@/components/landing/hero-section"
 import BenefitsSection from "@/components/landing/benefits-section"
 import TestimonialsSection from "@/components/landing/testimonials-section"
-import Pricing from "@/components/pricing"
 import ContactSection from "@/components/landing/contact-section"
 import CTASection from "@/components/landing/cta-section"
 import ImageTextSection from "@/components/landing/image-text-section"
@@ -23,6 +22,7 @@ import FeatureCardsSection from "@/components/landing/feature-cards-section"
 import DynamicFeedSection from "@/components/landing/dynamic-feed-section"
 import FormBuilderSection from "@/components/landing/form-builder-section"
 import LandingPopupHost from "@/components/landing/landing-popup-host"
+import PublicCoursesHub from "@/components/courses/public-courses-hub"
 import {
   getSectionVisibilityClass,
   resolveLandingBuilderItems,
@@ -557,11 +557,21 @@ export default function CmsPageRenderer({
       )
     }
 
+    if (section.type === "coursesCatalog") {
+      return wrap(
+        <PublicCoursesHub
+          variant={section.data?.variant === "page" ? "page" : "home"}
+          content={section.data}
+          onCatalogAction={() => runSectionAction(section.data?.ctaAction, section.data?.ctaHref)}
+        />
+      )
+    }
+
     switch (section.type) {
       case "hero":         return wrap(<HeroSection onGetStarted={onGetStarted} onWatchDemo={onWatchDemo} />)
       case "benefits":     return wrap(<BenefitsSection />)
       case "testimonials": return wrap(<TestimonialsSection />)
-      case "pricing":      return wrap(<Pricing />)
+      case "pricing":      return null
       case "contact":      return wrap(<ContactSection />)
       case "pageHero":     return wrap(<PageHeroSection data={section.data} onGetStarted={() => runSectionAction(section.data?.primaryAction, section.data?.ctaHref)} onWatchDemo={() => runSectionAction(section.data?.secondaryAction, section.data?.ctaSecHref)} />)
       case "featureCards": return wrap(<FeatureCardsSection data={section.data} />)

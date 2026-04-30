@@ -10,7 +10,6 @@ export interface User {
   name: string
   role: UserRole
   avatar?: string
-  plan?: "free" | "pro" | "premium"
   createdAt: Date
 }
 
@@ -35,7 +34,6 @@ const DEMO_USERS: Record<string, { password: string; user: User }> = {
       email: "admin@hackevans.com",
       name: "Administrador",
       role: "admin",
-      plan: "premium",
       createdAt: new Date("2024-01-01"),
     },
   },
@@ -46,7 +44,6 @@ const DEMO_USERS: Record<string, { password: string; user: User }> = {
       email: "usuario@test.com",
       name: "Juan Perez",
       role: "user",
-      plan: "pro",
       createdAt: new Date("2024-06-15"),
     },
   },
@@ -102,7 +99,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       name,
       role: "user",
-      plan: "free",
       createdAt: new Date(),
     }
 

@@ -1,8 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CheckCircle2 } from "lucide-react"
+import { ArrowRight, CheckCircle2, CirclePlay } from "lucide-react"
 import StudioInlineText from "@/components/studio/studio-inline-text"
+import AnimatedShaderSurface from "@/components/ui/animated-shader-surface"
+import { SiteIconGlyph } from "@/components/ui/site-icon-glyph"
 import type { CMSTextStyle } from "@/hooks/use-cms"
 import { withAlpha } from "@/lib/color-utils"
 
@@ -17,6 +19,14 @@ interface PageHeroSectionProps {
   onActivate?: () => void
 }
 
+interface HeroStat {
+  icon?: string
+  emoji?: string
+  value: string
+  label: string
+  note?: string
+}
+
 export default function PageHeroSection({
   data,
   onGetStarted,
@@ -28,29 +38,32 @@ export default function PageHeroSection({
   onActivate,
 }: PageHeroSectionProps) {
   const [vis, setVis] = useState(false)
-  useEffect(() => { setVis(true) }, [])
 
-  const accent       = data.accentColor   || "#E8392A"
-  const layout       = data.layout        || "split"
-  const badge        = data.badge         || ""
-  const badgeEmoji   = data.badgeEmoji    || ""
-  const titulo       = data.titulo        || ""
-  const subtitulo    = data.subtitulo     || ""
-  const desc         = data.descripcion   || ""
-  const features     = (data.features as string[]) || []
-  const ctaPri       = data.ctaPrimario   || ""
-  const ctaPriHref   = data.ctaHref       || ""
-  const ctaSec       = data.ctaSecundario || ""
-  const ctaSecHref   = data.ctaSecHref    || ""
-  const rightPanel   = data.rightPanel    || "none"
-  const statsTitle   = data.statsTitle    || ""
-  const stats        = (data.stats as { emoji: string; value: string; label: string }[]) || []
-  const rightImg     = data.rightImage    || ""
-  const textStyles   = (data.textStyles as Record<string, CMSTextStyle>) || {}
-  const appearance   = (data.appearance as Record<string, any>) || {}
-  const sectionPaddingY = Math.min(220, Math.max(56, Number(appearance.sectionPaddingY || 96)))
+  useEffect(() => {
+    setVis(true)
+  }, [])
+
+  const accent = "#E8392A"
+  const layout = data.layout || "split"
+  const badge = data.badge || ""
+  const badgeIcon = data.badgeIcon || data.badgeEmoji || ""
+  const titulo = data.titulo || ""
+  const subtitulo = data.subtitulo || ""
+  const desc = data.descripcion || ""
+  const features = (data.features as string[]) || []
+  const ctaPri = data.ctaPrimario || ""
+  const ctaPriHref = data.ctaHref || ""
+  const ctaSec = data.ctaSecundario || ""
+  const ctaSecHref = data.ctaSecHref || ""
+  const rightPanel = data.rightPanel || "none"
+  const statsTitle = data.statsTitle || ""
+  const stats = (data.stats as HeroStat[]) || []
+  const rightImg = data.rightImage || ""
+  const textStyles = (data.textStyles as Record<string, CMSTextStyle>) || {}
+  const appearance = (data.appearance as Record<string, any>) || {}
+  const sectionPaddingY = Math.min(220, Math.max(64, Number(appearance.sectionPaddingY || 108)))
   const sectionPaddingX = Math.min(96, Math.max(16, Number(appearance.sectionPaddingX || 24)))
-  const titleSize = Math.min(92, Math.max(36, Number(appearance.titleSize || 64)))
+  const titleSize = Math.min(92, Math.max(36, Number(appearance.titleSize || 66)))
   const descriptionSize = Math.min(28, Math.max(14, Number(appearance.descriptionSize || 18)))
   const titleColor = appearance.titleColor
   const descriptionColor = appearance.descriptionColor
@@ -58,56 +71,70 @@ export default function PageHeroSection({
   const titleFontWeight = appearance.titleFontWeight
   const descriptionFontFamily = appearance.descriptionFontFamily
   const descriptionFontWeight = appearance.descriptionFontWeight
-  const surfaceBg = appearance.surfaceBg
-  const surfaceBorder = appearance.surfaceBorder
+  const surfaceBg = appearance.surfaceBg || "rgba(8, 12, 22, 0.86)"
+  const surfaceBorder = appearance.surfaceBorder || "rgba(148, 163, 184, 0.16)"
   const sectionGlow = appearance.glowColor || accent
+  const shaderSecondary = "#ff6b4d"
+  const heroShellBg = appearance.heroShellBg || "rgba(5, 10, 18, 0.74)"
 
   const handlePri = () => {
     if (editMode) return
-    if (onGetStarted) { onGetStarted(); return }
-    if (ctaPriHref) { window.location.href = ctaPriHref }
+    if (onGetStarted) {
+      onGetStarted()
+      return
+    }
+    if (ctaPriHref) {
+      window.location.href = ctaPriHref
+    }
   }
+
   const handleSec = () => {
     if (editMode) return
-    if (onWatchDemo) { onWatchDemo(); return }
-    if (ctaSecHref) { window.location.href = ctaSecHref }
+    if (onWatchDemo) {
+      onWatchDemo()
+      return
+    }
+    if (ctaSecHref) {
+      window.location.href = ctaSecHref
+    }
   }
 
   const leftBlock = (
-    <div className={`transition-all duration-700 ${vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
-      {badge && (
+    <div className={vis ? "animate-slide-up" : "opacity-0 translate-y-6"}>
+      {badge ? (
         <div
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-full border mb-6"
-          style={{ backgroundColor: `${accent}18`, borderColor: `${accent}35` }}
+          className="landing-badge"
+          style={{
+            borderColor: `${accent}35`,
+            background: `linear-gradient(180deg, ${accent}20, ${accent}10)`,
+            color: accent,
+          }}
         >
+          {badgeIcon ? (
+            <span
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.06]"
+              aria-hidden="true"
+            >
+              <SiteIconGlyph name={badgeIcon} fallback="sparkles" size={16} className="text-current" />
+            </span>
+          ) : null}
           <StudioInlineText
             as="span"
-            value={badgeEmoji}
+            value={badge}
             editable={editMode}
             onActivate={onActivate}
-            onChange={(value) => onFieldChange?.("badgeEmoji", value)}
-            formatting={textStyles.badgeEmoji}
-            onFormattingChange={(style) => onTextStyleChange?.("badgeEmoji", style)}
-            className="text-base"
-            editorClassName="min-w-[3rem] text-base"
+            onChange={(value) => onFieldChange?.("badge", value)}
+            formatting={textStyles.badge}
+            onFormattingChange={(style) => onTextStyleChange?.("badge", style)}
+            className="text-sm font-semibold"
+            editorClassName="min-w-[14rem] text-sm font-semibold"
+            style={{ color: accent }}
+            editorStyle={{ color: accent }}
           />
-        <StudioInlineText
-          as="span"
-          value={badge}
-          editable={editMode}
-          onActivate={onActivate}
-          onChange={(value) => onFieldChange?.("badge", value)}
-          formatting={textStyles.badge}
-          onFormattingChange={(style) => onTextStyleChange?.("badge", style)}
-          className="text-xs font-bold tracking-[0.2em] uppercase"
-          editorClassName="min-w-[14rem] text-xs font-bold uppercase tracking-[0.2em]"
-          style={{ color: accent }}
-          editorStyle={{ color: accent }}
-        />
         </div>
-      )}
+      ) : null}
 
-      {titulo && (
+      {titulo ? (
         <StudioInlineText
           as="h1"
           value={titulo}
@@ -117,13 +144,24 @@ export default function PageHeroSection({
           onChange={(value) => onFieldChange?.("titulo", value)}
           formatting={textStyles.titulo}
           onFormattingChange={(style) => onTextStyleChange?.("titulo", style)}
-          className="font-display text-4xl md:text-5xl lg:text-6xl text-foreground leading-[1.1] mb-1"
-          editorClassName="font-display text-3xl md:text-5xl text-foreground leading-[1.1]"
-          style={{ color: titleColor, fontSize: `clamp(${Math.max(34, Math.round(titleSize * 0.58))}px, 5.2vw, ${titleSize}px)`, fontFamily: titleFontFamily, fontWeight: titleFontWeight }}
-          editorStyle={{ color: titleColor, fontSize: `clamp(${Math.max(30, Math.round(titleSize * 0.48))}px, 4.8vw, ${Math.max(36, titleSize - 8)}px)`, fontFamily: titleFontFamily, fontWeight: titleFontWeight }}
+          className="landing-title mt-6 text-4xl leading-[0.96] text-white md:text-5xl lg:text-6xl"
+          editorClassName="landing-title mt-6 text-4xl leading-[0.96] text-white md:text-5xl lg:text-6xl"
+          style={{
+            color: titleColor,
+            fontSize: `clamp(${Math.max(36, Math.round(titleSize * 0.62))}px, 6vw, ${titleSize}px)`,
+            fontFamily: titleFontFamily,
+            fontWeight: titleFontWeight,
+          }}
+          editorStyle={{
+            color: titleColor,
+            fontSize: `clamp(${Math.max(34, Math.round(titleSize * 0.55))}px, 5.6vw, ${Math.max(42, titleSize - 8)}px)`,
+            fontFamily: titleFontFamily,
+            fontWeight: titleFontWeight,
+          }}
         />
-      )}
-      {subtitulo && (
+      ) : null}
+
+      {subtitulo ? (
         <StudioInlineText
           as="h1"
           value={subtitulo}
@@ -133,15 +171,14 @@ export default function PageHeroSection({
           onChange={(value) => onFieldChange?.("subtitulo", value)}
           formatting={textStyles.subtitulo}
           onFormattingChange={(style) => onTextStyleChange?.("subtitulo", style)}
-          className="font-display text-4xl md:text-5xl lg:text-6xl leading-[1.1] mb-5"
-          editorClassName="font-display text-3xl md:text-5xl leading-[1.1]"
+          className="landing-title mt-2 text-4xl leading-[0.96] md:text-5xl lg:text-6xl"
+          editorClassName="landing-title mt-2 text-4xl leading-[0.96] md:text-5xl lg:text-6xl"
           style={{ color: accent, fontFamily: titleFontFamily, fontWeight: titleFontWeight }}
           editorStyle={{ color: accent, fontFamily: titleFontFamily, fontWeight: titleFontWeight }}
         />
-      )}
-      {!subtitulo && titulo && <div className="mb-5" />}
+      ) : null}
 
-      {desc && (
+      {desc ? (
         <StudioInlineText
           as="p"
           value={desc}
@@ -151,37 +188,50 @@ export default function PageHeroSection({
           onChange={(value) => onFieldChange?.("descripcion", value)}
           formatting={textStyles.descripcion}
           onFormattingChange={(style) => onTextStyleChange?.("descripcion", style)}
-          className="text-lg text-muted-foreground leading-relaxed max-w-xl mb-8"
-          editorClassName="max-w-xl text-lg text-muted-foreground"
-          style={{ color: descriptionColor, fontSize: descriptionSize, fontFamily: descriptionFontFamily, fontWeight: descriptionFontWeight }}
-          editorStyle={{ color: descriptionColor, fontSize: descriptionSize, fontFamily: descriptionFontFamily, fontWeight: descriptionFontWeight }}
+          className="mt-6 max-w-2xl text-lg leading-8 text-[var(--he-landing-muted)]"
+          editorClassName="mt-6 max-w-2xl text-lg leading-8 text-[var(--he-landing-muted)]"
+          style={{
+            color: descriptionColor,
+            fontSize: descriptionSize,
+            fontFamily: descriptionFontFamily,
+            fontWeight: descriptionFontWeight,
+          }}
+          editorStyle={{
+            color: descriptionColor,
+            fontSize: descriptionSize,
+            fontFamily: descriptionFontFamily,
+            fontWeight: descriptionFontWeight,
+          }}
         />
-      )}
+      ) : null}
 
-      {features.length > 0 && (
-        <ul className="space-y-3 mb-8">
-          {features.map((f, i) => (
-            <li key={i} className="flex items-center gap-3 text-foreground">
-              <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
+      {features.length > 0 ? (
+        <div className="mt-8 grid gap-3 sm:grid-cols-2">
+          {features.map((feature, index) => (
+            <div key={index} className="landing-panel-soft rounded-[24px] p-4">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.05] text-primary">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
               <StudioInlineText
                 as="span"
-                value={f}
+                value={feature}
                 editable={editMode}
                 onActivate={onActivate}
-                onChange={(value) => onFeatureChange?.(i, value)}
-                className="flex-1"
+                onChange={(value) => onFeatureChange?.(index, value)}
+                className="text-sm leading-6 text-white/82"
+                editorClassName="min-h-[3rem] text-sm leading-6 text-white/82"
               />
-            </li>
+            </div>
           ))}
-        </ul>
-      )}
+        </div>
+      ) : null}
 
-      {(ctaPri || ctaSec) && (
-        <div className="flex flex-col sm:flex-row gap-4">
-          {ctaPri && (
+      {(ctaPri || ctaSec) ? (
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          {ctaPri ? (
             <button
               onClick={handlePri}
-              className="flex items-center justify-center gap-2 px-7 py-3.5 text-white font-bold rounded-xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
+              className="inline-flex items-center justify-center gap-2 rounded-full px-6 py-3.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_36px_rgba(232,57,42,0.28)]"
               style={{ backgroundColor: accent }}
             >
               <StudioInlineText
@@ -193,15 +243,20 @@ export default function PageHeroSection({
                 formatting={textStyles.ctaPrimario}
                 onFormattingChange={(style) => onTextStyleChange?.("ctaPrimario", style)}
                 allowLink={false}
-                editorClassName="min-w-[10rem] text-sm font-bold text-white"
+                className="text-sm font-semibold text-white"
+                editorClassName="min-w-[10rem] text-sm font-semibold text-white"
               />
+              <ArrowRight className="h-4 w-4" />
             </button>
-          )}
-          {ctaSec && (
+          ) : null}
+
+          {ctaSec ? (
             <button
               onClick={handleSec}
-              className="flex items-center justify-center gap-2 px-7 py-3.5 border border-border text-foreground font-semibold rounded-xl hover:border-primary hover:text-primary transition-all"
+              className="inline-flex items-center justify-center gap-2 rounded-full border px-6 py-3.5 text-sm font-semibold transition-all hover:border-primary/35 hover:bg-white/[0.04]"
+              style={{ borderColor: `${accent}33`, color: "#f7fbff" }}
             >
+              <CirclePlay className="h-4 w-4 text-primary" />
               <StudioInlineText
                 as="span"
                 value={ctaSec}
@@ -211,39 +266,58 @@ export default function PageHeroSection({
                 formatting={textStyles.ctaSecundario}
                 onFormattingChange={(style) => onTextStyleChange?.("ctaSecundario", style)}
                 allowLink={false}
-                editorClassName="min-w-[10rem] text-sm font-semibold text-foreground"
+                className="text-sm font-semibold"
+                editorClassName="min-w-[10rem] text-sm font-semibold"
+                style={{ color: "#f7fbff" }}
+                editorStyle={{ color: "#f7fbff" }}
               />
             </button>
-          )}
+          ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   )
 
   const rightBlock =
     rightPanel === "stats" ? (
-      <div className={`transition-all duration-700 delay-150 ${vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
+      <div className={vis ? "animate-slide-up" : "opacity-0 translate-y-6"} style={{ animationDelay: "160ms" }}>
         <div
-          className="rounded-2xl border border-border bg-card/80 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)]"
+          className="landing-panel rounded-[34px] p-6 shadow-[0_30px_90px_rgba(5,10,18,0.35)]"
           style={{ backgroundColor: surfaceBg, borderColor: surfaceBorder }}
         >
-          {statsTitle && (
-            <div className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-[0.2em]">
-              {statsTitle}
+          <div className="mb-5 flex items-center gap-3 rounded-[26px] border border-white/8 bg-white/[0.03] p-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-primary">
+              <SiteIconGlyph name={badgeIcon || "bar-chart"} fallback="bar-chart" size={18} className="text-current" />
             </div>
-          )}
+            <div>
+              <div className="text-base font-semibold text-white">{statsTitle || "Resultados reales"}</div>
+              <div className="text-sm text-white/45">Indicadores claros para priorizar mejor tu avance</div>
+            </div>
+          </div>
+
           <div className="space-y-4">
-            {stats.map((s, i) => (
-              <div key={i} className="flex items-center gap-4 rounded-xl border border-border/70 bg-secondary/20 px-4 py-3">
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-                  style={{ backgroundColor: `${accent}20` }}
-                >
-                  {s.emoji}
-                </div>
-                <div>
-                  <div className="text-xl font-bold text-foreground">{s.value}</div>
-                  <div className="text-xs text-muted-foreground">{s.label}</div>
+            {stats.map((stat, index) => (
+              <div
+                key={index}
+                className="rounded-[26px] border border-white/8 bg-white/[0.03] p-4 transition-all duration-300 hover:border-white/14 hover:bg-white/[0.045]"
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8"
+                    style={{ backgroundColor: `${accent}22` }}
+                  >
+                    <SiteIconGlyph
+                      name={stat.icon || stat.emoji}
+                      fallback={index === 0 ? "users" : index === 1 ? "award" : "clipboard-list"}
+                      size={18}
+                      className="text-white"
+                    />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold tracking-[-0.04em] text-white">{stat.value}</div>
+                    <div className="text-sm text-white/52">{stat.label}</div>
+                    {stat.note ? <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/32">{stat.note}</div> : null}
+                  </div>
                 </div>
               </div>
             ))}
@@ -251,9 +325,9 @@ export default function PageHeroSection({
         </div>
       </div>
     ) : rightPanel === "image" && rightImg ? (
-      <div className={`transition-all duration-700 delay-150 ${vis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
-        <div className="rounded-2xl overflow-hidden border border-border">
-          <img src={rightImg} alt="" className="w-full object-cover" />
+      <div className={vis ? "animate-slide-up" : "opacity-0 translate-y-6"} style={{ animationDelay: "160ms" }}>
+        <div className="landing-panel overflow-hidden rounded-[32px] p-3">
+          <img src={rightImg} alt="" className="h-full w-full rounded-[26px] object-cover" />
         </div>
       </div>
     ) : null
@@ -265,22 +339,45 @@ export default function PageHeroSection({
     >
       <div
         className="absolute inset-0"
-        style={{ background: `radial-gradient(circle at top, ${withAlpha(sectionGlow, 0.16)}, transparent 55%)` }}
+        style={{
+          background: `radial-gradient(circle at top, ${withAlpha(sectionGlow, 0.14)}, transparent 56%)`,
+        }}
       />
       <div
-        className="max-w-7xl mx-auto relative"
+        className="landing-container relative"
         style={{ paddingLeft: sectionPaddingX, paddingRight: sectionPaddingX }}
       >
-        {layout === "center" ? (
-          <div className="text-center max-w-3xl mx-auto">
-            {leftBlock}
+        <div
+          className="relative overflow-hidden rounded-[40px] border px-6 py-8 shadow-[0_34px_110px_rgba(0,0,0,0.34)] md:px-8 md:py-10 lg:px-10"
+          style={{
+            backgroundColor: heroShellBg,
+            borderColor: `${accent}20`,
+            boxShadow: `0 34px 110px rgba(0,0,0,0.34), 0 0 0 1px ${withAlpha(accent, 0.06)}`,
+          }}
+        >
+          <AnimatedShaderSurface accentColor={accent} secondaryColor={shaderSecondary} />
+          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(5,10,18,0.08),rgba(5,10,18,0.42)_48%,rgba(5,10,18,0.78))]" />
+          <div
+            className="absolute -left-16 top-10 h-56 w-56 rounded-full blur-3xl"
+            style={{ backgroundColor: withAlpha(accent, 0.18) }}
+          />
+          <div
+            className="absolute -right-10 top-0 h-64 w-64 rounded-full blur-3xl"
+            style={{ backgroundColor: withAlpha(shaderSecondary, 0.14) }}
+          />
+          <div className="absolute inset-x-8 top-8 h-px bg-gradient-to-r from-transparent via-white/18 to-transparent" />
+
+          <div className="relative z-10">
+            {layout === "center" ? (
+              <div className="mx-auto max-w-4xl text-center">{leftBlock}</div>
+            ) : (
+              <div className={`grid items-center gap-10 ${rightBlock ? "lg:grid-cols-[1.08fr_0.92fr]" : ""}`}>
+                {leftBlock}
+                {rightBlock}
+              </div>
+            )}
           </div>
-        ) : (
-          <div className={`grid ${rightBlock ? "lg:grid-cols-[1.15fr_0.85fr]" : ""} gap-12 items-center`}>
-            {leftBlock}
-            {rightBlock}
-          </div>
-        )}
+        </div>
       </div>
     </section>
   )

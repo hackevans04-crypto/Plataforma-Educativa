@@ -1,8 +1,7 @@
 import type { Metadata } from 'next'
 import { Bebas_Neue, Barlow } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
-import { AuthProvider } from '@/contexts/auth-context'
-import ThemeGuard from '@/components/theme-guard'
+import ClientProviders from '@/components/client-providers'
 import { TYPOGRAPHY_GOOGLE_FONTS_HREF } from '@/lib/typography-fonts'
 import './globals.css'
 
@@ -74,10 +73,9 @@ export default function RootLayout({
       </head>
       <body className={`${bebasNeue.variable} ${barlow.variable} font-sans antialiased`}>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <AuthProvider>
-          <ThemeGuard />
+        <ClientProviders>
           {children}
-        </AuthProvider>
+        </ClientProviders>
         <Analytics />
       </body>
     </html>

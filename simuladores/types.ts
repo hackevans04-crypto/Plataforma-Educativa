@@ -89,9 +89,15 @@ export interface SimuladorBuilder {
   categoria?: string
   cursoId?: string
   cursoTitulo?: string
+  cursoIds?: string[]
+  cursoTitulos?: string[]
   tags?: string[]
   icono?: string
   estado: EstadoSimulador
+  publicarEnPaginaPrincipal?: boolean
+  contentMode?: "html" | "quiz"
+  htmlContent?: string
+  htmlImportName?: string
   config: ConfigSimulador
   formulario: CampoBuilder[]
   preguntas: PreguntaBuilder[]

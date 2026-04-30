@@ -1,14 +1,21 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
-  Target, BarChart3, Clock, Shield, Zap, Users,
-  CheckCircle, TrendingUp, Award, BookOpen
+  ArrowUpRight,
+  Award,
+  BarChart3,
+  BrainCircuit,
+  Clock3,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  Users,
 } from "lucide-react"
 import { useCMS, type CMSBenefitsConfig } from "@/hooks/use-cms"
 
-const BENEFIT_ICONS = [Target, BarChart3, Clock, Shield, Zap, Users]
-const STAT_ICONS = [Award, Users, BookOpen, CheckCircle]
+const BENEFIT_ICONS = [Target, BarChart3, Clock3, ShieldCheck, BrainCircuit, Users]
+const STAT_ICONS = [Award, Users, Sparkles, ShieldCheck]
 
 export default function BenefitsSection({ dataOverride }: { dataOverride?: CMSBenefitsConfig }) {
   const [isVisible, setIsVisible] = useState(false)
@@ -19,11 +26,9 @@ export default function BenefitsSection({ dataOverride }: { dataOverride?: CMSBe
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true)
-        }
+        if (entry.isIntersecting) setIsVisible(true)
       },
-      { threshold: 0.1 }
+      { threshold: 0.12 }
     )
 
     if (sectionRef.current) observer.observe(sectionRef.current)
@@ -31,93 +36,143 @@ export default function BenefitsSection({ dataOverride }: { dataOverride?: CMSBe
   }, [])
 
   return (
-    <section 
-      ref={sectionRef}
-      id="beneficios-section" 
-      className="py-24 bg-transparent relative overflow-hidden"
-    >
-      {/* Background Pattern */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(232,57,42,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(232,57,42,0.02)_1px,transparent_1px)] bg-[size:50px_50px]" />
-      
-      {/* Glow Effects */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
+    <section ref={sectionRef} className="relative overflow-hidden py-24">
+      <div className="absolute inset-0">
+        <div className="absolute left-0 top-12 h-72 w-72 rounded-full bg-primary/8 blur-3xl" />
+        <div className="absolute right-0 top-28 h-80 w-80 rounded-full bg-[#38bdf8]/8 blur-3xl" />
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/8 to-transparent" />
+      </div>
 
-      <div className="max-w-7xl mx-auto px-6 lg:px-12 relative">
-        {/* Section Header */}
-        <div className={`text-center mb-16 transition-all duration-700 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
-          <span className="inline-block text-primary text-sm font-bold tracking-[0.2em] uppercase mb-4">
-            {benefits.sectionLabel}
-          </span>
-          <h2 className="font-display text-4xl md:text-5xl lg:text-6xl text-foreground mb-4">
-            {benefits.titulo}
-          </h2>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            {benefits.descripcion}
-          </p>
+      <div className="landing-container relative">
+        <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-end">
+          <div className={isVisible ? "animate-slide-up" : "opacity-0 translate-y-6"}>
+            <div className="landing-kicker">{benefits.sectionLabel}</div>
+            <h2 className="landing-title mt-4 max-w-2xl text-4xl leading-[0.96] text-white md:text-5xl lg:text-6xl">
+              {benefits.titulo}
+            </h2>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-[var(--he-landing-muted)]">
+              {benefits.descripcion}
+            </p>
+          </div>
+
+          <div
+            className={isVisible ? "animate-slide-up" : "opacity-0 translate-y-6"}
+            style={{ animationDelay: "120ms" }}
+          >
+            <div className="landing-panel rounded-[32px] p-6 md:p-7">
+              <div className="grid gap-5 md:grid-cols-[1fr_0.9fr]">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white/75">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Plataforma pensada para resultados
+                  </div>
+                  <div className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-white">
+                    Todo el flujo de preparacion en un solo lugar.
+                  </div>
+                  <div className="mt-3 text-sm leading-7 text-white/55">
+                    Desde diagnostico y practica realista hasta reportes accionables para tomar decisiones de estudio con criterio.
+                  </div>
+                </div>
+
+                <div className="rounded-[26px] border border-white/8 bg-white/[0.03] p-5">
+                  <div className="landing-kicker">Radar de valor</div>
+                  <div className="mt-5 space-y-4">
+                    {[
+                      { label: "Simulacion real", value: "95%" },
+                      { label: "Claridad del progreso", value: "89%" },
+                      { label: "Actualizacion continua", value: "93%" },
+                    ].map((item, index) => (
+                      <div key={item.label}>
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <span className="text-white/55">{item.label}</span>
+                          <span className="font-semibold text-white">{item.value}</span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: item.value,
+                              background:
+                                index === 0
+                                  ? "#34d399"
+                                  : index === 1
+                                    ? "#38bdf8"
+                                    : "linear-gradient(90deg, #E8392A 0%, #ff6b5e 100%)",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Benefits Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-20">
-          {benefits.items.map((benefit, i) => {
-            const Icon = BENEFIT_ICONS[i] ?? Target
+        <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {benefits.items.map((benefit, index) => {
+            const Icon = BENEFIT_ICONS[index] ?? Target
+            const featured = index === 0
             return (
-              <div
-                key={i}
-                className={`group relative bg-card/50 backdrop-blur-sm border border-border rounded-2xl p-6 hover:border-primary/30 transition-all duration-500 hover:-translate-y-1 ${
-                  isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-                }`}
-                style={{ transitionDelay: `${i * 100}ms` }}
+              <article
+                key={index}
+                className={isVisible ? "animate-slide-up" : "opacity-0 translate-y-6"}
+                style={{ animationDelay: `${160 + index * 80}ms` }}
               >
-                {/* Icon Container */}
-                <div className="relative mb-5">
-                  <div className="w-14 h-14 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:bg-primary/15 group-hover:border-primary/30 transition-all">
-                    <Icon className="w-7 h-7 text-primary" />
+                <div
+                  className={featured
+                    ? "landing-panel rounded-[30px] p-6 md:p-7"
+                    : "landing-panel-soft rounded-[30px] p-6 md:p-7"
+                  }
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-[20px] bg-white/[0.06] text-primary">
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/35">
+                        {String(index + 1).padStart(2, "0")}
+                      </div>
+                      <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary/90">
+                        <ArrowUpRight className="h-3 w-3" />
+                        {benefit.highlight}
+                      </div>
+                    </div>
                   </div>
-                  <div className="absolute inset-0 w-14 h-14 rounded-xl bg-primary/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                  <h3 className="mt-6 text-2xl font-semibold tracking-[-0.03em] text-white">
+                    {benefit.title}
+                  </h3>
+                  <p className="mt-4 text-sm leading-7 text-white/58">
+                    {benefit.description}
+                  </p>
                 </div>
-
-                <h3 className="text-foreground font-bold text-lg mb-2 group-hover:text-primary transition-colors">
-                  {benefit.title}
-                </h3>
-                <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-                  {benefit.description}
-                </p>
-
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
-                  <TrendingUp className="w-3 h-3" />
-                  {benefit.highlight}
-                </div>
-
-                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-primary/5 to-transparent rounded-bl-3xl rounded-tr-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
+              </article>
             )
           })}
         </div>
 
-        {/* Stats Section */}
-        <div className={`relative bg-gradient-to-r from-card via-card/80 to-card border border-border rounded-3xl p-8 lg:p-12 transition-all duration-700 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`} style={{ transitionDelay: "600ms" }}>
-          <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-primary/5 rounded-3xl" />
-
-          <div className="relative grid grid-cols-2 lg:grid-cols-4 gap-8">
-            {benefits.stats.map((stat, i) => {
-              const Icon = STAT_ICONS[i] ?? Award
+        <div
+          className={isVisible ? "animate-slide-up" : "opacity-0 translate-y-6"}
+          style={{ animationDelay: "420ms" }}
+        >
+          <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {benefits.stats.map((stat, index) => {
+              const Icon = STAT_ICONS[index] ?? Award
               return (
-                <div key={i} className="text-center group">
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 mb-4 group-hover:scale-110 group-hover:bg-primary/15 transition-all">
-                    <Icon className="w-8 h-8 text-primary" />
+                <div key={index} className="landing-panel-soft rounded-[28px] p-5">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.05] text-primary">
+                    <Icon className="h-5 w-5" />
                   </div>
-                  <div className="font-display text-4xl lg:text-5xl text-foreground mb-1">
+                  <div className="mt-5 text-4xl font-semibold tracking-[-0.05em] text-white">
                     {stat.value}
                   </div>
-                  <div className="text-sm text-muted-foreground">{stat.label}</div>
+                  <div className="mt-1 text-sm text-white/52">{stat.label}</div>
                 </div>
               )
             })}
           </div>
-
-          <div className="absolute -top-4 -right-4 w-24 h-24 bg-primary/10 rounded-full blur-2xl" />
-          <div className="absolute -bottom-4 -left-4 w-32 h-32 bg-primary/10 rounded-full blur-2xl" />
         </div>
       </div>
     </section>

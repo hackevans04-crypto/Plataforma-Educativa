@@ -28,7 +28,8 @@ export default function Footer({
   const pageLinks = pageLinksOverride ?? config.pages
   const brandName = generalConfig.nombrePlataforma?.trim() || "Hack Evans"
   const brandTagline = generalConfig.tagline?.trim() || "Consultoria Educativa"
-  const footerText = generalConfig.footerText?.trim() || `© ${new Date().getFullYear()} ${brandName}. Todos los derechos reservados.`
+  const footerText =
+    generalConfig.footerText?.trim() || `(c) ${new Date().getFullYear()} ${brandName}. Todos los derechos reservados.`
   const legalLinks = generalConfig.footerLinks ?? []
 
   const navigationLinks = useMemo(() => {
@@ -85,6 +86,11 @@ export default function Footer({
       const target = document.querySelector<HTMLElement>(href)
       if (target) {
         target.scrollIntoView({ behavior: "smooth", block: "start" })
+        return
+      }
+
+      if (href === "#contacto") {
+        window.location.href = "mailto:contacto@hackevans.com"
       } else {
         window.location.hash = href.slice(1)
       }
@@ -95,53 +101,64 @@ export default function Footer({
   }
 
   return (
-    <footer className="relative z-20 bg-[#070b14]/85 border-t border-border pt-16 pb-8 px-6 lg:px-12">
-      <div className="max-w-7xl mx-auto">
-        <div className="grid md:grid-cols-3 gap-10 mb-12">
-          <div className="md:col-span-1">
-            <div className="flex items-center gap-3 mb-4">
-              <Image src="/images/logo.png" alt={brandName} width={44} height={44} />
+    <footer className="relative overflow-hidden px-6 pb-10 pt-8 lg:px-12">
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(6,10,19,0.12),rgba(6,10,19,0.78)_32%,rgba(6,10,19,0.98))]" />
+
+      <div className="landing-container relative">
+        <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr_0.85fr_0.85fr]">
+          <div className="landing-panel-soft rounded-[32px] p-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-white/10 bg-white/[0.04]">
+                <Image src="/images/logo.png" alt={brandName} width={32} height={32} />
+              </div>
               <div>
-                <div className="font-display text-2xl text-white">{brandName}</div>
-                <div className="text-[9px] text-muted-foreground tracking-widest uppercase">
+                <div
+                  className="text-xl font-semibold tracking-[-0.03em] text-white"
+                  style={{ fontFamily: "'Outfit', var(--font-barlow), sans-serif" }}
+                >
+                  {brandName}
+                </div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-white/35">
                   {brandTagline}
                 </div>
               </div>
             </div>
-            <p className="text-[13px] text-muted-foreground leading-relaxed mb-6">
-              {brandTagline}
+
+            <p className="mt-5 max-w-sm text-sm leading-7 text-white/58">
+              Plataforma enfocada en docentes que quieren estudiar con estructura, confianza y una experiencia digital a la altura.
             </p>
-            <div className="flex gap-3">
+
+            <div className="mt-6 flex gap-3">
               <a
                 href="https://www.facebook.com/HackrEvans"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-10 h-10 rounded-lg bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-white hover:border-primary/40 transition-all"
+                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/65 transition-all hover:border-primary/30 hover:text-white"
               >
-                <Facebook className="w-4 h-4" />
+                <Facebook className="h-4 w-4" />
               </a>
               <a
                 href="https://www.tiktok.com/@planificacionecu"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-10 h-10 rounded-lg bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-white hover:border-primary/40 transition-all"
+                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/65 transition-all hover:border-primary/30 hover:text-white"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z" />
                 </svg>
               </a>
               <a
                 href="mailto:contacto@hackevans.com"
-                className="w-10 h-10 rounded-lg bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-white hover:border-primary/40 transition-all"
+                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/65 transition-all hover:border-primary/30 hover:text-white"
               >
-                <Mail className="w-4 h-4" />
+                <Mail className="h-4 w-4" />
               </a>
             </div>
           </div>
 
-          <div>
-            <h4 className="text-sm font-bold text-white mb-4 uppercase tracking-wide">Navegacion</h4>
-            <ul className="space-y-2.5">
+          <div className="landing-panel-soft rounded-[32px] p-6">
+            <div className="text-sm font-semibold uppercase tracking-[0.2em] text-white/38">Navegacion</div>
+            <ul className="mt-5 space-y-3">
               {navigationLinks.map((item) => (
                 <li key={item.id}>
                   <a
@@ -150,7 +167,7 @@ export default function Footer({
                       event.preventDefault()
                       handleNavigate(item.href)
                     }}
-                    className="text-[13px] text-muted-foreground hover:text-white transition-colors"
+                    className="text-sm text-white/60 transition-colors hover:text-white"
                   >
                     {item.label}
                   </a>
@@ -159,9 +176,9 @@ export default function Footer({
             </ul>
           </div>
 
-          <div>
-            <h4 className="text-sm font-bold text-white mb-4 uppercase tracking-wide">Legal</h4>
-            <ul className="space-y-2.5">
+          <div className="landing-panel-soft rounded-[32px] p-6">
+            <div className="text-sm font-semibold uppercase tracking-[0.2em] text-white/38">Legal</div>
+            <ul className="mt-5 space-y-3">
               {legalLinks.map((item) => (
                 <li key={item.id}>
                   <a
@@ -170,7 +187,7 @@ export default function Footer({
                       event.preventDefault()
                       handleNavigate(item.href)
                     }}
-                    className="text-[13px] text-muted-foreground hover:text-white transition-colors"
+                    className="text-sm text-white/60 transition-colors hover:text-white"
                   >
                     {item.label}
                   </a>
@@ -178,10 +195,29 @@ export default function Footer({
               ))}
             </ul>
           </div>
+
+          <div className="landing-panel-soft rounded-[32px] p-6">
+            <div className="text-sm font-semibold uppercase tracking-[0.2em] text-white/38">Contacto</div>
+            <div className="mt-5 space-y-4 text-sm text-white/60">
+              <div>
+                <div className="text-white/35">Email</div>
+                <div className="mt-1 font-medium text-white">contacto@hackevans.com</div>
+              </div>
+              <div>
+                <div className="text-white/35">WhatsApp</div>
+                <div className="mt-1 font-medium text-white">+593 99 123 4567</div>
+              </div>
+              <div>
+                <div className="text-white/35">Ciudad</div>
+                <div className="mt-1 font-medium text-white">Quito, Ecuador</div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-muted-foreground">{footerText}</p>
+        <div className="mt-6 flex flex-col gap-3 rounded-[28px] border border-white/8 bg-white/[0.03] px-5 py-4 text-sm text-white/45 md:flex-row md:items-center md:justify-between">
+          <div>{footerText}</div>
+          <div className="text-white/32">Disenado para una experiencia mas clara, moderna y profesional.</div>
         </div>
       </div>
     </footer>

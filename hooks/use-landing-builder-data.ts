@@ -29,6 +29,7 @@ interface RawCourse {
   popular?: boolean
   nuevo?: boolean
   destacado?: boolean
+  publicarEnPaginaPrincipal?: boolean
   secciones?: RawCourseSection[]
 }
 
@@ -95,22 +96,22 @@ function formatMinutes(totalMinutes: number) {
   return `${hours} h`
 }
 
-function emojiFromCategory(value?: string, fallback = "✨") {
+function emojiFromCategory(value?: string, fallback = "sparkles") {
   const normalized = (value || "").toLowerCase()
-  if (normalized.includes("mat")) return "🧮"
-  if (normalized.includes("ped")) return "🧠"
-  if (normalized.includes("cien")) return "🧪"
-  if (normalized.includes("leng") || normalized.includes("idio")) return "🗣️"
-  if (normalized.includes("eval")) return "📋"
-  if (normalized.includes("sim")) return "🎯"
-  if (normalized.includes("curso")) return "🎓"
+  if (normalized.includes("mat")) return "calculator"
+  if (normalized.includes("ped")) return "brain"
+  if (normalized.includes("cien")) return "beaker"
+  if (normalized.includes("leng") || normalized.includes("idio")) return "message-circle"
+  if (normalized.includes("eval")) return "clipboard-list"
+  if (normalized.includes("sim")) return "target"
+  if (normalized.includes("curso")) return "graduation-cap"
   return fallback
 }
 
 function getCourses(): RawCourse[] {
   if (typeof window === "undefined") return []
   const courses = parseSafe<RawCourse[]>(localStorage.getItem(COURSES_KEY), [])
-  return courses.filter((course) => course?.estado === "publicado")
+  return courses.filter((course) => course?.estado === "publicado" && course?.publicarEnPaginaPrincipal !== false)
 }
 
 function getPublishedSimulators(): RawSimulator[] {
@@ -167,7 +168,7 @@ function mapCourse(course: RawCourse): LandingBuilderItem {
     description: course.descripcion || "Ruta de aprendizaje configurada desde el panel admin.",
     category: course.categoria || "curso",
     badge: course.destacado ? "Destacado" : course.popular ? "Popular" : course.nuevo ? "Nuevo" : "Publicado",
-    href: "/dashboard/cursos",
+    href: "/cursos",
     emoji: course.iconoPortada || emojiFromCategory(course.categoria, "🎓"),
     accentColor: course.colorPortada || "#3b82f6",
     metrics: [

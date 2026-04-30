@@ -1,14 +1,15 @@
-﻿"use client"
+"use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from "react"
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type TouchEvent } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertCircle, ArrowDown, ArrowLeft, ArrowUp, BadgePlus, Check, ChevronDown, ChevronUp,
   ClipboardCheck, Code2, ExternalLink, Eye, EyeOff, FileImage, FileText, Globe, GraduationCap, ImageIcon, BookOpen,
   LayoutTemplate, Layers, Link2, MessageSquare, Minus, Pencil, Play, Plus,
+  Search,
   RefreshCw, Save, Settings, Sparkles, Star, Tag, TextCursorInput, Trash2, Type,
   Video, X, Zap, BarChart3, AlignCenter, AlignLeft, AlignRight, Target, ChevronLeft, ChevronRight,
-  Monitor, MoreHorizontal, Smartphone, Copy, Tablet, Undo2, Redo2,
+  Monitor, MoreHorizontal, Smartphone, Copy, Tablet, Undo2, Redo2, GripVertical,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -23,8 +24,18 @@ import {
   resolveLandingBuilderItems,
   useLandingBuilderData,
 } from "@/hooks/use-landing-builder-data"
+import {
+  DEFAULT_PUBLIC_COURSES_HUB_CONTENT,
+  DEFAULT_PUBLIC_COURSES_PAGE_CONTENT,
+} from "@/lib/courses/public-courses-hub-config"
 import { buildImportedHtml, getHtmlImportSettings } from "@/lib/html-import-utils"
-import { replaceKnownEmojisInDocumentHtml } from "@/lib/site-icon-registry"
+import {
+  SITE_ICON_OPTIONS,
+  replaceKnownEmojisInDocumentHtml,
+  resolveSiteIconName,
+  type SiteIconName,
+} from "@/lib/site-icon-registry"
+import { SiteIconGlyph } from "@/components/ui/site-icon-glyph"
 
 // â”€â”€â”€ Atoms â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -74,6 +85,116 @@ function Btn({ children, onClick, variant = "default", size = "md", className, d
     >
       {children}
     </button>
+  )
+}
+
+function StudioVisibilityToggle({
+  enabled,
+  title = "Mostrar en navegacion",
+  description = "Si la activas, la pagina aparece automaticamente en el menu publico.",
+  onToggle,
+}: {
+  enabled: boolean
+  title?: string
+  description?: string
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(
+        "group flex w-full items-center justify-between gap-4 rounded-2xl border px-3.5 py-3 text-left transition-all",
+        enabled
+          ? "border-emerald-400/30 bg-emerald-500/[0.08] shadow-[0_0_0_1px_rgba(16,185,129,0.08)]"
+          : "border-white/8 bg-white/[0.03] hover:border-white/14 hover:bg-white/[0.05]"
+      )}
+    >
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-white">{title}</div>
+        <div className="mt-1 text-xs leading-5 text-white/45">{description}</div>
+      </div>
+
+      <div
+        className={cn(
+          "flex flex-shrink-0 items-center gap-2 rounded-full border px-2 py-1 transition-all",
+          enabled
+            ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-200"
+            : "border-white/10 bg-white/[0.04] text-white/50"
+        )}
+      >
+        <span
+          className={cn(
+            "relative inline-flex h-6 w-11 items-center rounded-full border transition-all",
+            enabled
+              ? "border-emerald-400/35 bg-emerald-500/20"
+              : "border-white/10 bg-white/[0.05]"
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block h-4.5 w-4.5 rounded-full bg-white shadow-[0_2px_12px_rgba(0,0,0,0.25)] transition-all",
+              enabled ? "translate-x-5.5" : "translate-x-1"
+            )}
+          />
+        </span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em]">
+          {enabled ? "Visible" : "Oculta"}
+        </span>
+      </div>
+    </button>
+  )
+}
+
+const STUDIO_BADGE_ICON_PRESET: SiteIconName[] = ["sparkles", "rocket", "target", "award", "graduation-cap", "book-open", "shield", "presentation"]
+const STUDIO_STAT_ICON_PRESET: SiteIconName[] = ["users", "award", "book-open", "bar-chart", "timer", "target", "check-circle", "presentation"]
+const STUDIO_CARD_ICON_PRESET: SiteIconName[] = ["lightbulb", "sparkles", "bar-chart", "target", "shield", "award", "book-open", "graduation-cap", "monitor", "globe", "clipboard-list", "check-circle"]
+
+function StudioSiteIconField({
+  label,
+  helper,
+  value,
+  onChange,
+  icons,
+  columns = 4,
+}: {
+  label: string
+  helper?: string
+  value?: string | null
+  onChange: (icon: SiteIconName) => void
+  icons: SiteIconName[]
+  columns?: 3 | 4 | 6
+}) {
+  const selected = resolveSiteIconName(value, icons[0] || "sparkles")
+  const columnClass =
+    columns === 6 ? "grid-cols-6" :
+    columns === 3 ? "grid-cols-3" :
+    "grid-cols-4"
+
+  return (
+    <F label={label} helper={helper}>
+      <div className={cn("grid gap-2", columnClass)}>
+        {icons.map((iconName) => {
+          const iconMeta = SITE_ICON_OPTIONS.find((option) => option.name === iconName)
+          return (
+            <button
+              key={iconName}
+              type="button"
+              onClick={() => onChange(iconName)}
+              className={cn(
+                "flex h-11 items-center justify-center rounded-xl border transition-all",
+                selected === iconName
+                  ? "border-primary bg-primary/12 text-primary shadow-[0_0_0_1px_rgba(232,57,42,0.16)]"
+                  : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/35 hover:text-foreground"
+              )}
+              title={iconMeta?.label || iconName}
+            >
+              <SiteIconGlyph name={iconName} size={18} className="text-current" />
+            </button>
+          )
+        })}
+      </div>
+    </F>
   )
 }
 
@@ -436,7 +557,7 @@ function CTAEditor({ data, onChange }: { data: Record<string, any>; onChange: (d
         <div className="grid grid-cols-2 gap-3">
           <F label="Texto boton primario"><input className={iCls} value={data.ctaPrimario || ""} onChange={e => s({ ctaPrimario: e.target.value })} /></F>
           <F label="Link boton primario"><input className={iCls} value={data.ctaPrimarioHref || ""} onChange={e => s({ ctaPrimarioHref: e.target.value })} placeholder="/registro" /></F>
-          <F label="Texto boton secundario" helper="Dejar vacÃ­o para ocultar"><input className={iCls} value={data.ctaSecundario || ""} onChange={e => s({ ctaSecundario: e.target.value })} /></F>
+          <F label="Texto boton secundario" helper="Dejar vacio para ocultar"><input className={iCls} value={data.ctaSecundario || ""} onChange={e => s({ ctaSecundario: e.target.value })} /></F>
           <F label="Link boton secundario"><input className={iCls} value={data.ctaSecundarioHref || ""} onChange={e => s({ ctaSecundarioHref: e.target.value })} /></F>
         </div>
       </Card>
@@ -504,7 +625,7 @@ function VideoEditor({ data, onChange }: { data: Record<string, any>; onChange: 
         <F label="Descripcion"><textarea className={tCls} rows={2} value={data.descripcion || ""} onChange={e => s({ descripcion: e.target.value })} /></F>
       </Card>
       <Card title="Video">
-        <F label="URL de YouTube o Vimeo" helper="Pega la URL normal â€” se convierte en embed automaticamente">
+        <F label="URL de YouTube o Vimeo" helper="Pega la URL normal - se convierte en embed automaticamente">
           <input className={iCls} value={data.videoUrl || ""} onChange={e => s({ videoUrl: e.target.value })} placeholder="https://www.youtube.com/watch?v=..." />
         </F>
         {embedUrl ? (
@@ -572,13 +693,13 @@ function TextBannerEditor({ data, onChange }: { data: Record<string, any>; onCha
   return (
     <div className="p-5 space-y-5">
       <Card title="Contenido">
-        <F label="Subtitulo (pequeno, encima del titulo)" helper="Dejar vacÃ­o para ocultar"><input className={iCls} value={data.subtitulo || ""} onChange={e => s({ subtitulo: e.target.value })} placeholder="ej. DESTACADO" /></F>
+        <F label="Subtitulo (pequeno, encima del titulo)" helper="Dejar vacio para ocultar"><input className={iCls} value={data.subtitulo || ""} onChange={e => s({ subtitulo: e.target.value })} placeholder="ej. DESTACADO" /></F>
         <F label="Titulo principal"><input className={iCls} value={data.titulo || ""} onChange={e => s({ titulo: e.target.value })} /></F>
         <F label="Descripcion" helper="Texto debajo del titulo"><textarea className={tCls} rows={3} value={data.descripcion || ""} onChange={e => s({ descripcion: e.target.value })} /></F>
       </Card>
       <Card title="Boton CTA">
         <div className="grid grid-cols-2 gap-3">
-          <F label="Texto del boton" helper="Dejar vacÃ­o para ocultar boton"><input className={iCls} value={data.ctaLabel || ""} onChange={e => s({ ctaLabel: e.target.value })} /></F>
+          <F label="Texto del boton" helper="Dejar vacio para ocultar boton"><input className={iCls} value={data.ctaLabel || ""} onChange={e => s({ ctaLabel: e.target.value })} /></F>
           <F label="Link"><input className={iCls} value={data.ctaHref || ""} onChange={e => s({ ctaHref: e.target.value })} placeholder="/registro" /></F>
         </div>
       </Card>
@@ -613,7 +734,7 @@ function GalleryEditor({ data, onChange }: { data: Record<string, any>; onChange
   return (
     <div className="p-5 space-y-5">
       <Card title="Encabezado">
-        <F label="Titulo" helper="Dejar vacÃ­o para ocultar"><input className={iCls} value={data.titulo || ""} onChange={e => s({ titulo: e.target.value })} /></F>
+        <F label="Titulo" helper="Dejar vacio para ocultar"><input className={iCls} value={data.titulo || ""} onChange={e => s({ titulo: e.target.value })} /></F>
         <F label="Descripcion"><input className={iCls} value={data.descripcion || ""} onChange={e => s({ descripcion: e.target.value })} /></F>
       </Card>
       <Card title="Columnas de la cuadricula">
@@ -632,7 +753,7 @@ function GalleryEditor({ data, onChange }: { data: Record<string, any>; onChange
           <input ref={ref} type="file" accept="image/*" multiple className="hidden" onChange={e => { if (e.target.files) addImages(e.target.files) }} />
         </div>
       }>
-        {images.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin imÃ¡genes. Agrega desde URL o sube archivos.</p>}
+        {images.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin imagenes. Agrega desde URL o sube archivos.</p>}
         <div className="space-y-3">
           {images.map((img, i) => (
             <div key={img.id} className="flex gap-3 items-start p-3 rounded-xl border border-border bg-secondary/10">
@@ -665,18 +786,18 @@ function StatsEditor({ data, onChange }: { data: Record<string, any>; onChange: 
   return (
     <div className="p-5 space-y-5">
       <Card title="Encabezado">
-        <F label="Titulo" helper="Dejar vacÃ­o para ocultar"><input className={iCls} value={data.titulo || ""} onChange={e => s({ titulo: e.target.value })} /></F>
+        <F label="Titulo" helper="Dejar vacio para ocultar"><input className={iCls} value={data.titulo || ""} onChange={e => s({ titulo: e.target.value })} /></F>
       </Card>
       <Card title="Estadisticas" action={
-        <Btn size="sm" variant="ghost" onClick={() => s({ items: [...items, { id: `st_${Date.now()}`, numero: "1,000+", label: "Nueva estadistica", icono: "ðŸ†" }] })}>
+        <Btn size="sm" variant="ghost" onClick={() => s({ items: [...items, { id: `st_${Date.now()}`, numero: "1,000+", label: "Nueva estadistica", icono: "star" }] })}>
           <Plus className="w-3.5 h-3.5" />Agregar
         </Btn>
       }>
-        {items.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin estadÃ­sticas. Agrega la primera.</p>}
+        {items.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin estadisticas. Agrega la primera.</p>}
         <div className="space-y-2">
           {items.map((item, i) => (
             <div key={item.id} className="grid grid-cols-[40px_1fr_1fr_1fr_36px] gap-2 items-center">
-              <input className={cn(iCls, "text-center text-lg")} value={item.icono} onChange={e => s({ items: items.map((x, j) => j === i ? { ...x, icono: e.target.value } : x) })} placeholder="ðŸ†" />
+              <input className={cn(iCls, "text-center text-lg")} value={item.icono} onChange={e => s({ items: items.map((x, j) => j === i ? { ...x, icono: e.target.value } : x) })} placeholder="star" />
               <input className={iCls} value={item.numero} onChange={e => s({ items: items.map((x, j) => j === i ? { ...x, numero: e.target.value } : x) })} placeholder="ej. 15,000+" />
               <input className={cn(iCls, "col-span-2")} value={item.label} onChange={e => s({ items: items.map((x, j) => j === i ? { ...x, label: e.target.value } : x) })} placeholder="ej. Docentes activos" />
               <button onClick={() => s({ items: items.filter((_, j) => j !== i) })} className="h-10 w-9 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-red-500/10 hover:text-red-400 hover:border-red-400/40 transition-all">
@@ -1542,7 +1663,8 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
   const layout     = data.layout     || "center"
   const rightPanel = data.rightPanel || "none"
-  const stats      = (data.stats as { emoji: string; value: string; label: string }[]) || []
+  const badgeIcon  = data.badgeIcon || data.badgeEmoji || "sparkles"
+  const stats      = (data.stats as { icon?: string; emoji?: string; value: string; label: string }[]) || []
   const features   = (data.features as string[]) || []
   const appearance = (data.appearance as Record<string, any>) || {}
   const sAppearance = (patch: Record<string, any>) => s({ appearance: { ...appearance, ...patch } })
@@ -1550,9 +1672,17 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
   return (
     <div className="p-5 space-y-5">
       <Card title="Badge (etiqueta superior)">
-        <div className="grid grid-cols-[80px_1fr_100px] gap-3">
-          <F label="Emoji"><input className={iCls} value={data.badgeEmoji || ""} onChange={e => s({ badgeEmoji: e.target.value })} placeholder="â­" /></F>
-          <F label="Texto"><input className={iCls} value={data.badge || ""} onChange={e => s({ badge: e.target.value })} placeholder="MI PAGINA" /></F>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_112px]">
+          <div className="space-y-4">
+            <F label="Texto"><input className={iCls} value={data.badge || ""} onChange={e => s({ badge: e.target.value })} placeholder="MI PAGINA" /></F>
+            <StudioSiteIconField
+              label="Icono"
+              helper="Se muestra junto al badge con iconos del sistema del proyecto."
+              value={badgeIcon}
+              icons={STUDIO_BADGE_ICON_PRESET}
+              onChange={(icon) => s({ badgeIcon: icon, badgeEmoji: "" })}
+            />
+          </div>
           <F label="Color de acento"><input type="color" className="h-10 w-full rounded-xl border border-border bg-secondary/15 cursor-pointer" value={data.accentColor || "#E8392A"} onChange={e => s({ accentColor: e.target.value })} /></F>
         </div>
       </Card>
@@ -1608,18 +1738,31 @@ function PageHeroEditor({ data, onChange }: { data: Record<string, any>; onChang
             <F label="Titulo del panel"><input className={iCls} value={data.statsTitle || ""} onChange={e => s({ statsTitle: e.target.value })} placeholder="Resultados reales" /></F>
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Estadisticas</span>
-              <Btn size="sm" variant="ghost" onClick={() => s({ stats: [...stats, { emoji: "â­", value: "100+", label: "Nueva stat" }] })}>
+              <Btn size="sm" variant="ghost" onClick={() => s({ stats: [...stats, { icon: "bar-chart", value: "100+", label: "Nueva metrica" }] })}>
                 <Plus className="w-3.5 h-3.5" />Agregar
               </Btn>
             </div>
             {stats.map((st, i) => (
-              <div key={i} className="grid grid-cols-[48px_1fr_1fr_32px] gap-2 items-center">
-                <input className={cn(iCls, "text-center text-lg")} value={st.emoji} onChange={e => s({ stats: stats.map((x, j) => j === i ? { ...x, emoji: e.target.value } : x) })} placeholder="â­" />
-                <input className={iCls} value={st.value} onChange={e => s({ stats: stats.map((x, j) => j === i ? { ...x, value: e.target.value } : x) })} placeholder="ej. 15K+" />
-                <input className={iCls} value={st.label} onChange={e => s({ stats: stats.map((x, j) => j === i ? { ...x, label: e.target.value } : x) })} placeholder="ej. Docentes activos" />
-                <button onClick={() => s({ stats: stats.filter((_, j) => j !== i) })} className="h-10 w-8 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-all">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+              <div key={i} className="rounded-xl border border-border bg-secondary/10 p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Metrica {i + 1}</span>
+                  <button onClick={() => s({ stats: stats.filter((_, j) => j !== i) })} className="h-8 w-8 flex items-center justify-center rounded-xl border border-border text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-all">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <F label="Valor"><input className={iCls} value={st.value} onChange={e => s({ stats: stats.map((x, j) => j === i ? { ...x, value: e.target.value } : x) })} placeholder="ej. 15K+" /></F>
+                  <F label="Etiqueta"><input className={iCls} value={st.label} onChange={e => s({ stats: stats.map((x, j) => j === i ? { ...x, label: e.target.value } : x) })} placeholder="ej. Docentes activos" /></F>
+                </div>
+                <StudioSiteIconField
+                  label="Icono"
+                  value={st.icon || st.emoji}
+                  icons={STUDIO_STAT_ICON_PRESET}
+                  columns={6}
+                  onChange={(icon) => s({
+                    stats: stats.map((x, j) => j === i ? { ...x, icon, emoji: "" } : x),
+                  })}
+                />
               </div>
             ))}
           </div>
@@ -1675,7 +1818,7 @@ import type { EditorElementInfo } from "@/components/admin/html-editor-bridge"
 
 function FeatureCardsEditor({ data, onChange }: { data: Record<string, any>; onChange: (d: Record<string, any>) => void }) {
   const s = (p: Record<string, any>) => onChange({ ...data, ...p })
-  const items = (data.items as { id: string; emoji: string; title: string; description: string; accentColor?: string }[]) || []
+  const items = (data.items as { id: string; icon?: string; emoji?: string; title: string; description: string; accentColor?: string }[]) || []
   const appearance = (data.appearance as Record<string, any>) || {}
   const sAppearance = (patch: Record<string, any>) => s({ appearance: { ...appearance, ...patch } })
 
@@ -1697,7 +1840,7 @@ function FeatureCardsEditor({ data, onChange }: { data: Record<string, any>; onC
       </Card>
 
       <Card title={`Tarjetas (${items.length})`} action={
-        <Btn size="sm" variant="ghost" onClick={() => s({ items: [...items, { id: `fc_${Date.now()}`, emoji: "â­", title: "Nueva tarjeta", description: "Descripcion.", accentColor: "#E8392A" }] })}>
+        <Btn size="sm" variant="ghost" onClick={() => s({ items: [...items, { id: `fc_${Date.now()}`, icon: "sparkles", title: "Nueva tarjeta", description: "Descripcion.", accentColor: "#E8392A" }] })}>
           <Plus className="w-3.5 h-3.5" />Agregar
         </Btn>
       }>
@@ -1711,10 +1854,28 @@ function FeatureCardsEditor({ data, onChange }: { data: Record<string, any>; onC
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <div className="grid grid-cols-[64px_1fr_100px] gap-3">
-                <F label="Emoji"><input className={cn(iCls, "text-center text-lg")} value={item.emoji} onChange={e => s({ items: items.map((x, j) => j === i ? { ...x, emoji: e.target.value } : x) })} placeholder="â­" /></F>
-                <F label="Titulo"><input className={iCls} value={item.title} onChange={e => s({ items: items.map((x, j) => j === i ? { ...x, title: e.target.value } : x) })} /></F>
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_100px]">
+                <StudioSiteIconField
+                  label="Icono"
+                  helper="Las tarjetas usan iconos del sistema en lugar de emojis."
+                  value={item.icon || item.emoji}
+                  icons={STUDIO_CARD_ICON_PRESET}
+                  columns={6}
+                  onChange={(icon) => s({ items: items.map((x, j) => j === i ? { ...x, icon, emoji: "" } : x) })}
+                />
                 <F label="Color"><input type="color" className="h-10 w-full rounded-xl border border-border bg-secondary/15 cursor-pointer" value={item.accentColor || "#E8392A"} onChange={e => s({ items: items.map((x, j) => j === i ? { ...x, accentColor: e.target.value } : x) })} /></F>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <F label="Titulo"><input className={iCls} value={item.title} onChange={e => s({ items: items.map((x, j) => j === i ? { ...x, title: e.target.value } : x) })} /></F>
+                <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/8 bg-[#0b1017] text-primary">
+                    <SiteIconGlyph name={item.icon || item.emoji} fallback={STUDIO_CARD_ICON_PRESET[i % STUDIO_CARD_ICON_PRESET.length]} size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-white/35">Vista previa</div>
+                    <div className="mt-1 text-sm text-white/70">Icono de la tarjeta</div>
+                  </div>
+                </div>
               </div>
               <F label="Descripcion"><textarea className={tCls} rows={2} value={item.description} onChange={e => s({ items: items.map((x, j) => j === i ? { ...x, description: e.target.value } : x) })} /></F>
             </div>
@@ -1766,6 +1927,253 @@ function FeatureCardsEditor({ data, onChange }: { data: Record<string, any>; onC
               {[400, 500, 600, 700].map((weight) => <option key={`features-card-description-weight-${weight}`} value={weight}>{weight}</option>)}
             </select>
           </F>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+function CoursesCatalogEditor({
+  data,
+  onChange,
+}: {
+  data: Record<string, any>
+  onChange: (data: Record<string, any>) => void
+}) {
+  const baseDefaults = data?.variant === "page" ? DEFAULT_PUBLIC_COURSES_PAGE_CONTENT : DEFAULT_PUBLIC_COURSES_HUB_CONTENT
+  const merged = { ...baseDefaults, ...(data ?? {}) }
+  const s = (patch: Record<string, any>) => onChange({ ...data, ...patch })
+  const applyTemplate = (variant: "home" | "page") => {
+    const defaults = cloneStudioValue(variant === "page" ? DEFAULT_PUBLIC_COURSES_PAGE_CONTENT : DEFAULT_PUBLIC_COURSES_HUB_CONTENT)
+    onChange({
+      ...defaults,
+      variant,
+      ctaAction: data?.ctaAction,
+    })
+  }
+
+  return (
+    <div className="p-5 space-y-5">
+      <Card title="Plantillas rapidas" action={
+        <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[10px] font-medium text-white/45">
+          Sin codigo
+        </span>
+      }>
+        <div className="grid gap-3 md:grid-cols-3">
+          <button
+            type="button"
+            onClick={() => applyTemplate("home")}
+            className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left transition-all hover:border-primary/35 hover:bg-primary/[0.06]"
+          >
+            <div className="text-sm font-semibold text-white">Usar vista Portada</div>
+            <div className="mt-1 text-xs leading-5 text-white/45">
+              Recupera el copy comercial corto con CTA directo, pensado para la landing principal.
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => applyTemplate("page")}
+            className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left transition-all hover:border-primary/35 hover:bg-primary/[0.06]"
+          >
+            <div className="text-sm font-semibold text-white">Usar vista Catalogo</div>
+            <div className="mt-1 text-xs leading-5 text-white/45">
+              Carga el texto base para el catalogo completo con filtros, chips y panel destacado.
+            </div>
+          </button>
+          <div className="rounded-2xl border border-primary/15 bg-primary/[0.05] p-4">
+            <div className="text-sm font-semibold text-white">Consejo rapido</div>
+            <div className="mt-1 text-xs leading-5 text-white/50">
+              Aplica una plantilla y luego ajusta titulos, buscador, tarjetas y mensajes del estado vacio desde este mismo panel.
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card title="Vista del bloque">
+        <div className="grid gap-3 md:grid-cols-2">
+          {([
+            { id: "home", label: "Portada", description: "Resumen comercial para la landing principal.", icon: Monitor },
+            { id: "page", label: "Catalogo completo", description: "Vista amplia con filtros, categorias y estadisticas.", icon: Layers },
+          ] as const).map((option) => {
+            const Icon = option.icon
+            const active = merged.variant === option.id
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => s({ variant: option.id })}
+                className={cn(
+                  "rounded-2xl border px-4 py-4 text-left transition-all",
+                  active ? "border-primary bg-primary/10" : "border-border bg-secondary/10 hover:border-primary/35"
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={cn("flex h-10 w-10 items-center justify-center rounded-2xl", active ? "bg-primary/15 text-primary" : "bg-white/[0.04] text-white/65")}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-foreground">{option.label}</div>
+                    <div className="mt-1 text-xs leading-5 text-muted-foreground">{option.description}</div>
+                  </div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </Card>
+
+      <Card title="Encabezado">
+        <F label="Badge superior"><input className={iCls} value={merged.badge || ""} onChange={(event) => s({ badge: event.target.value })} placeholder="Cursos para docentes" /></F>
+        <F label="Titulo principal"><textarea className={tCls} rows={3} value={merged.title || ""} onChange={(event) => s({ title: event.target.value })} placeholder="Titulo comercial del catalogo" /></F>
+        <F label="Descripcion"><textarea className={tCls} rows={4} value={merged.description || ""} onChange={(event) => s({ description: event.target.value })} placeholder="Descripcion informativa o publicitaria del bloque" /></F>
+      </Card>
+
+      <Card title="CTA de la portada">
+        <F label="Texto del boton" helper="Se usa en la vista Portada. La accion avanzada se configura en la pestana Acciones.">
+          <input className={iCls} value={merged.ctaLabel || ""} onChange={(event) => s({ ctaLabel: event.target.value })} placeholder="Ver catalogo completo" />
+        </F>
+        <F label="URL fallback" helper="Se usa si no conectas una accion personalizada.">
+          <input className={iCls} value={merged.ctaHref || ""} onChange={(event) => s({ ctaHref: event.target.value })} placeholder="/cursos" />
+        </F>
+      </Card>
+
+      <Card title="Mensajes del modulo">
+        <F label="Eyebrow inferior de portada" helper="Texto pequeno encima del CTA final en la vista Portada.">
+          <input className={iCls} value={merged.footerEyebrow || ""} onChange={(event) => s({ footerEyebrow: event.target.value })} placeholder="Catalogo publico conectado" />
+        </F>
+        <F label="Texto inferior de portada">
+          <textarea className={tCls} rows={3} value={merged.footerTitle || ""} onChange={(event) => s({ footerTitle: event.target.value })} placeholder="Mensaje final que acompana al boton" />
+        </F>
+        <F label="Titulo cuando no hay cursos">
+          <input className={iCls} value={merged.emptyTitle || ""} onChange={(event) => s({ emptyTitle: event.target.value })} placeholder="Aun no hay cursos publicados" />
+        </F>
+        <F label="Descripcion cuando no hay cursos">
+          <textarea className={tCls} rows={3} value={merged.emptyDescription || ""} onChange={(event) => s({ emptyDescription: event.target.value })} placeholder="Explica que el admin debe publicar cursos para mostrar el catalogo" />
+        </F>
+      </Card>
+
+      <Card title="Metricas visibles en catalogo">
+        <div className="grid gap-4 md:grid-cols-2">
+          <F label="Etiqueta total"><input className={iCls} value={merged.totalStatLabel || ""} onChange={(event) => s({ totalStatLabel: event.target.value })} placeholder="Total" /></F>
+          <F label="Descripcion total"><input className={iCls} value={merged.totalStatDescription || ""} onChange={(event) => s({ totalStatDescription: event.target.value })} placeholder="Cursos visibles para estudiantes" /></F>
+          <F label="Etiqueta premium"><input className={iCls} value={merged.paidStatLabel || ""} onChange={(event) => s({ paidStatLabel: event.target.value })} placeholder="Premium" /></F>
+          <F label="Descripcion premium"><input className={iCls} value={merged.paidStatDescription || ""} onChange={(event) => s({ paidStatDescription: event.target.value })} placeholder="Cursos de pago publicados" /></F>
+          <F label="Etiqueta gratis"><input className={iCls} value={merged.freeStatLabel || ""} onChange={(event) => s({ freeStatLabel: event.target.value })} placeholder="Gratis" /></F>
+          <F label="Descripcion gratis"><input className={iCls} value={merged.freeStatDescription || ""} onChange={(event) => s({ freeStatDescription: event.target.value })} placeholder="Listos para matricula inmediata" /></F>
+          <F label="Etiqueta categorias"><input className={iCls} value={merged.categoriesStatLabel || ""} onChange={(event) => s({ categoriesStatLabel: event.target.value })} placeholder="Categorias" /></F>
+        </div>
+      </Card>
+
+      <Card title="Experiencia de descubrimiento">
+        <div className="grid gap-4 md:grid-cols-2">
+          <F label="Placeholder del buscador"><input className={iCls} value={merged.searchPlaceholder || ""} onChange={(event) => s({ searchPlaceholder: event.target.value })} placeholder="Buscar por categoria, instructor, nivel o tema..." /></F>
+          <F label="Texto del contador visible"><input className={iCls} value={merged.visibleCountLabel || ""} onChange={(event) => s({ visibleCountLabel: event.target.value })} placeholder="visibles" /></F>
+          <F label="CTA de categoria"><input className={iCls} value={merged.categoryCtaLabel || ""} onChange={(event) => s({ categoryCtaLabel: event.target.value })} placeholder="Ver categoria" /></F>
+          <F label="Texto bajo cada categoria"><input className={iCls} value={merged.categoryCountSuffix || ""} onChange={(event) => s({ categoryCountSuffix: event.target.value })} placeholder="cursos sugeridos en esta categoria" /></F>
+        </div>
+      </Card>
+
+      <Card title="Mensajes visuales del hero" action={
+        <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[10px] font-medium text-white/45">
+          Catalogo completo
+        </span>
+      }>
+        <div className="grid gap-4 md:grid-cols-3">
+          <F label="Chip 1"><input className={iCls} value={merged.heroChipOne || ""} onChange={(event) => s({ heroChipOne: event.target.value })} placeholder="Categorias activas" /></F>
+          <F label="Chip 2"><input className={iCls} value={merged.heroChipTwo || ""} onChange={(event) => s({ heroChipTwo: event.target.value })} placeholder="Catalogo conectado al dashboard" /></F>
+          <F label="Chip 3"><input className={iCls} value={merged.heroChipThree || ""} onChange={(event) => s({ heroChipThree: event.target.value })} placeholder="Filtros y acceso mas intuitivos" /></F>
+          <F label="Eyebrow del panel destacado"><input className={iCls} value={merged.highlightEyebrow || ""} onChange={(event) => s({ highlightEyebrow: event.target.value })} placeholder="Experiencia mejorada" /></F>
+          <div className="md:col-span-2">
+            <F label="Titulo del panel destacado"><textarea className={tCls} rows={2} value={merged.highlightTitle || ""} onChange={(event) => s({ highlightTitle: event.target.value })} placeholder="Explora, filtra y elige sin perder contexto" /></F>
+          </div>
+          <div className="md:col-span-3">
+            <F label="Descripcion del panel destacado"><textarea className={tCls} rows={3} value={merged.highlightDescription || ""} onChange={(event) => s({ highlightDescription: event.target.value })} placeholder="Organizamos el catalogo para que el contenido destacado..." /></F>
+          </div>
+        </div>
+      </Card>
+
+      <Card title="Tarjetas de apoyo del catalogo" action={
+        <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[10px] font-medium text-white/45">
+          Catalogo completo
+        </span>
+      }>
+        <div className="space-y-4">
+          {([
+            {
+              titleKey: "benefitOneTitle",
+              descriptionKey: "benefitOneDescription",
+              title: "Tarjeta 1",
+              titlePlaceholder: "Contenido mejor estructurado",
+              descriptionPlaceholder: "El catalogo separa con claridad cursos destacados...",
+            },
+            {
+              titleKey: "benefitTwoTitle",
+              descriptionKey: "benefitTwoDescription",
+              title: "Tarjeta 2",
+              titlePlaceholder: "Cursos con alta visibilidad",
+              descriptionPlaceholder: "Los cursos con mejor potencial aparecen primero...",
+            },
+            {
+              titleKey: "benefitThreeTitle",
+              descriptionKey: "benefitThreeDescription",
+              title: "Tarjeta 3",
+              titlePlaceholder: "Acceso mas directo",
+              descriptionPlaceholder: "El usuario descubre el curso aqui y completa su acceso...",
+            },
+          ] as const).map((card) => (
+            <div key={card.titleKey} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+              <div className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-white/35">{card.title}</div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <F label="Titulo">
+                  <input
+                    className={iCls}
+                    value={merged[card.titleKey] || ""}
+                    onChange={(event) => s({ [card.titleKey]: event.target.value })}
+                    placeholder={card.titlePlaceholder}
+                  />
+                </F>
+                <F label="Descripcion">
+                  <textarea
+                    className={tCls}
+                    rows={2}
+                    value={merged[card.descriptionKey] || ""}
+                    onChange={(event) => s({ [card.descriptionKey]: event.target.value })}
+                    placeholder={card.descriptionPlaceholder}
+                  />
+                </F>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card title="Secciones internas del catalogo" action={
+        <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[10px] font-medium text-white/45">
+          Catalogo completo
+        </span>
+      }>
+        <div className="grid gap-4 md:grid-cols-2">
+          <F label="Eyebrow de destacados"><input className={iCls} value={merged.featuredEyebrow || ""} onChange={(event) => s({ featuredEyebrow: event.target.value })} placeholder="Destacados" /></F>
+          <F label="Titulo de destacados"><textarea className={tCls} rows={2} value={merged.featuredTitle || ""} onChange={(event) => s({ featuredTitle: event.target.value })} placeholder="Cursos que convierten mejor en portada" /></F>
+          <div className="md:col-span-2">
+            <F label="Descripcion de destacados"><textarea className={tCls} rows={3} value={merged.featuredDescription || ""} onChange={(event) => s({ featuredDescription: event.target.value })} placeholder="Usa este bloque para mostrar primero lo mas relevante..." /></F>
+          </div>
+          <F label="Titulo sin resultados"><input className={iCls} value={merged.noResultsTitle || ""} onChange={(event) => s({ noResultsTitle: event.target.value })} placeholder="No encontramos cursos para ese filtro" /></F>
+          <F label="Descripcion sin resultados"><textarea className={tCls} rows={2} value={merged.noResultsDescription || ""} onChange={(event) => s({ noResultsDescription: event.target.value })} placeholder="Prueba con otra categoria, cambia el filtro..." /></F>
+        </div>
+      </Card>
+
+      <Card title="Accesos rapidos para cursos">
+        <div className="grid gap-3 md:grid-cols-2">
+          <a href="/dashboard/cursos" target="_blank" rel="noopener noreferrer" className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/75 transition-all hover:border-primary/35 hover:text-white">
+            Abrir admin de cursos
+          </a>
+          <a href="/cursos" target="_blank" rel="noopener noreferrer" className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white/75 transition-all hover:border-primary/35 hover:text-white">
+            Ver catalogo publico
+          </a>
+        </div>
+        <div className="mt-3 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-3 text-[11px] leading-5 text-white/45">
+          Desde este bloque editas el copy, los mensajes del catalogo y la experiencia visible. Los cursos reales, precios, portadas y accesos se siguen gestionando desde el admin de cursos.
         </div>
       </Card>
     </div>
@@ -1987,6 +2395,7 @@ function CollectionFeedEditor({
             <div className="space-y-2">
               {items.map((item) => {
                 const active = (source.manualIds || []).includes(item.id)
+                const ItemIcon = getStudioLinkedContentIcon(collectionLabel)
                 return (
                   <button
                     key={item.id}
@@ -1997,8 +2406,8 @@ function CollectionFeedEditor({
                       active ? "border-primary bg-primary/10" : "border-border bg-secondary/10 hover:border-primary/35"
                     )}
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-lg">
-                      {item.emoji || "✨"}
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/60">
+                      <ItemIcon className="h-4 w-4" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold text-white">{item.title}</div>
@@ -2019,9 +2428,12 @@ function CollectionFeedEditor({
               {(source.manualIds || []).map((id, index, list) => {
                 const item = items.find((entry) => entry.id === id)
                 if (!item) return null
+                const ItemIcon = getStudioLinkedContentIcon(collectionLabel)
                 return (
                   <div key={id} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-lg">{item.emoji || "✨"}</div>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/60">
+                      <ItemIcon className="h-4 w-4" />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold text-white">{item.title}</div>
                       <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-white/35">Posicion {index + 1}</div>
@@ -2188,8 +2600,9 @@ function SectionMiniPreview({ section }: { section: CMSSection }) {
       )
     case "simulatorsFeed":
     case "coursesFeed":
+    case "coursesCatalog":
     case "evaluationsFeed": {
-      const accent = section.type === "coursesFeed" ? "bg-indigo-400/45" : section.type === "evaluationsFeed" ? "bg-amber-400/45" : "bg-primary/50"
+      const accent = section.type === "coursesFeed" || section.type === "coursesCatalog" ? "bg-indigo-400/45" : section.type === "evaluationsFeed" ? "bg-amber-400/45" : "bg-primary/50"
       return (
         <div className="p-3 space-y-2">
           <div className="flex items-center justify-between">
@@ -2481,6 +2894,7 @@ const SM: Record<CMSSectionType, { label: string; icon: React.ElementType; color
   featureCards: { label: "Tarjetas",           icon: LayoutTemplate,color: "text-sky-400 bg-sky-400/10",        deletable: true, desc: "Grid universal de tarjetas editables" },
   simulatorsFeed:{ label: "Simuladores",       icon: Target,        color: "text-primary bg-primary/10",        deletable: true, desc: "Bloque conectado a simuladores publicados" },
   coursesFeed:  { label: "Cursos",             icon: GraduationCap, color: "text-indigo-400 bg-indigo-400/10",  deletable: true, desc: "Bloque conectado al catalogo de cursos" },
+  coursesCatalog:{ label: "Catalogo cursos",   icon: GraduationCap, color: "text-indigo-300 bg-indigo-400/10",  deletable: true, desc: "Catalogo publico conectado al admin de cursos" },
   evaluationsFeed:{ label: "Evaluaciones",     icon: ClipboardCheck,color: "text-amber-400 bg-amber-400/10",    deletable: true, desc: "Bloque conectado a evaluaciones activas" },
   formBuilder:  { label: "Formulario",         icon: FileText,      color: "text-emerald-400 bg-emerald-400/10",deletable: true, desc: "Formulario configurable desde el editor" },
   richText:     { label: "Contenido libre",    icon: TextCursorInput,color: "text-violet-400 bg-violet-400/10",  deletable: true, desc: "Texto, listas y botones en un bloque flexible" },
@@ -2618,6 +3032,13 @@ function getLibraryCapabilities(type: CMSSectionType) {
         bestFor: ["Catalogos", "Bloques conectados", "Contenido vivo"],
         outcome: "Trae informacion publicada desde el admin para mantener la pagina siempre actualizada.",
       }
+    case "coursesCatalog":
+      return {
+        tags: ["Catalogo", "Cursos", "Dashboard"],
+        tools: ["Categorias", "Cursos gratis o premium", "Acceso conectado"],
+        bestFor: ["Portada de cursos", "Landing principal", "Catalogo publico"],
+        outcome: "Muestra el catalogo publico completo de cursos y conserva el acceso del usuario hacia login y dashboard.",
+      }
     default:
       return {
         tags: ["Bloque", "Sistema", "Editable"],
@@ -2628,8 +3049,461 @@ function getLibraryCapabilities(type: CMSSectionType) {
   }
 }
 
-const ADDABLE: CMSSectionType[] = ["hero", "pageHero", "richText", "featureCards", "logoStrip", "spacer", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "embed"]
-const ADDABLE_PAGE: CMSSectionType[] = ["pageHero", "richText", "featureCards", "logoStrip", "spacer", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "embed"]
+function getStudioBlockGroupMeta(groupId: string) {
+  switch (groupId) {
+    case "base":
+      return {
+        icon: LayoutTemplate,
+        iconWrapClass: "border-sky-500/20 bg-sky-500/10 text-sky-300",
+        chipClass: "border-sky-500/20 bg-sky-500/10 text-sky-200",
+      }
+    case "conversion":
+      return {
+        icon: Zap,
+        iconWrapClass: "border-amber-500/20 bg-amber-500/10 text-amber-300",
+        chipClass: "border-amber-500/20 bg-amber-500/10 text-amber-200",
+      }
+    case "media":
+      return {
+        icon: ImageIcon,
+        iconWrapClass: "border-cyan-500/20 bg-cyan-500/10 text-cyan-300",
+        chipClass: "border-cyan-500/20 bg-cyan-500/10 text-cyan-200",
+      }
+    case "trust":
+      return {
+        icon: Star,
+        iconWrapClass: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
+        chipClass: "border-emerald-500/20 bg-emerald-500/10 text-emerald-200",
+      }
+    case "dynamic":
+      return {
+        icon: Target,
+        iconWrapClass: "border-primary/25 bg-primary/10 text-primary",
+        chipClass: "border-primary/25 bg-primary/10 text-primary/95",
+      }
+    case "advanced":
+      return {
+        icon: Code2,
+        iconWrapClass: "border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-300",
+        chipClass: "border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-200",
+      }
+    default:
+      return {
+        icon: Layers,
+        iconWrapClass: "border-white/10 bg-white/[0.03] text-white/70",
+        chipClass: "border-white/10 bg-white/[0.03] text-white/70",
+      }
+  }
+}
+
+function buildPresetPreviewSection(block: StudioPresetBlock, index: number): CMSSection {
+  const defaultData = DEFAULTS[block.type] ? cloneStudioValue(DEFAULTS[block.type]) : {}
+  return {
+    id: `preset-preview-${block.type}-${index}`,
+    type: block.type,
+    visible: block.visible ?? true,
+    data: {
+      ...defaultData,
+      ...(block.data ? cloneStudioValue(block.data) : {}),
+    },
+  }
+}
+
+type StudioPresetPreviewLayout = "spotlight" | "hero" | "catalog" | "assistant" | "proof" | "scroll" | "footer" | "stack"
+
+function studioHexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace("#", "")
+  const expanded = normalized.length === 3
+    ? normalized.split("").map((value) => `${value}${value}`).join("")
+    : normalized
+
+  if (expanded.length !== 6) {
+    return `rgba(232,57,42,${alpha})`
+  }
+
+  const value = Number.parseInt(expanded, 16)
+  const r = (value >> 16) & 255
+  const g = (value >> 8) & 255
+  const b = value & 255
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function getStudioPresetPreviewConfig(preset: StudioComponentPreset): {
+  accent: string
+  secondary: string
+  layout: StudioPresetPreviewLayout
+  familyLabel: string
+} {
+  const family = (preset.family || "").toLowerCase()
+  const haystack = `${preset.id} ${preset.label} ${preset.description} ${preset.tags.join(" ")}`.toLowerCase()
+
+  if (family.includes("footer")) {
+    return { accent: "#64748B", secondary: "#0EA5E9", layout: "footer", familyLabel: preset.family || "Footer" }
+  }
+
+  if (family.includes("scroll")) {
+    return { accent: "#06B6D4", secondary: "#2563EB", layout: "scroll", familyLabel: preset.family || "Scroll" }
+  }
+
+  if (family.includes("ai")) {
+    return { accent: "#4F46E5", secondary: "#2563EB", layout: "assistant", familyLabel: preset.family || "AI Chat Components" }
+  }
+
+  if (haystack.includes("curso") || haystack.includes("catalogo") || family.includes("popular") || family.includes("docs")) {
+    return { accent: "#2563EB", secondary: "#10B981", layout: "catalog", familyLabel: preset.family || "Catalog" }
+  }
+
+  if (family.includes("testimonial") || family.includes("client")) {
+    return { accent: "#10B981", secondary: "#2563EB", layout: "proof", familyLabel: preset.family || "Testimonials" }
+  }
+
+  if (family.includes("shader") || family.includes("hero")) {
+    return { accent: "#E8392A", secondary: "#2563EB", layout: "hero", familyLabel: preset.family || "Heros" }
+  }
+
+  if (preset.blocks.length >= 4) {
+    return { accent: "#E8392A", secondary: "#F59E0B", layout: "stack", familyLabel: preset.family || "Featured" }
+  }
+
+  return { accent: "#E8392A", secondary: "#2563EB", layout: "spotlight", familyLabel: preset.family || "Preset" }
+}
+
+function StudioPresetMiniPreview({
+  preset,
+  compact = false,
+}: {
+  preset: StudioComponentPreset
+  compact?: boolean
+}) {
+  const previewSections = preset.blocks.slice(0, compact ? 3 : 4).map((block, index) => buildPresetPreviewSection(block, index))
+  const mainSection = previewSections[0] ?? buildPresetPreviewSection({ type: "richText" }, 0)
+  const secondarySections = previewSections.slice(1, compact ? 3 : 4)
+  const previewConfig = getStudioPresetPreviewConfig(preset)
+  const accentSoft = studioHexToRgba(previewConfig.accent, 0.16)
+  const accentBorder = studioHexToRgba(previewConfig.accent, 0.34)
+  const secondarySoft = studioHexToRgba(previewConfig.secondary, 0.18)
+  const visibleTags = preset.tags.slice(0, compact ? 1 : 2)
+  const previewCards = [mainSection, ...secondarySections]
+  const renderFrame = (section: CMSSection, className: string) => (
+    <div className={cn("overflow-hidden rounded-xl border border-white/10 bg-[#08111b]/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]", className)}>
+      <SectionMiniPreview section={section} />
+    </div>
+  )
+
+  const renderLayout = () => {
+    switch (previewConfig.layout) {
+      case "hero":
+        return (
+          <div className="grid grid-cols-[1.2fr_0.82fr] gap-2">
+            {renderFrame(mainSection, compact ? "h-[70px]" : "h-[102px]")}
+            <div className="space-y-2">
+              {secondarySections.slice(0, 2).map((section) => renderFrame(section, compact ? "h-[31px]" : "h-[47px]"))}
+              <div className="grid grid-cols-2 gap-1.5">
+                {[0, 1].map((index) => (
+                  <div key={`hero-chip-${index}`} className="rounded-xl border border-white/8 bg-[#08111b]/80 px-2 py-1.5">
+                    <div className="h-1.5 rounded-full" style={{ width: index === 0 ? "75%" : "60%", backgroundColor: index === 0 ? accentBorder : secondarySoft }} />
+                    <div className="mt-1 h-1 rounded-full bg-white/10" style={{ width: index === 0 ? "60%" : "74%" }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      case "catalog":
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#08111b]/85 px-2.5 py-2">
+              <Search className="h-3 w-3 text-white/30" />
+              <div className="h-1.5 flex-1 rounded-full bg-white/10" />
+              <div className="h-5 w-10 rounded-full" style={{ backgroundColor: accentSoft }} />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {previewCards.slice(0, 3).map((section, index) => (
+                <div key={`${section.id}-catalog-${index}`}>{renderFrame(section, compact ? "h-[44px]" : "h-[62px]")}</div>
+              ))}
+            </div>
+            <div className="flex gap-1.5">
+              {[0, 1, 2].map((index) => (
+                <div
+                  key={`catalog-pill-${index}`}
+                  className="h-5 rounded-full border border-white/8 bg-white/[0.04]"
+                  style={{ width: index === 0 ? 52 : index === 1 ? 40 : 48, backgroundColor: index === 0 ? accentSoft : undefined }}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      case "assistant":
+        return (
+          <div className="space-y-2">
+            {renderFrame(mainSection, compact ? "h-[62px]" : "h-[88px]")}
+            <div className="grid grid-cols-[0.9fr_1.1fr] gap-2">
+              <div className="rounded-xl border border-white/10 bg-[#08111b]/85 p-2">
+                <div className="flex justify-end">
+                  <div className="h-4 w-[58%] rounded-2xl" style={{ backgroundColor: accentSoft }} />
+                </div>
+                <div className="mt-1.5 flex justify-start">
+                  <div className="h-4 w-[76%] rounded-2xl bg-white/10" />
+                </div>
+                <div className="mt-1.5 flex justify-end">
+                  <div className="h-4 w-[48%] rounded-2xl" style={{ backgroundColor: secondarySoft }} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                {secondarySections.slice(0, 2).map((section) => renderFrame(section, compact ? "h-[26px]" : "h-[38px]"))}
+              </div>
+            </div>
+          </div>
+        )
+      case "proof":
+        return (
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-1.5">
+              {[0, 1, 2].map((index) => (
+                <div key={`proof-stat-${index}`} className="rounded-xl border border-white/10 bg-[#08111b]/85 px-2 py-1.5">
+                  <div
+                    className="h-1.5 rounded-full"
+                    style={{
+                      width: index === 0 ? "72%" : index === 1 ? "58%" : "64%",
+                      backgroundColor: index === 0 ? accentBorder : secondarySoft,
+                    }}
+                  />
+                  <div className="mt-1 h-1 rounded-full bg-white/10" style={{ width: index === 1 ? "74%" : "60%" }} />
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-[1.05fr_0.95fr] gap-2">
+              {renderFrame(mainSection, compact ? "h-[62px]" : "h-[88px]")}
+              <div className="space-y-2">
+                {secondarySections.slice(0, 2).map((section) => renderFrame(section, compact ? "h-[26px]" : "h-[38px]"))}
+              </div>
+            </div>
+          </div>
+        )
+      case "scroll":
+        return (
+          <div className="relative pl-4">
+            <div className="absolute left-[7px] top-2 bottom-2 w-px rounded-full" style={{ background: `linear-gradient(180deg, ${accentBorder}, ${secondarySoft})` }} />
+            <div className="space-y-2">
+              {previewCards.slice(0, compact ? 3 : 4).map((section, index) => (
+                <div key={`${section.id}-scroll-${index}`} className="relative">
+                  <div className="absolute -left-[13px] top-3 h-2.5 w-2.5 rounded-full border border-[#07101a]" style={{ backgroundColor: index === 0 ? previewConfig.accent : previewConfig.secondary }} />
+                  {renderFrame(section, index === 0 ? (compact ? "h-[42px]" : "h-[58px]") : (compact ? "h-[30px]" : "h-[42px]"))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      case "footer":
+        return (
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-2">
+              {previewCards.slice(0, 3).map((section, index) => (
+                <div key={`${section.id}-footer-${index}`}>{renderFrame(section, compact ? "h-[34px]" : "h-[48px]")}</div>
+              ))}
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-[#08111b]/85 px-2.5 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="h-2 w-20 rounded-full" style={{ backgroundColor: accentSoft }} />
+                <div className="flex gap-1">
+                  {[0, 1, 2].map((index) => (
+                    <div key={`footer-dot-${index}`} className="h-2.5 w-2.5 rounded-full bg-white/15" style={index === 0 ? { backgroundColor: secondarySoft } : undefined} />
+                  ))}
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-4 gap-1.5">
+                {[0, 1, 2, 3].map((index) => (
+                  <div key={`footer-link-${index}`} className="h-1.5 rounded-full bg-white/10" style={{ width: index === 0 ? "100%" : index === 1 ? "82%" : index === 2 ? "74%" : "64%" }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      case "stack":
+        return (
+          <div className="space-y-2">
+            {renderFrame(mainSection, compact ? "h-[62px]" : "h-[86px]")}
+            <div className="grid grid-cols-2 gap-2">
+              {secondarySections.slice(0, 2).map((section) => renderFrame(section, compact ? "h-[30px]" : "h-[42px]"))}
+            </div>
+            <div className="flex gap-1.5">
+              {visibleTags.length > 0 ? visibleTags.map((tag) => (
+                <div
+                  key={`${preset.id}-${tag}-stack`}
+                  className="rounded-full border px-2 py-1 text-[8px] font-medium text-white/60"
+                  style={{ borderColor: accentBorder, backgroundColor: accentSoft }}
+                >
+                  {tag}
+                </div>
+              )) : (
+                <div className="h-5 w-16 rounded-full border border-white/8 bg-white/[0.04]" />
+              )}
+            </div>
+          </div>
+        )
+      case "spotlight":
+      default:
+        return (
+          <div className="grid grid-cols-[1.12fr_0.88fr] gap-2">
+            {renderFrame(mainSection, compact ? "h-[68px]" : "h-[96px]")}
+            <div className="space-y-2">
+              {secondarySections.length > 0 ? secondarySections.slice(0, 2).map((section) => renderFrame(section, compact ? "h-[30px]" : "h-[44px]")) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {[0, 1].map((index) => (
+                    <div key={`spotlight-fallback-${index}`} className="rounded-xl border border-white/8 bg-[#08111b]/80 px-2 py-2">
+                      <div className="h-1.5 rounded-full" style={{ width: index === 0 ? "68%" : "54%", backgroundColor: index === 0 ? accentBorder : secondarySoft }} />
+                      <div className="mt-1 h-1 rounded-full bg-white/10" style={{ width: index === 0 ? "82%" : "70%" }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-1.5">
+                {[0, 1].map((index) => (
+                  <div key={`spotlight-chip-${index}`} className="h-5 rounded-full border border-white/8 bg-white/[0.04]" style={{ backgroundColor: index === 0 ? accentSoft : undefined }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+    }
+  }
+
+  return (
+    <div
+      className={cn("relative overflow-hidden rounded-[22px] border border-white/10", compact ? "p-2" : "p-2.5")}
+      style={{
+        background: `radial-gradient(circle at 14% 18%, ${secondarySoft}, transparent 30%), radial-gradient(circle at 84% 10%, ${accentSoft}, transparent 28%), #07101a`,
+      }}
+    >
+      <div className="pointer-events-none absolute inset-0 opacity-90">
+        <div className="absolute inset-x-0 top-0 h-14 border-b border-white/6 bg-gradient-to-b from-white/[0.05] to-transparent" />
+        <div className="absolute -right-10 -top-10 h-28 w-28 rounded-full blur-3xl" style={{ backgroundColor: accentSoft }} />
+        <div className="absolute -left-10 bottom-0 h-24 w-24 rounded-full blur-3xl" style={{ backgroundColor: secondarySoft }} />
+      </div>
+      <div className="relative">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
+              {[0, 1, 2].map((index) => (
+                <div
+                  key={`preset-dot-${index}`}
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: index === 0 ? previewConfig.accent : index === 1 ? previewConfig.secondary : "rgba(255,255,255,0.14)" }}
+                />
+              ))}
+            </div>
+            <span
+              className="rounded-full border px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.22em]"
+              style={{ borderColor: accentBorder, backgroundColor: accentSoft, color: previewConfig.accent }}
+            >
+              {previewConfig.familyLabel}
+            </span>
+          </div>
+          <div className="flex gap-1">
+            {visibleTags.map((tag) => (
+              <span
+                key={`${preset.id}-${tag}-preview`}
+                className="rounded-full border px-1.5 py-0.5 text-[8px] font-medium text-white/60"
+                style={{ borderColor: "rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.04)" }}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+        {renderLayout()}
+      </div>
+    </div>
+  )
+}
+
+function StudioPresetCard({
+  preset,
+  onUse,
+  compact = false,
+}: {
+  preset: StudioComponentPreset
+  onUse: (preset: StudioComponentPreset) => void
+  compact?: boolean
+}) {
+  const groupMeta = getStudioBlockGroupMeta(preset.group)
+  const GroupIcon = groupMeta.icon
+  const visibleTags = preset.tags.slice(0, compact ? 2 : 3)
+  const blockLabels = preset.blocks.slice(0, compact ? 3 : 4).map((block) => getStudioSectionMeta(block.type).label)
+  const familyLabel = preset.family || "Sistema"
+
+  return (
+    <button
+      type="button"
+      onClick={() => onUse(preset)}
+      className={cn(
+        "group w-full rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.05] to-white/[0.02] text-left transition-all hover:border-primary/35 hover:bg-white/[0.055]",
+        compact ? "p-3" : "p-4"
+      )}
+    >
+      <div className={cn("gap-3", compact ? "grid grid-cols-[112px_1fr] items-start" : "space-y-3")}>
+        <div className={compact ? "min-w-0" : ""}>
+          <StudioPresetMiniPreview preset={preset} compact={compact} />
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-start gap-3">
+            <div className={cn("mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border", groupMeta.iconWrapClass)}>
+              <GroupIcon className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Preset listo</span>
+                    <span className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-0.5 text-[10px] font-medium text-white/45">
+                      {familyLabel}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-white">{preset.label}</div>
+                </div>
+                <div className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/[0.08] text-primary transition-all group-hover:bg-primary group-hover:text-white">
+                  <Plus className="h-3.5 w-3.5" />
+                </div>
+              </div>
+              <div className={cn("mt-2 text-[11px] leading-5 text-white/46", compact ? "line-clamp-2" : "line-clamp-3")}>
+                {preset.description}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {visibleTags.map((tag) => (
+                  <span key={`${preset.id}-${tag}`} className={cn("rounded-full border px-2 py-1 text-[10px] font-medium", groupMeta.chipClass)}>
+                    {tag}
+                  </span>
+                ))}
+                <span className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-medium text-white/55">
+                  {preset.blocks.length} bloques
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {blockLabels.map((label) => (
+                  <span key={`${preset.id}-${label}`} className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] text-white/48">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function getStudioLinkedContentIcon(kind?: string | null) {
+  const normalized = (kind || "").toLowerCase()
+  if (normalized.includes("curso")) return GraduationCap
+  if (normalized.includes("evalu")) return ClipboardCheck
+  if (normalized.includes("form")) return FileText
+  if (normalized.includes("html") || normalized.includes("widget")) return Code2
+  return Target
+}
+
+const ADDABLE: CMSSectionType[] = ["hero", "pageHero", "richText", "featureCards", "logoStrip", "spacer", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "coursesCatalog", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "embed"]
+const ADDABLE_PAGE: CMSSectionType[] = ["pageHero", "richText", "featureCards", "logoStrip", "spacer", "benefits", "testimonials", "pricing", "contact", "simulatorsFeed", "coursesFeed", "coursesCatalog", "evaluationsFeed", "formBuilder", "cta", "textBanner", "imageText", "video", "gallery", "stats", "faq", "embed"]
 
 const DEFAULTS: Record<string, Record<string, any>> = {
   cta:        { titulo: "Comienza hoy", descripcion: "Unete a miles de docentes.", ctaPrimario: "Crear cuenta gratis", ctaPrimarioHref: "/registro", ctaSecundario: "Ver planes", ctaSecundarioHref: "#precios", primaryAction: { type: "page", href: "/registro" }, secondaryAction: { type: "section", sectionId: "pricing" } },
@@ -2637,17 +3511,18 @@ const DEFAULTS: Record<string, Record<string, any>> = {
   imageText:  { titulo: "La mejor preparacion", descripcion: "Descripcion del bloque.", bullets: ["Primer punto", "Segundo punto"], imageUrl: "", imagePosition: "right", ctaLabel: "Conocer mas", ctaHref: "/registro", ctaAction: { type: "page", href: "/registro" } },
   video:      { titulo: "Conoce la plataforma", descripcion: "Descripcion del video.", videoUrl: "" },
   gallery:    { titulo: "", descripcion: "", columns: 3, images: [] },
-  stats:      { titulo: "", items: [{ id: "s1", numero: "15,000+", label: "Docentes activos", icono: "ðŸ‘¨â€ðŸ«" }, { id: "s2", numero: "98%", label: "Aprobacion", icono: "ðŸ†" }] },
-  faq:        { titulo: "Preguntas frecuentes", descripcion: "Todo lo que necesitas saber.", items: [{ id: "f1", pregunta: "Â¿Como funciona?", respuesta: "Hack Evans es la plataforma de preparacion docente #1 en Ecuador." }] },
+  stats:      { titulo: "", items: [{ id: "s1", numero: "15,000+", label: "Docentes activos", icono: "users" }, { id: "s2", numero: "98%", label: "Aprobacion", icono: "trophy" }] },
+  faq:        { titulo: "Preguntas frecuentes", descripcion: "Todo lo que necesitas saber.", items: [{ id: "f1", pregunta: "Como funciona?", respuesta: "Hack Evans es la plataforma de preparacion docente #1 en Ecuador." }] },
   customCode:   { nota: "", html: "", importMode: "adapted", stripNavigation: true, stripFooter: true, actionBindings: [], themeOverrides: { accentColor: "#E8392A" } },
   richText:   { eyebrow: "Contenido flexible", titulo: "Construye cualquier seccion", descripcion: "Usa este bloque para titulares, descripcion, listas, llamados a la accion y contenido editorial sin tocar codigo.", body: "", bullets: ["Punto clave", "Resultado esperado"], alignment: "left", maxWidth: "lg", primaryLabel: "Accion principal", primaryHref: "/registro", secondaryLabel: "Accion secundaria", secondaryHref: "/simulador", primaryAction: { type: "page", href: "/registro" }, secondaryAction: { type: "page", href: "/simulador" } },
   logoStrip:  { eyebrow: "Confianza", titulo: "Marcas, aliados o herramientas", descripcion: "Muestra clientes, partners, instituciones o tecnologias usadas en tu flujo.", columns: 4, items: [{ id: `lg_${Date.now()}_1`, label: "Logo 1", subLabel: "Partner", imageUrl: "", href: "" }, { id: `lg_${Date.now()}_2`, label: "Logo 2", subLabel: "Cliente", imageUrl: "", href: "" }, { id: `lg_${Date.now()}_3`, label: "Logo 3", subLabel: "Institucion", imageUrl: "", href: "" }, { id: `lg_${Date.now()}_4`, label: "Logo 4", subLabel: "Herramienta", imageUrl: "", href: "" }] },
   spacer:     { height: 96 },
   embed:      { titulo: "Embed universal", descripcion: "Inserta mapas, calendarios, formularios, dashboards o cualquier widget embebible.", mode: "url", url: "", html: "", height: 460 },
-  pageHero:     { badge: "PAGINA", badgeEmoji: "â­", accentColor: "#E8392A", layout: "center", titulo: "Titulo de la pagina", subtitulo: "", descripcion: "Descripcion de la pagina.", features: [], ctaPrimario: "Comenzar Ahora", ctaSecundario: "Saber mas", primaryAction: { type: "page", href: "/registro" }, secondaryAction: { type: "page", href: "/simulador" }, rightPanel: "none", stats: [], statsTitle: "" },
-  featureCards: { titulo: "", descripcion: "", columns: 3, items: [{ id: `fc_${Date.now()}`, emoji: "â­", title: "Nueva tarjeta", description: "Descripcion de la tarjeta.", accentColor: "#E8392A" }] },
+  pageHero:     { badge: "PAGINA", badgeIcon: "sparkles", accentColor: "#E8392A", layout: "center", titulo: "Titulo de la pagina", subtitulo: "", descripcion: "Descripcion de la pagina.", features: [], ctaPrimario: "Comenzar Ahora", ctaSecundario: "Saber mas", primaryAction: { type: "page", href: "/registro" }, secondaryAction: { type: "page", href: "/simulador" }, rightPanel: "none", stats: [], statsTitle: "" },
+  featureCards: { titulo: "", descripcion: "", columns: 3, items: [{ id: `fc_${Date.now()}`, icon: "sparkles", title: "Nueva tarjeta", description: "Descripcion de la tarjeta.", accentColor: "#E8392A" }] },
   simulatorsFeed: { badge: "Simuladores", titulo: "Simuladores destacados", descripcion: "Conecta este bloque a simuladores publicados desde el admin.", ctaLabel: "Ver simuladores", ctaHref: "/dashboard/simuladores", ctaAction: { type: "page", href: "/dashboard/simuladores" } },
-  coursesFeed: { badge: "Cursos", titulo: "Cursos destacados", descripcion: "Muestra cursos publicados sin tocar codigo.", ctaLabel: "Explorar cursos", ctaHref: "/dashboard/cursos", ctaAction: { type: "page", href: "/dashboard/cursos" } },
+  coursesFeed: { badge: "Cursos", titulo: "Cursos destacados", descripcion: "Muestra cursos publicados sin tocar codigo.", ctaLabel: "Explorar cursos", ctaHref: "/cursos", ctaAction: { type: "page", href: "/cursos" } },
+  coursesCatalog: { ...DEFAULT_PUBLIC_COURSES_HUB_CONTENT, variant: "home", ctaAction: { type: "page", href: "/cursos" } },
   evaluationsFeed: { badge: "Evaluaciones", titulo: "Evaluaciones activas", descripcion: "Expone evaluaciones y diagnosticos conectados desde el panel.", ctaLabel: "Ver evaluaciones", ctaHref: "/dashboard/evaluaciones", ctaAction: { type: "page", href: "/dashboard/evaluaciones" } },
   formBuilder: {
     badge: "Formulario",
@@ -2699,10 +3574,10 @@ function getStudioSectionContent(section: CMSSection, config: CMSConfig): {
       }
     case "pricing":
       return {
-        eyebrow: "Planes",
+        eyebrow: "Accesos",
         title: "Seccion de precios",
-        description: "Muestra planes, beneficios y CTA comerciales.",
-        chips: ["Planes", "Suscripcion", "Conversion"],
+        description: "Muestra accesos, beneficios y CTA comerciales.",
+        chips: ["Accesos", "Suscripcion", "Conversion"],
       }
     case "contact":
       return {
@@ -2770,6 +3645,13 @@ function getStudioSectionContent(section: CMSSection, config: CMSConfig): {
         chips: [sourceMode, `${limit} items`, section.settings?.source?.display === "carousel" ? "Carrusel" : "Grid"],
       }
     }
+    case "coursesCatalog":
+      return {
+        eyebrow: data.badge || "Catalogo de cursos",
+        title: data.titulo || data.title || "Catalogo publico de cursos",
+        description: data.descripcion || data.description || "Conecta el catalogo principal con los cursos publicados desde el admin.",
+        chips: [data.variant === "page" ? "Vista catalogo" : "Vista portada", data.ctaLabel || "CTA activo", "Cursos conectados"],
+      }
     case "formBuilder":
       return {
         eyebrow: data.badge || "Formulario",
@@ -2856,6 +3738,90 @@ function getStudioSectionBg(section: CMSSection) {
   return bg
 }
 
+function StudioSyncedRouteFrame({
+  route,
+  title,
+  viewportHeight,
+}: {
+  route: string
+  title: string
+  viewportHeight?: number | null
+}) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const [frameHeight, setFrameHeight] = useState<number>(1200)
+
+  useEffect(() => {
+    const iframe = iframeRef.current
+    if (!iframe) return
+
+    let timeoutId = 0
+    let resizeObserver: ResizeObserver | null = null
+
+    const syncHeight = () => {
+      try {
+        const doc = iframe.contentDocument
+        if (!doc?.body || !doc.documentElement) return
+        const nextHeight = Math.max(
+          doc.body.scrollHeight || 0,
+          doc.documentElement.scrollHeight || 0,
+          doc.body.offsetHeight || 0,
+          900
+        )
+        setFrameHeight(nextHeight)
+      } catch {
+        setFrameHeight((current) => Math.max(current, 1200))
+      }
+    }
+
+    const bindFrame = () => {
+      syncHeight()
+      try {
+        const doc = iframe.contentDocument
+        if (!doc?.body || !doc.documentElement) return
+        resizeObserver = new ResizeObserver(() => syncHeight())
+        resizeObserver.observe(doc.body)
+        resizeObserver.observe(doc.documentElement)
+        timeoutId = window.setTimeout(syncHeight, 450)
+      } catch {
+        setFrameHeight((current) => Math.max(current, 1200))
+      }
+    }
+
+    iframe.addEventListener("load", bindFrame)
+    bindFrame()
+
+    return () => {
+      iframe.removeEventListener("load", bindFrame)
+      resizeObserver?.disconnect()
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
+  }, [route])
+
+  return (
+    <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07101a] shadow-[0_28px_72px_rgba(0,0,0,0.58)]">
+      <div className="flex items-center justify-between gap-3 border-b border-white/8 bg-[#07101a] px-4 py-3">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Vista sincronizada</div>
+          <div className="mt-1 text-sm font-semibold text-white">{title}</div>
+        </div>
+        <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] text-emerald-300">
+          Usa la pagina publica real
+        </div>
+      </div>
+      <iframe
+        ref={iframeRef}
+        title={`Vista sincronizada ${title}`}
+        src={route}
+        className="block w-full bg-transparent"
+        style={{
+          border: "none",
+          height: `${viewportHeight && viewportHeight > 0 ? viewportHeight : frameHeight}px`,
+        }}
+      />
+    </div>
+  )
+}
+
 function StudioViewport({
   title,
   route,
@@ -2934,6 +3900,7 @@ function StudioViewport({
   const isDesktop = mode === "desktop"
   const isTablet = mode === "tablet"
   const isMobile = mode === "mobile"
+  const syncedProgrammaticPage = route === "/simulador" || route === "/cursos"
   // useNaturalMobileEditCanvas: only skip the iframe when the studio is *actually*
   // running on a mobile device (mobileShell). On desktop we always render mobile/tablet
   // inside a StudioPreviewFrame so CSS media-queries use the correct viewport width.
@@ -3058,6 +4025,7 @@ function StudioViewport({
     sections,
     selectedId,
     viewportMode: mode,
+    mobileShell,
     editorMode,
     onSelect,
     onPreviewNavigate,
@@ -3194,7 +4162,7 @@ function StudioViewport({
                   overflow: !useNaturalMobileEditCanvas && !useLayoutZoom ? "hidden" : undefined,
                 }}
               >
-              {showGuide && !previewMode && !isMobile && (
+              {showGuide && !previewMode && !isMobile && !syncedProgrammaticPage && (
                 <div className="mb-4 flex items-start justify-between gap-4 rounded-3xl border border-primary/20 bg-[#09111b]/92 px-4 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
                   <div className="min-w-0">
                     <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-primary">Guia rapida</div>
@@ -3229,7 +4197,9 @@ function StudioViewport({
                     transformOrigin: "top left",
                   }}
                 >
-                {isDesktop ? (
+                {syncedProgrammaticPage ? (
+                  <StudioSyncedRouteFrame title={title} route={route} viewportHeight={editorMode === "edit" ? null : viewportHeight} />
+                ) : isDesktop ? (
                   <div className={cn("flex flex-col", canvasShell)}>
                     <div className="flex items-center gap-2 border-b border-white/5 bg-[#07101a] px-4 py-2">
                       <div className="flex items-center gap-1.5">
@@ -3273,7 +4243,7 @@ function StudioViewport({
                 ) : useNaturalMobileEditCanvas ? (
                   // Real mobile device in edit mode — direct DOM, no iframe needed
                   // (CSS media queries match the real device viewport)
-                  <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07101a] shadow-[0_28px_72px_rgba(0,0,0,0.58)]">
+                  <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#07101a] shadow-[0_28px_72px_rgba(0,0,0,0.58)]" style={{ touchAction: "pan-y" }}>
                     <StudioSitePreview {...sitePreviewProps} />
                   </div>
                 ) : (
@@ -3338,6 +4308,7 @@ function SectionContentEditor({
     case "formBuilder":  return <FormBuilderEditor data={section.data} onChange={upd} />
     case "pageHero":     return <PageHeroEditor data={section.data} onChange={upd} />
     case "featureCards": return <FeatureCardsEditor data={section.data} onChange={upd} />
+    case "coursesCatalog": return <CoursesCatalogEditor data={section.data} onChange={upd} />
     case "simulatorsFeed":
     case "coursesFeed":
     case "evaluationsFeed":
@@ -3345,7 +4316,13 @@ function SectionContentEditor({
     case "pricing": case "contact":
       return (
         <div className="p-8 text-center">
-          <div className="text-4xl mb-3">{section.type === "pricing" ? "ðŸ’°" : "ðŸ“§"}</div>
+          <div className="mb-3 flex justify-center">
+            {section.type === "pricing" ? (
+              <Tag className="h-10 w-10 text-emerald-400" />
+            ) : (
+              <Globe className="h-10 w-10 text-violet-400" />
+            )}
+          </div>
           <h3 className="font-semibold text-foreground mb-2">Modulo {section.type === "pricing" ? "de Precios" : "de Contacto"}</h3>
           <p className="text-sm text-muted-foreground max-w-sm mx-auto">Este modulo se muestra automaticamente. Usa el toggle de visibilidad para mostrarlo u ocultarlo.</p>
         </div>
@@ -3380,6 +4357,7 @@ function PageSectionContentEditor({
     case "spacer":       return <SpacerEditor data={section.data} onChange={onChange} />
     case "embed":        return <EmbedEditor data={section.data} onChange={onChange} />
     case "formBuilder":  return <FormBuilderEditor data={section.data} onChange={onChange} />
+    case "coursesCatalog": return <CoursesCatalogEditor data={section.data} onChange={onChange} />
     case "simulatorsFeed":
     case "coursesFeed":
     case "evaluationsFeed":
@@ -3396,285 +4374,505 @@ function PageSectionContentEditor({
 
 function AddModal({
   onAdd,
+  onAddPreset,
   onClose,
   pageMode,
+  pageTitle,
+  pageRoute,
   viewportHeight,
 }: {
   onAdd: (type: CMSSectionType) => void
+  onAddPreset?: (preset: StudioComponentPreset) => void
   onClose: () => void
   pageMode?: boolean
+  pageTitle?: string
+  pageRoute?: string
   viewportHeight?: number | null
 }) {
   const list = pageMode ? ADDABLE_PAGE : ADDABLE
-  const [hovered, setHovered] = useState<CMSSectionType | null>(null)
-  const [detailsType, setDetailsType] = useState<CMSSectionType | null>(null)
-  const [search, setSearch] = useState("")
+  const editorPageMode: StudioEditorPageMode = pageMode ? "page" : "home"
   const [groupFilter, setGroupFilter] = useState<string>("all")
+  const [familyFilter, setFamilyFilter] = useState<string>("all")
+  const [searchQuery, setSearchQuery] = useState("")
+  const deferredSearch = useDeferredValue(searchQuery.trim().toLowerCase())
   const resolvedViewportHeight = viewportHeight ? Math.max(320, viewportHeight - 8) : null
   const mobileSheetMode = Boolean(resolvedViewportHeight && resolvedViewportHeight < 820)
+  const contentScrollRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const presets = onAddPreset ? getStudioComponentPresets(editorPageMode) : []
   const handleAdd = (type: CMSSectionType) => {
     onAdd(type)
     onClose()
   }
+  const handlePresetAdd = (preset: StudioComponentPreset) => {
+    onAddPreset?.(preset)
+    onClose()
+  }
 
-  const groups = STUDIO_BLOCK_GROUPS
-    .map((group) => ({
-      ...group,
-      types: group.types.filter((type) => list.includes(type)),
-    }))
-    .filter((group) => group.types.length > 0)
+  const groups = STUDIO_BLOCK_GROUPS.map(group => ({
+    ...group,
+    types: group.types.filter(type => list.includes(type)),
+  })).filter(group => group.types.length > 0)
 
-  const visibleTypes = groups
-    .flatMap((group) => group.types)
-    .filter((type, index, array) => array.indexOf(type) === index)
-    .filter((type) => {
-      if (groupFilter !== "all" && !groups.find((group) => group.id === groupFilter)?.types.includes(type)) {
-        return false
-      }
-      if (!search.trim()) return true
+  const availablePresetFamilies = Array.from(
+    new Set(
+      presets
+        .filter((preset) => groupFilter === "all" || preset.group === groupFilter)
+        .map((preset) => preset.family)
+        .filter((family): family is string => Boolean(family))
+    )
+  )
+
+  const matchingPresets = presets.filter((preset) => {
+    if (groupFilter !== "all" && preset.group !== groupFilter) return false
+    if (familyFilter !== "all" && preset.family !== familyFilter) return false
+    if (!deferredSearch) return true
+    const haystack = [
+      preset.family || "",
+      preset.label,
+      preset.description,
+      ...preset.tags,
+      ...preset.blocks.map((block) => block.type),
+      ...preset.blocks.map((block) => getStudioSectionMeta(block.type).label),
+    ].join(" ").toLowerCase()
+    return haystack.includes(deferredSearch)
+  })
+  const recommendedPresets = getRecommendedStudioPresets(matchingPresets, {
+    home: !pageMode,
+    route: pageRoute,
+    title: pageTitle,
+  })
+  const recommendedPresetIds = new Set(recommendedPresets.map((preset) => preset.id))
+  const remainingPresets = matchingPresets.filter((preset) => !recommendedPresetIds.has(preset.id))
+  const recommendedPresetLabel = getStudioPresetContextLabel({
+    home: !pageMode,
+    route: pageRoute,
+    title: pageTitle,
+  })
+  const presetFamilies = Array.from(new Set(matchingPresets.map((preset) => preset.family).filter((family): family is string => Boolean(family))))
+
+  const groupsWithMatches = groups.map(group => ({
+    ...group,
+    matchedTypes: group.types.filter(type => {
+      if (!deferredSearch) return true
       const meta = getStudioSectionMeta(type)
-      const haystack = `${meta.label} ${meta.desc ?? ""}`.toLowerCase()
-      return haystack.includes(search.trim().toLowerCase())
-    })
+      const profile = getLibraryCapabilities(type)
+      const haystack = [
+        type,
+        meta.label,
+        meta.desc || "",
+        group.label,
+        ...profile.tags,
+        ...profile.tools,
+        ...profile.bestFor,
+        profile.outcome,
+      ].join(" ").toLowerCase()
+      return haystack.includes(deferredSearch)
+    }),
+  }))
+  const totalMatchingTypes = Array.from(new Set(groupsWithMatches.flatMap((group) => group.matchedTypes)))
+  const visibleGroups = groupsWithMatches
+    .map(({ matchedTypes, ...group }) => ({
+      ...group,
+      types: matchedTypes,
+    }))
+    .filter((group) => groupFilter === "all" ? group.types.length > 0 : group.id === groupFilter)
+  const searchActive = deferredSearch.length > 0
+
+  useEffect(() => {
+    if (groupFilter !== "all" && !groups.some((group) => group.id === groupFilter)) {
+      setGroupFilter("all")
+    }
+  }, [groupFilter, groups])
+
+  useEffect(() => {
+    if (familyFilter !== "all" && !availablePresetFamilies.includes(familyFilter)) {
+      setFamilyFilter("all")
+    }
+  }, [familyFilter, availablePresetFamilies])
+
+  useEffect(() => {
+    const node = contentScrollRef.current
+    if (!node) return
+    node.scrollTo({ top: 0 })
+  }, [groupFilter, familyFilter, deferredSearch])
+
+  // Focus search on open
+  useEffect(() => {
+    const t = setTimeout(() => searchInputRef.current?.focus(), 120)
+    return () => clearTimeout(t)
+  }, [])
+
+  // Esc to close
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [onClose])
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-stretch justify-end bg-black/75 px-0 pb-0 pt-[max(env(safe-area-inset-top),8px)] backdrop-blur-sm sm:items-center sm:justify-center sm:p-3"
+      className="fixed inset-0 z-50 flex flex-col items-stretch justify-end bg-black/70 px-0 pb-0 pt-[max(env(safe-area-inset-top),8px)] backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
         className={cn(
-          "flex min-h-0 w-full flex-col overflow-hidden border border-border bg-card shadow-2xl",
+          "flex min-h-0 w-full flex-col overflow-hidden border border-white/[0.08] bg-[#0a1220] shadow-2xl",
           mobileSheetMode
-            ? "max-w-none rounded-t-[28px] pb-[max(env(safe-area-inset-bottom),10px)]"
-            : "max-w-[min(1440px,calc(100vw-16px))] rounded-[28px] sm:h-[min(92vh,980px)] sm:max-w-[min(1440px,calc(100vw-24px))] sm:rounded-xl"
+            ? "max-w-none rounded-t-[24px] pb-[max(env(safe-area-inset-bottom),12px)]"
+            : "max-w-[min(1080px,calc(100vw-20px))] rounded-[16px] sm:h-[min(88vh,720px)] sm:max-w-[min(1080px,calc(100vw-20px))]"
         )}
         style={{
           height: resolvedViewportHeight
-            ? `${Math.min(resolvedViewportHeight, Math.round(resolvedViewportHeight * 0.985))}px`
-            : "calc(100dvh - env(safe-area-inset-top) - 6px)",
+            ? `${Math.min(resolvedViewportHeight, Math.round(resolvedViewportHeight * 0.99))}px`
+            : "calc(100dvh - env(safe-area-inset-top) - 8px)",
           maxHeight: resolvedViewportHeight
             ? `${resolvedViewportHeight}px`
-            : "calc(100dvh - env(safe-area-inset-top) - 6px)",
+            : "calc(100dvh - env(safe-area-inset-top) - 8px)",
         }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex-shrink-0 sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-secondary/10 px-4 py-3 sm:px-6 sm:py-4">
-          <div className="min-w-0">
-            <div className="text-xs font-bold uppercase tracking-widest text-primary">Biblioteca de bloques</div>
-            <div className="hidden sm:block text-sm font-semibold text-foreground mt-0.5">Combina bloques base, plantillas y bloques dinamicos</div>
+        {/* ── Compact Header ── */}
+        <div className="flex flex-shrink-0 items-center gap-3 border-b border-white/[0.06] px-4 py-3 sm:px-5">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-primary/[0.12]">
+            <LayoutTemplate className="h-4 w-4 text-primary" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-semibold text-white">Agregar bloque o preset</div>
+            <div className="text-[11px] text-white/40">{matchingPresets.length} presets, {totalMatchingTypes.length} bloques y {groups.length} categorias</div>
+          </div>
+          <div className="relative flex-shrink-0">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/30" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Buscar bloque o preset..."
+              className="h-8 w-[160px] rounded-lg border border-white/[0.1] bg-white/[0.04] pl-8 pr-8 text-xs text-white placeholder:text-white/28 focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20 sm:w-[200px]"
+            />
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-white/40 transition-colors hover:text-white"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            ) : null}
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cerrar"
-            title="Cerrar"
-            className="flex h-10 w-10 touch-manipulation flex-shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-card/70 text-muted-foreground transition-all hover:bg-secondary hover:text-foreground"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-white/[0.1] text-white/40 transition-all hover:border-white/20 hover:text-white"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="flex-shrink-0 border-b border-border bg-secondary/5 px-3 py-3 sm:px-5 sm:py-4">
-          <div className="flex flex-col gap-2 sm:grid sm:gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-            <input
-              className={iCls}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar bloque..."
-            />
-            <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
+
+        {/* ── Body: Sidebar + Grid ── */}
+        <div className="flex min-h-0 flex-1">
+          
+          {/* Sidebar — hidden on very small mobile */}
+          <div className="hidden w-[180px] flex-shrink-0 flex-col border-r border-white/[0.06] sm:flex">
+            <div className="flex-1 overflow-y-auto p-2">
+              {/* All button */}
               <button
                 type="button"
                 onClick={() => setGroupFilter("all")}
                 className={cn(
-                  "h-9 flex-shrink-0 rounded-xl border px-3 text-xs font-semibold transition-all whitespace-nowrap touch-manipulation",
-                  groupFilter === "all" ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/30"
+                  "mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all",
+                  groupFilter === "all"
+                    ? "border border-primary/20 bg-primary/[0.1]"
+                    : "border border-transparent hover:bg-white/[0.04]"
                 )}
               >
-                Todo
+                <Layers className={cn("h-3.5 w-3.5 flex-shrink-0", groupFilter === "all" ? "text-primary" : "text-white/40")} />
+                <span className={cn("text-xs font-medium", groupFilter === "all" ? "text-white" : "text-white/55")}>Todos</span>
+                <span className={cn("ml-auto rounded-md px-1.5 py-0.5 text-[10px]", groupFilter === "all" ? "bg-primary/[0.15] text-primary/80" : "text-white/25")}>
+                  {totalMatchingTypes.length}
+                </span>
               </button>
-              {groups.map((group) => (
-                <button
-                  key={group.id}
-                  type="button"
-                  onClick={() => setGroupFilter(group.id)}
-                  className={cn(
-                    "h-9 flex-shrink-0 rounded-xl border px-3 text-xs font-semibold transition-all whitespace-nowrap touch-manipulation",
-                    groupFilter === group.id ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/30"
-                  )}
-                >
-                  {group.label}
-                </button>
-              ))}
+
+              {/* Category buttons */}
+              {groups.map((group) => {
+                const groupMeta = getStudioBlockGroupMeta(group.id)
+                const GroupIcon = groupMeta.icon
+                const matchedCount = groupsWithMatches.find((entry) => entry.id === group.id)?.matchedTypes.length ?? 0
+                const isActive = groupFilter === group.id
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => setGroupFilter(group.id)}
+                    className={cn(
+                      "mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all",
+                      isActive
+                        ? "border border-primary/20 bg-primary/[0.1]"
+                        : "border border-transparent hover:bg-white/[0.04]",
+                      matchedCount === 0 && searchActive && "opacity-40"
+                    )}
+                  >
+                    <GroupIcon className={cn("h-3.5 w-3.5 flex-shrink-0", isActive ? groupMeta.iconWrapClass.includes("text-") ? "" : "text-primary" : "text-white/40")}
+                      style={isActive ? undefined : undefined}
+                    />
+                    <span className={cn("text-xs font-medium truncate", isActive ? "text-white" : "text-white/55")}>{group.label}</span>
+                    <span className={cn("ml-auto text-[10px]", isActive ? "text-white/60" : "text-white/25")}>{matchedCount}</span>
+                  </button>
+                )
+              })}
+
+              {/* Mode badge */}
+              <div className="mt-4 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.1em] text-white/25">Modo</div>
+                <div className="mt-0.5 text-xs font-medium text-white">{pageMode ? "Pagina" : "Inicio"}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile category chips — visible only on small screens */}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-shrink-0 gap-1.5 overflow-x-auto border-b border-white/[0.06] px-3 py-2 sm:hidden">
+              <button
+                type="button"
+                onClick={() => setGroupFilter("all")}
+                className={cn(
+                  "inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-medium whitespace-nowrap",
+                  groupFilter === "all"
+                    ? "border-primary/30 bg-primary/[0.1] text-white"
+                    : "border-white/[0.06] text-white/50"
+                )}
+              >
+                <Layers className="h-3 w-3" />
+                Todos
+                <span className="text-[10px] text-white/40">{totalMatchingTypes.length}</span>
+              </button>
+              {groups.map((group) => {
+                const groupMeta = getStudioBlockGroupMeta(group.id)
+                const GroupIcon = groupMeta.icon
+                const matchedCount = groupsWithMatches.find((e) => e.id === group.id)?.matchedTypes.length ?? 0
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => setGroupFilter(group.id)}
+                    className={cn(
+                      "inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-medium whitespace-nowrap",
+                      groupFilter === group.id
+                        ? "border-primary/30 bg-primary/[0.1] text-white"
+                        : "border-white/[0.06] text-white/50",
+                      matchedCount === 0 && searchActive && "opacity-40"
+                    )}
+                  >
+                    <GroupIcon className="h-3 w-3" />
+                    {group.label}
+                    <span className="text-[10px] text-white/30">{matchedCount}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* ── Block Grid ── */}
+            <div ref={contentScrollRef} className="flex-1 min-h-0 overflow-y-auto">
+              <div className="p-3 sm:p-4 space-y-5">
+                {matchingPresets.length === 0 && totalMatchingTypes.length === 0 && visibleGroups.every(g => g.types.length === 0) ? (
+                  <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.08] px-6 py-10 text-center">
+                    <Search className="mb-3 h-10 w-10 text-white/15" />
+                    <div className="text-base font-semibold text-white">Sin resultados</div>
+                    <div className="mt-1.5 max-w-sm text-sm text-white/40">
+                      {searchActive
+                        ? `No hay presets ni bloques que coincidan con "${searchQuery.trim()}".`
+                        : "No hay presets ni bloques disponibles en esta categoria."}
+                    </div>
+                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                      {searchActive ? (
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery("")}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white/70 transition-all hover:bg-white/[0.08]"
+                        >
+                          <RefreshCw className="h-3 w-3" /> Limpiar
+                        </button>
+                      ) : null}
+                      {groupFilter !== "all" ? (
+                        <button
+                          type="button"
+                          onClick={() => setGroupFilter("all")}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white/70 transition-all hover:bg-white/[0.08]"
+                        >
+                          <Layers className="h-3 w-3" /> Ver todo
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {recommendedPresets.length > 0 ? (
+                      <div>
+                        <div className="mb-2 flex items-center gap-2 px-1">
+                          <Sparkles className="h-3 w-3 text-primary" />
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/35">Recomendados para {recommendedPresetLabel}</span>
+                          <span className="text-[10px] text-white/20">{recommendedPresets.length}</span>
+                        </div>
+                        <div className="mb-3 rounded-2xl border border-primary/15 bg-primary/[0.04] px-4 py-3 text-xs leading-5 text-white/50">
+                          Este grupo prioriza los presets mas utiles para la pagina que estas editando, para que el admin encuentre mas rapido un buen punto de partida.
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                          {recommendedPresets.map((preset) => (
+                            <StudioPresetCard key={preset.id} preset={preset} onUse={handlePresetAdd} />
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {remainingPresets.length > 0 ? (
+                      <div>
+                        <div className="mb-2 flex items-center gap-2 px-1">
+                          <Sparkles className="h-3 w-3 text-primary" />
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/35">Todos los presets</span>
+                          <span className="text-[10px] text-white/20">{remainingPresets.length}</span>
+                        </div>
+                        {availablePresetFamilies.length > 0 ? (
+                          <div className="mb-3 flex flex-wrap gap-1.5 px-1">
+                            <button
+                              type="button"
+                              onClick={() => setFamilyFilter("all")}
+                              className={cn(
+                                "rounded-full border px-2.5 py-1 text-[10px] font-medium transition-all",
+                                familyFilter === "all"
+                                  ? "border-primary/35 bg-primary/12 text-primary"
+                                  : "border-white/8 bg-white/[0.03] text-white/55 hover:border-primary/25 hover:text-white"
+                              )}
+                            >
+                              Todas las familias
+                            </button>
+                            {availablePresetFamilies.map((family) => (
+                              <button
+                                key={family}
+                                type="button"
+                                onClick={() => setFamilyFilter(family)}
+                                className={cn(
+                                  "rounded-full border px-2.5 py-1 text-[10px] font-medium transition-all",
+                                  familyFilter === family
+                                    ? "border-primary/35 bg-primary/12 text-primary"
+                                    : "border-white/8 bg-white/[0.03] text-white/55 hover:border-primary/25 hover:text-white"
+                                )}
+                              >
+                                {family}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                        {presetFamilies.length > 0 ? (
+                          <div className="mb-3 flex flex-wrap gap-1.5 px-1">
+                            {presetFamilies.slice(0, 10).map((family) => (
+                              <span key={family} className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-medium text-white/55">
+                                {family}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                          {remainingPresets.map((preset) => (
+                            <StudioPresetCard key={preset.id} preset={preset} onUse={handlePresetAdd} />
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {visibleGroups.map((group) => {
+                      const groupTypes = group.types
+                      if (!groupTypes.length) return null
+                      const groupMeta = getStudioBlockGroupMeta(group.id)
+                      const GroupIcon = groupMeta.icon
+
+                      return (
+                        <div key={group.id}>
+                          {/* Category label */}
+                          <div className="mb-2 flex items-center gap-2 px-1">
+                            <GroupIcon className={cn("h-3 w-3", groupMeta.iconWrapClass.split(" ").find(c => c.startsWith("text-")) || "text-white/40")} />
+                            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/35">{group.label}</span>
+                            <span className="text-[10px] text-white/20">{groupTypes.length}</span>
+                          </div>
+
+                          {/* Blocks grid — 3 cols desktop, 2 cols tablet, 1 col mobile */}
+                          <div className="grid grid-cols-1 gap-2 xs:grid-cols-2 lg:grid-cols-3">
+                            {groupTypes.map((type) => {
+                              const meta = getStudioSectionMeta(type)
+                              const Icon = meta.icon
+                              const profile = getLibraryCapabilities(type)
+                              const fakeSec: CMSSection = { id: `prev-${type}`, type, visible: true, data: (DEFAULTS[type] as Record<string, any>) ?? {} }
+
+                              return (
+                                <button
+                                  key={type}
+                                  type="button"
+                                  onClick={() => handleAdd(type)}
+                                  className={cn(
+                                    "group flex flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.015] text-left transition-all duration-150",
+                                    "hover:border-primary/30 hover:bg-white/[0.04] hover:shadow-lg",
+                                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+                                    "active:scale-[0.98]"
+                                  )}
+                                >
+                                  {/* Mini preview */}
+                                  <div className="relative h-[80px] border-b border-white/[0.05] bg-[#07101a]/60 overflow-hidden">
+                                    <div className="h-full w-full [&>*]:h-full">
+                                      <SectionMiniPreview section={fakeSec} />
+                                    </div>
+                                    {/* Hover overlay with + icon */}
+                                    <div className="absolute inset-0 flex items-center justify-center bg-primary/[0.06] opacity-0 transition-opacity group-hover:opacity-100">
+                                      <div className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/30 bg-primary/[0.15] text-primary">
+                                        <Plus className="h-4 w-4" />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Info */}
+                                  <div className="flex items-start gap-2.5 p-3">
+                                    <div className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-white/[0.08]", meta.color)}>
+                                      <Icon className="h-3.5 w-3.5" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-[13px] font-medium leading-tight text-white">{meta.label}</div>
+                                      <div className="mt-0.5 text-[11px] leading-snug text-white/35 line-clamp-2">
+                                        {meta.desc || profile.outcome}
+                                      </div>
+                                      <div className="mt-1.5 flex flex-wrap gap-1">
+                                        {profile.tags.slice(0, 2).map((tag) => (
+                                          <span key={tag} className="rounded border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[9px] font-medium text-white/40">
+                                            {tag}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-[calc(env(safe-area-inset-bottom)+28px)] sm:p-4">
-          <div className="space-y-5">
-            {visibleTypes.length === 0 ? (
-              <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
-                <LayoutTemplate className="h-8 w-8 text-white/20" />
-                <div className="mt-3 text-sm font-semibold text-white">Sin coincidencias en la biblioteca</div>
-                <div className="mt-2 max-w-md text-xs leading-5 text-white/45">Prueba con otra busqueda o cambia la categoria. El objetivo es que combines bloques base, secciones listas y bloques dinamicos segun tu idea.</div>
-              </div>
-            ) : (
-              groups
-                .filter((group) => groupFilter === "all" || group.id === groupFilter)
-                .map((group) => {
-                  const groupTypes = visibleTypes.filter((type) => group.types.includes(type))
-                  if (!groupTypes.length) return null
 
-                  return (
-                    <div key={group.id}>
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#7ca0cb]">{group.label}</div>
-                          <div className="mt-1 text-[11px] leading-5 text-white/40">{group.description}</div>
-                        </div>
-                        <span className="rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[10px] text-white/35">{groupTypes.length}</span>
-                      </div>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        {groupTypes.map((type) => {
-                          const meta = getStudioSectionMeta(type)
-                          const Icon = meta.icon
-                          const isHov = hovered === type
-                          const isExpanded = detailsType === type
-                          const fakeSec: CMSSection = { id: `prev-${type}`, type, visible: true, data: (DEFAULTS[type] as Record<string, any>) ?? {} }
-                          const profile = getLibraryCapabilities(type)
-
-                          return (
-                            <div
-                              key={type}
-                              onMouseEnter={() => setHovered(type)}
-                              onMouseLeave={() => setHovered(null)}
-                              className={cn(
-                                "flex h-full flex-col overflow-hidden rounded-xl border text-left transition-all",
-                                isHov
-                                  ? "border-primary shadow-[0_0_0_2px_rgba(232,57,42,0.25),0_8px_24px_rgba(0,0,0,0.2)] -translate-y-0.5"
-                                  : "border-border/70 hover:border-primary/40"
-                              )}
-                            >
-                              <div className="relative min-h-[110px] overflow-hidden bg-[#0a0d12]">
-                                <SectionMiniPreview section={fakeSec} />
-                                <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {profile.tags.slice(0, 2).map((tag) => (
-                                      <span key={tag} className="rounded-lg border border-white/10 bg-[#07101a]/85 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                                        {tag}
-                                      </span>
-                                    ))}
-                                  </div>
-                                  <span className="rounded-lg border border-primary/25 bg-black/60 px-2.5 py-1 text-[10px] font-semibold text-primary">
-                                    {group.label}
-                                  </span>
-                                </div>
-                                {isHov && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-primary/15">
-                                    <span className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-lg">
-                                      <Plus className="w-3 h-3" />
-                                      Agregar bloque
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              <div className={cn("flex flex-1 flex-col gap-3 border-t px-4 py-4 transition-colors", isHov ? "border-primary/20 bg-primary/8" : "border-border/60 bg-card")}>
-                                <div className="flex items-start gap-3">
-                                  <div className={cn("mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg transition-all", meta.color, isHov && "scale-105")}>
-                                    <Icon className="w-4 h-4" />
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-semibold leading-tight text-foreground">{meta.label}</div>
-                                    {meta.desc ? <div className="mt-1 text-[11px] leading-5 text-muted-foreground">{meta.desc}</div> : null}
-                                  </div>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {profile.tags.map((tag) => (
-                                    <span key={tag} className="rounded-lg border border-white/10 bg-secondary/20 px-2.5 py-1 text-[10px] font-medium text-white/65">
-                                      {tag}
-                                    </span>
-                                  ))}
-                                </div>
-                                <div className="rounded-lg border border-white/8 bg-[#0c1118] p-3">
-                                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7ca0cb]">Incluye</div>
-                                  <div className="mt-2 grid gap-2">
-                                    {profile.tools.map((tool) => (
-                                      <div key={tool} className="flex items-center gap-2 text-[12px] leading-5 text-white/72">
-                                        <Check className="h-3.5 w-3.5 text-primary" />
-                                        <span>{tool}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                                {isExpanded ? (
-                                  <div className="rounded-lg border border-primary/20 bg-primary/6 p-3">
-                                    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Ideal para</div>
-                                    <div className="mt-2 flex flex-wrap gap-1.5">
-                                      {profile.bestFor.map((item) => (
-                                        <span key={item} className="rounded-lg border border-primary/15 bg-black/20 px-2.5 py-1 text-[10px] font-medium text-white/75">
-                                          {item}
-                                        </span>
-                                      ))}
-                                    </div>
-                                    <div className="mt-3 text-[11px] leading-5 text-white/55">{profile.outcome}</div>
-                                  </div>
-                                ) : null}
-                                <div className="mt-auto flex gap-2 pt-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => setDetailsType((current) => current === type ? null : type)}
-                                    className={cn(
-                                      "inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold transition-all",
-                                      isExpanded
-                                        ? "border-primary/35 bg-primary/10 text-primary"
-                                        : "border-border bg-secondary/10 text-muted-foreground hover:border-primary/30 hover:text-foreground"
-                                    )}
-                                  >
-                                    {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                                    {isExpanded ? "Ocultar detalles" : "Ver detalles"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleAdd(type)}
-                                    className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary/90"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                    Agregar
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })
-            )}
+        {/* ── Compact Footer ── */}
+        <div className="flex flex-shrink-0 items-center justify-between border-t border-white/[0.06] px-4 py-2 sm:px-5">
+          <div className="flex items-center gap-2 text-[11px] text-white/30">
+            <Layers className="h-3.5 w-3.5 flex-shrink-0 text-primary/50" />
+            <span>Clic en un preset o bloque para agregarlo al canvas</span>
           </div>
-        </div>
-        {/* Footer */}
-        <div className="border-t border-border bg-secondary/5 px-4 py-3 sm:px-5">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5 text-primary/50 flex-shrink-0" />
-            <p className="text-[11px] text-muted-foreground">Explora bloques del sistema, revisa detalles antes de insertarlos y combinalos luego desde el canvas del Studio.</p>
-          </div>
-          <div className="mt-3 flex justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-11 touch-manipulation items-center justify-center rounded-2xl border border-border bg-card/60 px-4 text-sm font-medium text-foreground transition-all hover:bg-secondary"
-            >
-              Cerrar biblioteca
-            </button>
-          </div>
+          <span className="hidden text-[10px] text-white/20 sm:block">Esc para cerrar</span>
         </div>
       </div>
     </div>
   )
 }
-
-// â”€â”€â”€ Sections Tab â€” Visual Canvas Editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TabSecciones({ config, onChange, fullscreen = false }: { config: CMSConfig; onChange: (c: CMSConfig) => void; fullscreen?: boolean }) {
   const [selId, setSelId] = useState<string>(config.sections[0]?.id ?? "")
@@ -3730,7 +4928,7 @@ function TabSecciones({ config, onChange, fullscreen = false }: { config: CMSCon
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
             <div>
               <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Capas</div>
-              <div className="text-sm font-semibold text-white/80 mt-0.5">PÃ¡gina inicio</div>
+              <div className="text-sm font-semibold text-white/80 mt-0.5">Pagina inicio</div>
             </div>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/8 text-white/40">{sections.length}</span>
           </div>
@@ -3917,7 +5115,7 @@ function TabSecciones({ config, onChange, fullscreen = false }: { config: CMSCon
                   )})()}
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-white text-[15px] leading-tight">{getStudioSectionMeta(sel.type).label}</div>
-                    <div className="text-[11px] text-white/35 mt-0.5">{sel.visible ? "Visible en la pÃ¡gina" : "Bloque oculto"}</div>
+                    <div className="text-[11px] text-white/35 mt-0.5">{sel.visible ? "Visible en la pagina" : "Bloque oculto"}</div>
                   </div>
                 </div>
                 {/* Content / Style tabs */}
@@ -4004,7 +5202,7 @@ function TabSecciones({ config, onChange, fullscreen = false }: { config: CMSCon
   )
 }
 
-// â”€â”€â”€ Pages Tab â€” Visual Canvas Editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Pages Tab - Visual Canvas Editor
 
 function TabPaginas({ config, onChange, fullscreen = false }: { config: CMSConfig; onChange: (c: CMSConfig) => void; fullscreen?: boolean }) {
   const pages = config.pages ?? []
@@ -4717,17 +5915,23 @@ function TabGeneral({ config, onChange }: { config: CMSConfig; onChange: (c: CMS
 // â”€â”€â”€ Studio Icon Rail tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
+type StudioLeftTab =
+  | "pages"
+  | "layers"
+  | "components"
+  | "popups"
+  | "forms"
+  | "simulators"
+  | "assets"
+  | "navigation"
+  | "settings"
+
 const STUDIO_LEFT_TABS = [
   { id: "pages", label: "Paginas", icon: Globe },
   { id: "layers", label: "Secciones", icon: Layers },
-  { id: "components", label: "Bloques", icon: LayoutTemplate },
-  { id: "popups", label: "Ventanas", icon: MessageSquare },
-  { id: "forms", label: "Formularios", icon: FileText },
-  { id: "simulators", label: "Simuladores", icon: Target },
-  { id: "assets", label: "Recursos", icon: FileImage },
-  { id: "navigation", label: "Menu", icon: Link2 },
-  { id: "settings", label: "Configuracion", icon: Settings },
-] as const
+  { id: "components", label: "Biblioteca", icon: LayoutTemplate },
+  { id: "simulators", label: "Dinamicos", icon: Target },
+] as const satisfies ReadonlyArray<{ id: StudioLeftTab; label: string; icon: React.ElementType }>
 
 const STUDIO_INSPECTOR_TABS = [
   { id: "content", label: "Contenido", shortLabel: "Contenido", icon: Pencil },
@@ -4753,11 +5957,1714 @@ const STUDIO_BLOCK_GROUPS = [
   { id: "conversion", label: "Conversion", description: "Llamados a la accion, formularios y plantillas listas para captar registros.", types: ["hero", "pageHero", "cta", "formBuilder", "pricing", "contact"] as CMSSectionType[] },
   { id: "media", label: "Media", description: "Imagenes, galerias, video y embeds para explicar o demostrar tu propuesta.", types: ["imageText", "video", "gallery", "embed"] as CMSSectionType[] },
   { id: "trust", label: "Confianza", description: "Prueba social, beneficios, preguntas frecuentes y metricas para reforzar la pagina.", types: ["benefits", "stats", "faq", "testimonials"] as CMSSectionType[] },
-  { id: "dynamic", label: "Dinamicos", description: "Bloques conectados al admin para simuladores, cursos y evaluaciones.", types: ["simulatorsFeed", "coursesFeed", "evaluationsFeed"] as CMSSectionType[] },
+  { id: "dynamic", label: "Dinamicos", description: "Bloques conectados al admin para simuladores, catalogos de cursos y evaluaciones.", types: ["simulatorsFeed", "coursesFeed", "coursesCatalog", "evaluationsFeed"] as CMSSectionType[] },
   { id: "advanced", label: "Avanzado", description: "Widgets, iframes y codigo libre para integraciones externas.", types: ["customCode"] as CMSSectionType[] },
 ] as const
 
-type StudioLeftTab = typeof STUDIO_LEFT_TABS[number]["id"]
+type StudioBlockGroupId = typeof STUDIO_BLOCK_GROUPS[number]["id"]
+type StudioEditorPageMode = "home" | "page"
+
+type StudioPresetBlock = {
+  type: CMSSectionType
+  data?: Record<string, any>
+  style?: CMSSectionStyle
+  settings?: CMSSectionSettings
+  visible?: boolean
+}
+
+type StudioComponentPreset = {
+  id: string
+  label: string
+  description: string
+  group: StudioBlockGroupId
+  family?: string
+  tags: string[]
+  pageModes?: StudioEditorPageMode[]
+  blocks: StudioPresetBlock[]
+}
+
+function cloneStudioValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function buildStudioPresetSettings(
+  type: CMSSectionType,
+  incoming?: CMSSectionSettings
+): CMSSectionSettings | undefined {
+  const defaults = cloneStudioValue(getDefaultSectionSettings(type) ?? {})
+  const next = cloneStudioValue(incoming ?? {})
+  const merged: CMSSectionSettings = {
+    ...defaults,
+    ...next,
+    visibility: {
+      ...(defaults.visibility ?? {}),
+      ...(next.visibility ?? {}),
+    },
+    source: {
+      ...(defaults.source ?? {}),
+      ...(next.source ?? {}),
+    },
+  }
+
+  if (Object.keys(merged.visibility ?? {}).length === 0) delete merged.visibility
+  if (Object.keys(merged.source ?? {}).length === 0) delete merged.source
+
+  return Object.keys(merged).length > 0 ? merged : undefined
+}
+
+function getStudioComponentPresets(mode: StudioEditorPageMode): StudioComponentPreset[] {
+  const heroAppearance = {
+    sectionPaddingY: 104,
+    sectionPaddingX: 24,
+    titleSize: 62,
+    descriptionSize: 18,
+    glowColor: "#E8392A",
+    surfaceBg: "rgba(8, 12, 22, 0.86)",
+    surfaceBorder: "rgba(148, 163, 184, 0.16)",
+    shaderSecondaryColor: "#2D6CDF",
+    heroShellBg: "rgba(5, 10, 18, 0.74)",
+  }
+
+  const cardAppearance = {
+    sectionPaddingY: 72,
+    cardPadding: 24,
+    cardBg: "rgba(10, 16, 28, 0.72)",
+    cardBorder: "rgba(148, 163, 184, 0.12)",
+  }
+
+  const homeVariant = mode === "home"
+
+  return [
+    {
+      id: "hero-spotlight",
+      label: "Hero premium con tarjetas",
+      description: "Portada de alto impacto con CTA, panel de resultados y tarjetas cortas para abrir una pagina con presencia.",
+      group: "conversion",
+      family: "Heros",
+      tags: ["Hero", "CTA", "Impacto"],
+      blocks: [
+        {
+          type: "pageHero",
+          data: {
+            badge: homeVariant ? "INICIO PREMIUM" : "PORTADA EDITORIAL",
+            badgeIcon: "rocket",
+            accentColor: "#E8392A",
+            layout: "split",
+            titulo: "Lanza una pagina clara, moderna y lista para convertir",
+            subtitulo: "STUDIO READY",
+            descripcion: "Hero inspirado en patrones editoriales para abrir con autoridad, enfocar el mensaje y conectar acciones sin tocar codigo.",
+            features: ["Titulo fuerte", "CTA editable", "Panel derecho visible"],
+            ctaPrimario: "Comenzar ahora",
+            ctaSecundario: "Ver secciones",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryAction: { type: "page", href: homeVariant ? "/simulador" : "/" },
+            rightPanel: "stats",
+            statsTitle: "Indicadores visibles",
+            stats: [
+              { value: "15K+", label: "Usuarios activos", icon: "users", note: "base actual" },
+              { value: "98%", label: "Aprobacion promedio", icon: "award", note: "cohortes" },
+              { value: "24/7", label: "Acceso multiplataforma", icon: "monitor", note: "siempre disponible" },
+            ],
+            appearance: heroAppearance,
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+        {
+          type: "featureCards",
+          data: {
+            eyebrow: "Lo esencial arriba del fold",
+            titulo: "Tres mensajes que ordenan la portada",
+            descripcion: "Usa estas tarjetas para bajar la friccion y reforzar lo que el usuario necesita entender en segundos.",
+            columns: 3,
+            items: [
+              { id: "spotlight_1", icon: "sparkles", title: "Mensaje mas claro", description: "Resume la promesa principal sin saturar la portada.", accentColor: "#E8392A" },
+              { id: "spotlight_2", icon: "target", title: "CTA directo", description: "Conecta el flujo principal a registro, login o simulador.", accentColor: "#2D6CDF" },
+              { id: "spotlight_3", icon: "bar-chart", title: "Prueba visible", description: "Refuerza confianza con metricas y estructura profesional.", accentColor: "#10B981" },
+            ],
+            appearance: cardAppearance,
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "benefits-bento",
+      label: "Bento de beneficios",
+      description: "Combina un bloque editorial con una grilla de valor para presentar modulos, ventajas o diferenciales.",
+      group: "base",
+      family: "Features",
+      tags: ["Bento", "Beneficios", "Cards"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Propuesta de valor",
+            titulo: "Explica por que tu pagina merece atencion",
+            descripcion: "Seccion ideal para abrir una narrativa corta antes de mostrar beneficios, modulos o razones para elegir la plataforma.",
+            body: "Puedes editar este bloque como texto puro: cambia el titular, el parrafo, la lista y los botones desde el panel derecho o directo sobre el canvas.",
+            bullets: ["Copy editable", "Botones conectables", "Alineacion flexible"],
+            alignment: "center",
+            maxWidth: "xl",
+            primaryLabel: "Agregar CTA",
+            primaryHref: "/registro",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryLabel: "Ver ejemplo",
+            secondaryHref: homeVariant ? "/simulador" : "/",
+            secondaryAction: { type: "page", href: homeVariant ? "/simulador" : "/" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "featureCards",
+          data: {
+            eyebrow: "Sistema visual",
+            titulo: "Tarjetas listas para editar",
+            descripcion: "Patron inspirado en bibliotecas modernas para mostrar beneficios con mas jerarquia y mejor lectura.",
+            columns: 4,
+            items: [
+              { id: "bento_1", icon: "lightbulb", title: "Mensaje modular", description: "Cada tarjeta comunica una idea concreta.", accentColor: "#F97316" },
+              { id: "bento_2", icon: "shield", title: "Confianza visual", description: "Tarjetas limpias y consistentes en todo el sitio.", accentColor: "#22C55E" },
+              { id: "bento_3", icon: "presentation", title: "Editable en minutos", description: "Textos, iconos y acentos se ajustan sin codigo.", accentColor: "#2D6CDF" },
+              { id: "bento_4", icon: "graduation-cap", title: "Pensado para educacion", description: "Funciona bien para cursos, simuladores o landing institucional.", accentColor: "#E8392A" },
+            ],
+            appearance: cardAppearance,
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "trust-strip",
+      label: "Franja de confianza",
+      description: "Inserta logos, instituciones y metricas visibles para reforzar credibilidad en cualquier landing.",
+      group: "trust",
+      family: "Clients",
+      tags: ["Trust", "Logos", "Metricas"],
+      blocks: [
+        {
+          type: "logoStrip",
+          data: {
+            eyebrow: "Confianza visible",
+            titulo: "Instituciones, aliados y herramientas destacadas",
+            descripcion: "Puedes usar este bloque para mostrar marcas, sedes, cohortes, instituciones aliadas o productos del sistema.",
+            columns: 4,
+            items: [
+              { id: "trust_logo_1", label: "Institucion 1", subLabel: "Aliado", imageUrl: "", href: "" },
+              { id: "trust_logo_2", label: "Institucion 2", subLabel: "Cohorte", imageUrl: "", href: "" },
+              { id: "trust_logo_3", label: "Institucion 3", subLabel: "Partner", imageUrl: "", href: "" },
+              { id: "trust_logo_4", label: "Institucion 4", subLabel: "Sistema", imageUrl: "", href: "" },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "stats",
+          data: {
+            titulo: "Resultados que ayudan a decidir mas rapido",
+            items: [
+              { id: "trust_stat_1", numero: "15K+", label: "Usuarios activos", icono: "" },
+              { id: "trust_stat_2", numero: "98%", label: "Tasa de aprobacion", icono: "" },
+              { id: "trust_stat_3", numero: "24/7", label: "Acceso disponible", icono: "" },
+              { id: "trust_stat_4", numero: "2026", label: "Contenido actualizado", icono: "" },
+            ],
+          },
+          style: { bg: "dark", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "story-media",
+      label: "Historia visual con banner",
+      description: "Patron narrativo para explicar la propuesta con imagen, bullets y un cierre breve de accion.",
+      group: "media",
+      family: "Text Components",
+      tags: ["Story", "Imagen", "Narrativa"],
+      blocks: [
+        {
+          type: "imageText",
+          data: {
+            titulo: "Cuenta una historia clara con apoyo visual",
+            descripcion: "Usa una imagen del sistema, una captura o un mockup y acompana el contenido con bullets, CTA y contexto.",
+            bullets: ["Ideal para explicar el producto", "Permite ordenar ideas y ventajas", "Se adapta bien a desktop y mobile"],
+            imageUrl: "",
+            imagePosition: "right",
+            ctaLabel: "Conocer mas",
+            ctaHref: "/registro",
+            ctaAction: { type: "page", href: "/registro" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "textBanner",
+          data: {
+            subtitulo: "Mensaje corto",
+            titulo: "Cierra la idea con una frase memorable",
+            descripcion: "Banner simple para reforzar la promesa principal sin recargar la estructura.",
+            ctaLabel: "Crear cuenta",
+            ctaHref: "/registro",
+            ctaAction: { type: "page", href: "/registro" },
+            alignment: "center",
+          },
+          style: { bg: "accent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "proof-gallery",
+      label: "Galeria de evidencia",
+      description: "Deja preparada una seccion para subir capturas del sistema, certificados, resultados o material promocional.",
+      group: "media",
+      family: "Backgrounds",
+      tags: ["Galeria", "Capturas", "Evidencia"],
+      blocks: [
+        {
+          type: "gallery",
+          data: {
+            titulo: "Capturas y material visual",
+            descripcion: "Sube imagenes desde el Studio para mostrar experiencia, pantallas o evidencia del producto.",
+            columns: 3,
+            images: [
+              { id: "gallery_1", url: "", alt: "Captura 1", caption: "Reemplaza con una captura real" },
+              { id: "gallery_2", url: "", alt: "Captura 2", caption: "Edita el texto o sube otra imagen" },
+              { id: "gallery_3", url: "", alt: "Captura 3", caption: "Ideal para dashboard, cursos o simuladores" },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "form-conversion",
+      label: "Conversion con formulario",
+      description: "Inserta una seccion de captacion completa con texto de venta y formulario listo para configurar.",
+      group: "conversion",
+      family: "Calls to Action",
+      tags: ["Formulario", "Lead", "Registro"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Captacion",
+            titulo: "Convierte visitas en registros desde una sola seccion",
+            descripcion: "Estructura pensada para landing pages, cohorts o lanzamientos con un CTA directo y bullets claros.",
+            bullets: ["Formulario editable", "Campos configurables", "Mensaje de exito listo"],
+            alignment: "left",
+            maxWidth: "lg",
+            primaryLabel: "Revisar flujo",
+            primaryHref: "/registro",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryLabel: "Hablar con soporte",
+            secondaryHref: "/contacto",
+            secondaryAction: { type: "page", href: "/contacto" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "formBuilder",
+          data: {
+            badge: "Formulario",
+            titulo: "Completa este formulario",
+            descripcion: "Edita campos, textos y comportamiento desde el inspector. No necesitas programar nada.",
+            submitLabel: "Enviar formulario",
+            successTitle: "Registro recibido",
+            successMessage: "Tu informacion fue enviada correctamente.",
+            submitAction: { type: "page", href: "/registro" },
+            bullets: ["Captura leads", "Sin codigo", "Listo para publicar"],
+            fields: [
+              { id: "lead_name", type: "text", label: "Nombre completo", placeholder: "Escribe tu nombre", required: true, width: "half" },
+              { id: "lead_email", type: "email", label: "Correo", placeholder: "correo@dominio.com", required: true, width: "half" },
+              { id: "lead_role", type: "select", label: "Perfil", placeholder: "", required: true, width: "half", options: ["Docente", "Coordinacion", "Administracion"] },
+              { id: "lead_notes", type: "textarea", label: "Objetivo", placeholder: "Cuentanos que necesitas", required: false, width: "full" },
+            ],
+          },
+          style: { bg: "dark", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "faq-close",
+      label: "FAQ con cierre",
+      description: "Resuelve objeciones y termina con un CTA limpio para empujar la siguiente accion.",
+      group: "trust",
+      family: "Calls to Action",
+      tags: ["FAQ", "Objeciones", "CTA"],
+      blocks: [
+        {
+          type: "faq",
+          data: {
+            titulo: "Preguntas frecuentes",
+            descripcion: "Ajusta estas respuestas desde el admin para reducir dudas antes del clic final.",
+            items: [
+              { id: "faq_close_1", pregunta: "Puedo editar toda esta seccion sin programar?", respuesta: "Si. El Studio permite cambiar textos, botones, preguntas y estilos desde el panel." },
+              { id: "faq_close_2", pregunta: "Estos bloques funcionan en mobile?", respuesta: "Si. Los presets siguen el sistema responsive del sitio y se pueden ajustar desde el Studio." },
+              { id: "faq_close_3", pregunta: "Puedo duplicar o mover la seccion?", respuesta: "Si. Cada bloque insertado queda dentro del canvas y se puede reordenar, duplicar u ocultar." },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "cta",
+          data: {
+            titulo: "Convierte esta pagina en una experiencia lista para vender",
+            descripcion: "Bloque final para cerrar con una accion clara y una segunda alternativa.",
+            ctaPrimario: "Crear cuenta gratis",
+            ctaPrimarioHref: "/registro",
+            ctaSecundario: "Explorar sitio",
+            ctaSecundarioHref: "/",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryAction: { type: "page", href: "/" },
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+      ],
+    },
+    {
+      id: "simulators-launch",
+      label: "Lanzamiento de simuladores",
+      description: "Hero mas feed dinamico para promocionar simuladores activos conectados al admin.",
+      group: "dynamic",
+      family: "Features",
+      tags: ["Simuladores", "Feed", "Dinamico"],
+      blocks: [
+        {
+          type: "pageHero",
+          data: {
+            badge: "SIMULADORES",
+            badgeIcon: "target",
+            accentColor: "#E8392A",
+            layout: "split",
+            titulo: "Impulsa tus simuladores con una portada lista para publicar",
+            subtitulo: "BLOQUE DINAMICO",
+            descripcion: "Preset pensado para presentar simuladores filtrados, cohortes activas y una llamada principal a comenzar.",
+            features: ["Fuente automatica", "CTA conectado", "Panel con resultados"],
+            ctaPrimario: "Ver simuladores",
+            ctaSecundario: "Ir al panel",
+            primaryAction: { type: "page", href: "/simulador" },
+            secondaryAction: { type: "page", href: "/dashboard/simuladores" },
+            rightPanel: "stats",
+            statsTitle: "Datos del modulo",
+            stats: [
+              { value: "20+", label: "Intentos disponibles", icon: "clipboard-list", note: "configurable" },
+              { value: "75%", label: "Avance promedio", icon: "bar-chart", note: "editable" },
+              { value: "2026", label: "Convocatoria activa", icon: "target", note: "actualizable" },
+            ],
+            appearance: heroAppearance,
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+        {
+          type: "simulatorsFeed",
+          data: {
+            badge: "Simuladores",
+            titulo: "Simuladores conectados al admin",
+            descripcion: "Este bloque se alimenta con simuladores publicados para mantener la portada actualizada sin tocar codigo.",
+            ctaLabel: "Explorar simuladores",
+            ctaHref: "/simulador",
+            ctaAction: { type: "page", href: "/simulador" },
+          },
+          settings: {
+            source: {
+              mode: "auto",
+              order: "latest",
+              limit: 3,
+              display: "grid",
+              columns: 3,
+              showMeta: true,
+              showButton: true,
+              showBadge: true,
+            },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "courses-highlight",
+      label: "Cursos destacados",
+      description: "Seccion editorial mas feed para llevar trafico hacia cursos publicados sin mezclar codigo ni layouts.",
+      group: "dynamic",
+      family: "Features",
+      tags: ["Cursos", "Feed", "Exploracion"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Catalogo vivo",
+            titulo: "Destaca cursos publicados desde el admin",
+            descripcion: "Usa esta composicion para introducir la oferta y luego mostrar cursos dinamicos conectados al catalogo.",
+            bullets: ["Ideal para home o pagina interna", "Feed automatico", "CTA configurable"],
+            alignment: "center",
+            maxWidth: "xl",
+            primaryLabel: "Ver cursos",
+            primaryHref: "/cursos",
+            primaryAction: { type: "page", href: "/cursos" },
+            secondaryLabel: "Ir al dashboard",
+            secondaryHref: "/dashboard/cursos",
+            secondaryAction: { type: "page", href: "/dashboard/cursos" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "coursesFeed",
+          data: {
+            badge: "Cursos",
+            titulo: "Cursos listos para explorar",
+            descripcion: "Feed conectado a cursos visibles para estudiantes.",
+            ctaLabel: "Explorar cursos",
+            ctaHref: "/cursos",
+            ctaAction: { type: "page", href: "/cursos" },
+          },
+          settings: {
+            source: {
+              mode: "auto",
+              order: "latest",
+              limit: 3,
+              display: "grid",
+              columns: 3,
+              showMeta: true,
+              showButton: true,
+              showBadge: true,
+            },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "courses-catalog",
+      label: "Catalogo completo de cursos",
+      description: "Inserta un banner corto y luego el catalogo publico conectado para cursos gratis o premium.",
+      group: "dynamic",
+      family: "Docs",
+      tags: ["Catalogo", "Cursos", "Sistema"],
+      blocks: [
+        {
+          type: "textBanner",
+          data: {
+            subtitulo: "Catalogo",
+            titulo: "Muestra el catalogo completo sin salir del Studio",
+            descripcion: "Patron listo para paginas de cursos, academias o lanzamientos con filtros visibles.",
+            ctaLabel: "Administrar cursos",
+            ctaHref: "/dashboard/cursos",
+            ctaAction: { type: "page", href: "/dashboard/cursos" },
+            alignment: "center",
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "coursesCatalog",
+          data: {
+            ...cloneStudioValue(DEFAULT_PUBLIC_COURSES_HUB_CONTENT),
+            variant: homeVariant ? "home" : "page",
+            badge: "Catalogo",
+            titulo: "Catalogo publico de cursos",
+            descripcion: "Conecta categorias, filtros y cursos visibles desde el admin en una sola vista.",
+            ctaAction: { type: "page", href: "/cursos" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "evaluations-launch",
+      label: "Evaluaciones activas",
+      description: "Portada con hero y feed dinamico para diagnosticos, pruebas o evaluaciones publicadas.",
+      group: "dynamic",
+      family: "Features",
+      tags: ["Evaluaciones", "Diagnostico", "Feed"],
+      blocks: [
+        {
+          type: "pageHero",
+          data: {
+            badge: "EVALUACIONES",
+            badgeIcon: "clipboard-list",
+            accentColor: "#E8392A",
+            layout: "split",
+            titulo: "Publica evaluaciones con una estructura clara y profesional",
+            subtitulo: "DIAGNOSTICO",
+            descripcion: "Preset pensado para mostrar el objetivo de la evaluacion y luego conectar la lista publicada desde el admin.",
+            features: ["Hero editable", "Lista automatica", "CTA conectado"],
+            ctaPrimario: "Ver evaluaciones",
+            ctaSecundario: "Ir al panel",
+            primaryAction: { type: "page", href: "/dashboard/evaluaciones" },
+            secondaryAction: { type: "page", href: "/dashboard/evaluaciones" },
+            rightPanel: "stats",
+            statsTitle: "Metricas del proceso",
+            stats: [
+              { value: "12", label: "Evaluaciones listas", icon: "clipboard-list", note: "publicadas" },
+              { value: "3", label: "Niveles activos", icon: "target", note: "configurados" },
+              { value: "100%", label: "Editable desde Studio", icon: "sparkles", note: "sin codigo" },
+            ],
+            appearance: heroAppearance,
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+        {
+          type: "evaluationsFeed",
+          data: {
+            badge: "Evaluaciones",
+            titulo: "Evaluaciones conectadas al admin",
+            descripcion: "Muestra diagnosticos o pruebas activas y actualiza el bloque cuando cambie el contenido publicado.",
+            ctaLabel: "Ver evaluaciones",
+            ctaHref: "/dashboard/evaluaciones",
+            ctaAction: { type: "page", href: "/dashboard/evaluaciones" },
+          },
+          settings: {
+            source: {
+              mode: "auto",
+              order: "latest",
+              limit: 3,
+              display: "grid",
+              columns: 3,
+              showMeta: true,
+              showButton: true,
+              showBadge: true,
+            },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "embed-workspace",
+      label: "Embed con contexto",
+      description: "Prepara un espacio para mapas, dashboards, calendarios o widgets externos acompanados de copy editable.",
+      group: "media",
+      family: "Docs",
+      tags: ["Embed", "Widget", "Dashboard"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Integracion",
+            titulo: "Presenta un widget externo sin romper el diseno",
+            descripcion: "Ideal para calendarios, dashboards, mapas, tableros o herramientas embebidas dentro del sitio.",
+            bullets: ["Compatible con URL o iframe", "Mismo estilo del sitio", "Se puede mover o duplicar"],
+            alignment: "left",
+            maxWidth: "lg",
+            primaryLabel: "Configurar bloque",
+            primaryHref: "/",
+            primaryAction: { type: "page", href: "/" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "embed",
+          data: {
+            titulo: "Espacio para embed",
+            descripcion: "Pega una URL o un iframe completo y ajusta altura, orden y visibilidad desde el inspector.",
+            mode: "url",
+            url: "",
+            html: "",
+            height: 460,
+          },
+          style: { bg: "dark", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "shader-hero-center",
+      label: "Shader hero centrado",
+      description: "Preset inspirado en heroes con shaders para abrir una pagina con un titular fuerte, foco total y ritmo visual mas premium.",
+      group: "conversion",
+      family: "Shaders",
+      tags: ["Shader", "Hero", "Editorial"],
+      blocks: [
+        {
+          type: "pageHero",
+          data: {
+            badge: "SHADER HERO",
+            badgeIcon: "sparkles",
+            accentColor: "#E8392A",
+            layout: "center",
+            titulo: "Activa una portada con profundidad visual y mejor presencia",
+            subtitulo: "VISUAL SYSTEM",
+            descripcion: "Este preset usa el shell visual del sistema para lograr una cabecera mas inmersiva, con mejor percepcion de marca y CTA directo.",
+            features: ["Mensaje centrado", "Estetica premium", "Editable desde el CMS"],
+            ctaPrimario: "Publicar portada",
+            ctaSecundario: "Ver estructura",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryAction: { type: "page", href: "/" },
+            rightPanel: "none",
+            appearance: {
+              ...heroAppearance,
+              titleSize: 70,
+              descriptionSize: 19,
+              shaderSecondaryColor: "#2563EB",
+              glowColor: "#E8392A",
+            },
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+      ],
+    },
+    {
+      id: "announcement-launch",
+      label: "Anuncio con apoyo visual",
+      description: "Bloque pensado para lanzamientos, novedades o mensajes clave con una franja superior y tarjetas de soporte.",
+      group: "base",
+      family: "Announcements",
+      tags: ["Announcement", "Launch", "Banner"],
+      blocks: [
+        {
+          type: "textBanner",
+          data: {
+            subtitulo: "NOVEDAD",
+            titulo: "Comunica un anuncio importante sin recargar la portada",
+            descripcion: "Usa este bloque para noticias, cohortes, aperturas o mensajes institucionales con un CTA listo para editar.",
+            ctaLabel: "Ver detalles",
+            ctaHref: "/",
+            ctaAction: { type: "page", href: "/" },
+            alignment: "center",
+          },
+          style: { bg: "accent", padding: "md" },
+        },
+        {
+          type: "featureCards",
+          data: {
+            eyebrow: "Puntos del anuncio",
+            titulo: "Tres ideas para aterrizar la novedad",
+            descripcion: "Complementa el anuncio con beneficios, cambios o pasos para que el usuario entienda rapido que debe hacer.",
+            columns: 3,
+            items: [
+              { id: "announcement_1", icon: "sparkles", title: "Actualizacion visible", description: "Resume la novedad mas importante en una tarjeta clara.", accentColor: "#E8392A" },
+              { id: "announcement_2", icon: "timer", title: "Fecha o ventana", description: "Perfecto para cohortes, convocatorias y lanzamientos con tiempo.", accentColor: "#F59E0B" },
+              { id: "announcement_3", icon: "target", title: "Siguiente accion", description: "Cierra el anuncio con un camino evidente hacia registro o exploracion.", accentColor: "#2563EB" },
+            ],
+            appearance: cardAppearance,
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "ai-command-center",
+      label: "Asistente IA editable",
+      description: "Preset inspirado en AI chat components para presentar un asistente, explicar sus capacidades y captar la consulta desde el CMS.",
+      group: "conversion",
+      family: "AI Chat Components",
+      tags: ["AI", "Assistant", "Prompt"],
+      blocks: [
+        {
+          type: "pageHero",
+          data: {
+            badge: "ASISTENTE IA",
+            badgeIcon: "sparkles",
+            accentColor: "#2563EB",
+            layout: "center",
+            titulo: "Presenta tu asistente como una experiencia clara y confiable",
+            subtitulo: "AI READY",
+            descripcion: "Ideal para paginas de IA, soporte automatizado o herramientas de consulta guiada con una narrativa visual mas moderna.",
+            features: ["Hero editable", "Flujo conversacional", "CTA visible"],
+            ctaPrimario: "Probar asistente",
+            ctaSecundario: "Ver capacidades",
+            primaryAction: { type: "page", href: "/ia" },
+            secondaryAction: { type: "page", href: "/ia" },
+            rightPanel: "none",
+            appearance: {
+              ...heroAppearance,
+              shaderSecondaryColor: "#7C3AED",
+              glowColor: "#2563EB",
+            },
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+        {
+          type: "formBuilder",
+          data: {
+            badge: "Prompt box",
+            titulo: "Simula una entrada de consulta editable",
+            descripcion: "Usa este bloque para captar preguntas, solicitudes o prompts y conectarlo al flujo que quieras desde Acciones.",
+            submitLabel: "Enviar consulta",
+            successTitle: "Consulta enviada",
+            successMessage: "Tu solicitud fue registrada correctamente.",
+            submitAction: { type: "page", href: "/ia" },
+            bullets: ["Entrada guiada", "Sin codigo", "Conecta acciones del sistema"],
+            fields: [
+              { id: "ai_name", type: "text", label: "Nombre", placeholder: "Tu nombre", required: true, width: "half" },
+              { id: "ai_mode", type: "select", label: "Modo", placeholder: "", required: true, width: "half", options: ["Tutor", "Soporte", "Diagnostico"] },
+              { id: "ai_prompt", type: "textarea", label: "Consulta", placeholder: "Escribe aqui tu prompt o pregunta", required: true, width: "full" },
+            ],
+          },
+          style: { bg: "dark", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "cta-buttons-stack",
+      label: "CTA con enfasis en botones",
+      description: "Preset centrado en llamados a la accion, ideal para cierres, cabeceras medias o secciones de empuje comercial.",
+      group: "conversion",
+      family: "Buttons",
+      tags: ["CTA", "Buttons", "Conversion"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Conversion directa",
+            titulo: "Ordena la accion principal y deja clara la alternativa",
+            descripcion: "Patron util para cerrar modulos, destacar rutas principales y trabajar jerarquia de botones sin complicar el diseno.",
+            bullets: ["Boton primario fuerte", "Secundario de apoyo", "Copy corto y directo"],
+            alignment: "center",
+            maxWidth: "lg",
+            primaryLabel: "Comenzar ahora",
+            primaryHref: "/registro",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryLabel: "Explorar sitio",
+            secondaryHref: "/",
+            secondaryAction: { type: "page", href: "/" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "cta",
+          data: {
+            titulo: "Deja un cierre claro y profesional",
+            descripcion: "Ideal para la parte final de una landing o para introducir una accion principal en medio de la pagina.",
+            ctaPrimario: "Crear cuenta",
+            ctaPrimarioHref: "/registro",
+            ctaSecundario: "Iniciar sesion",
+            ctaSecundarioHref: "/login",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryAction: { type: "page", href: "/login" },
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+      ],
+    },
+    {
+      id: "clients-showcase",
+      label: "Clientes y aliados",
+      description: "Preset para mostrar instituciones, clientes, cohortes o aliados con una estructura mas limpia y confiable.",
+      group: "trust",
+      family: "Clients",
+      tags: ["Clients", "Logos", "Trust"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Prueba institucional",
+            titulo: "Refuerza la confianza con aliados visibles",
+            descripcion: "Antes del grid de logos, agrega contexto editorial para explicar con quien trabajas o que respalda la propuesta.",
+            alignment: "center",
+            maxWidth: "xl",
+            bullets: ["Instituciones", "Partners", "Herramientas o cohortes"],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "logoStrip",
+          data: {
+            eyebrow: "Clientes y aliados",
+            titulo: "Logos listos para reemplazar",
+            descripcion: "Carga logos o deja etiquetas mientras el equipo prepara los activos finales.",
+            columns: 5,
+            items: [
+              { id: "client_1", label: "Aliado 1", subLabel: "Institucion", imageUrl: "", href: "" },
+              { id: "client_2", label: "Aliado 2", subLabel: "Cliente", imageUrl: "", href: "" },
+              { id: "client_3", label: "Aliado 3", subLabel: "Partner", imageUrl: "", href: "" },
+              { id: "client_4", label: "Aliado 4", subLabel: "Cohorte", imageUrl: "", href: "" },
+              { id: "client_5", label: "Aliado 5", subLabel: "Sistema", imageUrl: "", href: "" },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "comparison-editorial",
+      label: "Comparacion editorial",
+      description: "Preset inspirado en bloques de comparison para explicar diferencias, mejoras o capas del sistema sin entrar en pricing.",
+      group: "base",
+      family: "Comparisons",
+      tags: ["Comparison", "Metrics", "Editorial"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Comparacion",
+            titulo: "Explica que mejora tu sistema frente al proceso tradicional",
+            descripcion: "Sirve para contrastar antes y despues, manual vs automatizado, o distintas capas del servicio sin usar planes de precios.",
+            bullets: ["Mas visibilidad", "Menos friccion operativa", "Seguimiento mas claro"],
+            alignment: "left",
+            maxWidth: "lg",
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "stats",
+          data: {
+            titulo: "Indicadores comparativos",
+            items: [
+              { id: "comparison_stat_1", numero: "3x", label: "Mas claridad operativa", icono: "" },
+              { id: "comparison_stat_2", numero: "50%", label: "Menos tiempo manual", icono: "" },
+              { id: "comparison_stat_3", numero: "24/7", label: "Disponibilidad continua", icono: "" },
+            ],
+          },
+          style: { bg: "dark", padding: "md" },
+        },
+        {
+          type: "featureCards",
+          data: {
+            eyebrow: "Capas comparadas",
+            titulo: "Tres diferencias faciles de comunicar",
+            descripcion: "Usa tarjetas para resumir la comparacion de manera visual.",
+            columns: 3,
+            items: [
+              { id: "comparison_1", icon: "bar-chart", title: "Visibilidad", description: "De reportes dispersos a una lectura clara del avance.", accentColor: "#E8392A" },
+              { id: "comparison_2", icon: "sparkles", title: "Automatizacion", description: "De tareas manuales a procesos con mejor ritmo y menos friccion.", accentColor: "#2563EB" },
+              { id: "comparison_3", icon: "shield", title: "Control", description: "De depender del seguimiento informal a una base mas ordenada.", accentColor: "#10B981" },
+            ],
+            appearance: cardAppearance,
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "docs-knowledge-stack",
+      label: "Documentacion guiada",
+      description: "Preset para centros de ayuda, paginas de soporte o documentacion ligera con texto, FAQ y un embed opcional.",
+      group: "media",
+      family: "Docs",
+      tags: ["Docs", "FAQ", "Help"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Documentacion",
+            titulo: "Construye una seccion de ayuda que el admin pueda mantener sin codigo",
+            descripcion: "Ideal para onboarding, soporte, preguntas operativas o mini centros de conocimiento dentro del sitio.",
+            body: "Puedes usar este preset para documentar procesos, explicar flujos del producto, agregar preguntas frecuentes y conectar videos, dashboards o recursos externos.",
+            bullets: ["Texto editable", "FAQ integrado", "Embed opcional"],
+            alignment: "left",
+            maxWidth: "xl",
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "faq",
+          data: {
+            titulo: "Preguntas base",
+            descripcion: "Deja preparadas respuestas rapidas para el equipo o los visitantes.",
+            items: [
+              { id: "docs_faq_1", pregunta: "Como se edita este modulo?", respuesta: "Desde el Studio puedes cambiar el copy, el orden y la visibilidad del bloque." },
+              { id: "docs_faq_2", pregunta: "Puedo agregar un video o dashboard?", respuesta: "Si. El siguiente bloque de embed te deja insertar URLs o iframes externos." },
+              { id: "docs_faq_3", pregunta: "Se puede mover a otra parte de la pagina?", respuesta: "Si. Cada bloque insertado se comporta como cualquier seccion del canvas." },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "embed",
+          data: {
+            titulo: "Recurso embebido",
+            descripcion: "Usalo para un video, tablero, calendario o recurso externo de apoyo.",
+            mode: "url",
+            url: "",
+            html: "",
+            height: 420,
+          },
+          style: { bg: "dark", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "text-editorial-stack",
+      label: "Editorial de texto",
+      description: "Preset util para secciones de storytelling, manifiesto, explicacion o narrativa larga con mejor jerarquia tipografica.",
+      group: "base",
+      family: "Text Components",
+      tags: ["Text", "Editorial", "Storytelling"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Narrativa",
+            titulo: "Crea una seccion editorial que se sienta mas cuidada y profesional",
+            descripcion: "Este patron sirve para explicar contexto, metodologia, propuesta o manifiesto con una estructura mucho mas limpia que un parrafo suelto.",
+            body: "El admin puede editar este texto como contenido largo, agregar bullets, ajustar botones y mover todo el bloque sin tocar una sola linea de codigo.",
+            bullets: ["Ideal para storytelling", "Buena jerarquia visual", "Funciona en home y paginas internas"],
+            alignment: "center",
+            maxWidth: "xl",
+            primaryLabel: "Conocer mas",
+            primaryHref: "/",
+            primaryAction: { type: "page", href: "/" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "textBanner",
+          data: {
+            subtitulo: "Cierre editorial",
+            titulo: "Remata el mensaje con una frase corta y accionable",
+            descripcion: "Buen recurso para dejar una idea final memorable antes del siguiente modulo.",
+            ctaLabel: "Continuar",
+            ctaHref: "/",
+            ctaAction: { type: "page", href: "/" },
+            alignment: "center",
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "featured-launch-grid",
+      label: "Featured launch",
+      description: "Preset destacado para abrir una seccion con narrativa corta y una grilla visual de modulos o propuestas.",
+      group: "base",
+      family: "Featured",
+      tags: ["Featured", "Launch", "Cards"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Featured block",
+            titulo: "Destaca una propuesta principal con mejor jerarquia visual",
+            descripcion: "Ideal para presentar un lanzamiento, una iniciativa o un modulo importante con una estructura mas cuidada.",
+            bullets: ["Titular claro", "Narrativa breve", "Siguiente paso visible"],
+            alignment: "center",
+            maxWidth: "xl",
+            primaryLabel: "Ver detalle",
+            primaryHref: "/",
+            primaryAction: { type: "page", href: "/" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "featureCards",
+          data: {
+            eyebrow: "Bloques destacados",
+            titulo: "Tres focos para explicar mejor el lanzamiento",
+            descripcion: "Cada tarjeta puede representar una capacidad, fase o modulo del sistema.",
+            columns: 3,
+            items: [
+              { id: "featured_1", icon: "rocket", title: "Lanzamiento", description: "Abre la propuesta con un beneficio fuerte.", accentColor: "#E8392A" },
+              { id: "featured_2", icon: "presentation", title: "Presentacion", description: "Resume el valor en una tarjeta clara y profesional.", accentColor: "#2563EB" },
+              { id: "featured_3", icon: "check-circle", title: "Accion", description: "Deja un camino evidente para continuar.", accentColor: "#10B981" },
+            ],
+            appearance: cardAppearance,
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "newest-release-stack",
+      label: "Newest release",
+      description: "Preset para mostrar novedades recientes, cambios del sistema o publicaciones recien agregadas.",
+      group: "base",
+      family: "Newest",
+      tags: ["Newest", "Updates", "Release"],
+      blocks: [
+        {
+          type: "textBanner",
+          data: {
+            subtitulo: "RECIENTE",
+            titulo: "Comunica lo mas nuevo con una banda clara y visible",
+            descripcion: "Buen patron para avisos de version, nuevas cohortes o cambios recientes del producto.",
+            ctaLabel: "Revisar cambios",
+            ctaHref: "/",
+            ctaAction: { type: "page", href: "/" },
+            alignment: "center",
+          },
+          style: { bg: "accent", padding: "md" },
+        },
+        {
+          type: "featureCards",
+          data: {
+            eyebrow: "Lo nuevo",
+            titulo: "Tres actualizaciones que vale la pena destacar",
+            descripcion: "Usa estas tarjetas para resumir mejoras recientes o novedades del sistema.",
+            columns: 3,
+            items: [
+              { id: "newest_1", icon: "sparkles", title: "Nueva experiencia", description: "Presenta un cambio importante del producto.", accentColor: "#E8392A" },
+              { id: "newest_2", icon: "bar-chart", title: "Mas visibilidad", description: "Resume mejoras en seguimiento o reportes.", accentColor: "#2563EB" },
+              { id: "newest_3", icon: "monitor", title: "Mejor acceso", description: "Explica cambios en navegacion o uso diario.", accentColor: "#10B981" },
+            ],
+            appearance: cardAppearance,
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "popular-picks-courses",
+      label: "Popular picks",
+      description: "Preset pensado para empujar lo mas visto o mas atractivo del catalogo de cursos con un tono mas comercial.",
+      group: "dynamic",
+      family: "Popular",
+      tags: ["Popular", "Cursos", "Catalogo"],
+      blocks: [
+        {
+          type: "textBanner",
+          data: {
+            subtitulo: "POPULAR",
+            titulo: "Lleva lo mas visible del catalogo al centro de la pagina",
+            descripcion: "Usa esta banda para anunciar selecciones recomendadas antes del feed de cursos.",
+            ctaLabel: "Explorar cursos",
+            ctaHref: "/cursos",
+            ctaAction: { type: "page", href: "/cursos" },
+            alignment: "center",
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "coursesFeed",
+          data: {
+            badge: "Popular",
+            titulo: "Cursos con mayor atractivo comercial",
+            descripcion: "Muestra cursos publicados y deja que el equipo edite el copy del bloque desde el Studio.",
+            ctaLabel: "Ver cursos",
+            ctaHref: "/cursos",
+            ctaAction: { type: "page", href: "/cursos" },
+          },
+          settings: {
+            source: {
+              mode: "auto",
+              order: "latest",
+              limit: 4,
+              display: "grid",
+              columns: 4,
+              showMeta: true,
+              showButton: true,
+              showBadge: true,
+            },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "testimonials-editorial-proof",
+      label: "Social proof editorial",
+      description: "Preset para reforzar confianza con cifras, logos y copy editorial, usando una composicion limpia y facil de editar.",
+      group: "trust",
+      family: "Testimonials",
+      tags: ["Testimonials", "Trust", "Proof"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Prueba social",
+            titulo: "Refuerza la credibilidad sin romper la estetica del sitio",
+            descripcion: "Aunque no uses quotes largas, puedes combinar copy, cifras y marcas para generar una seccion de confianza mas robusta.",
+            bullets: ["Contexto claro", "Cifras visibles", "Apoyo institucional"],
+            alignment: "center",
+            maxWidth: "xl",
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "stats",
+          data: {
+            titulo: "Indicadores que respaldan la propuesta",
+            items: [
+              { id: "proof_stat_1", numero: "15K+", label: "Usuarios", icono: "" },
+              { id: "proof_stat_2", numero: "98%", label: "Satisfaccion", icono: "" },
+              { id: "proof_stat_3", numero: "24/7", label: "Acceso", icono: "" },
+            ],
+          },
+          style: { bg: "dark", padding: "md" },
+        },
+        {
+          type: "logoStrip",
+          data: {
+            eyebrow: "Aliados",
+            titulo: "Marcas o instituciones que fortalecen la pagina",
+            descripcion: "Completa la prueba social con logos, cohortes o entidades vinculadas al servicio.",
+            columns: 4,
+            items: [
+              { id: "proof_logo_1", label: "Aliado 1", subLabel: "Institucion", imageUrl: "", href: "" },
+              { id: "proof_logo_2", label: "Aliado 2", subLabel: "Cliente", imageUrl: "", href: "" },
+              { id: "proof_logo_3", label: "Aliado 3", subLabel: "Partner", imageUrl: "", href: "" },
+              { id: "proof_logo_4", label: "Aliado 4", subLabel: "Cohorte", imageUrl: "", href: "" },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "landing-editorial-journey",
+      label: "Landing editorial completa",
+      description: "Recorrido listo para inicio con hero, franja de confianza, tarjetas de valor y cierre final para una portada mas ordenada.",
+      group: "conversion",
+      family: "Heros",
+      tags: ["Landing", "Inicio", "Editorial"],
+      blocks: [
+        {
+          type: "pageHero",
+          data: {
+            badge: "LANDING",
+            badgeIcon: "rocket",
+            accentColor: "#E8392A",
+            layout: "split",
+            titulo: "Construye una portada mas clara, premium y lista para convertir",
+            subtitulo: "HOME READY",
+            descripcion: "Preset pensado para la pagina principal: mensaje fuerte, confianza visible y un recorrido facil de entender sin mezclar modulos del nav.",
+            features: ["Hero mas limpio", "CTA principal", "Panel de apoyo"],
+            ctaPrimario: "Crear cuenta",
+            ctaSecundario: "Explorar modulos",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryAction: { type: "page", href: "/" },
+            rightPanel: "stats",
+            statsTitle: "Lo esencial",
+            stats: [
+              { value: "15K+", label: "Usuarios activos", icon: "users", note: "confianza" },
+              { value: "98%", label: "Aprobacion", icon: "award", note: "resultado visible" },
+              { value: "24/7", label: "Acceso", icon: "monitor", note: "siempre disponible" },
+            ],
+            appearance: heroAppearance,
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+        {
+          type: "logoStrip",
+          data: {
+            eyebrow: "Respaldo",
+            titulo: "Muestra instituciones, cohortes o herramientas del sistema",
+            descripcion: "Ideal para reforzar confianza debajo del hero sin cargar la pagina con demasiado texto.",
+            columns: 5,
+            items: [
+              { id: "landing_logo_1", label: "Institucion", subLabel: "Aliado", imageUrl: "", href: "" },
+              { id: "landing_logo_2", label: "Cohorte", subLabel: "Comunidad", imageUrl: "", href: "" },
+              { id: "landing_logo_3", label: "Herramienta", subLabel: "Sistema", imageUrl: "", href: "" },
+              { id: "landing_logo_4", label: "Campus", subLabel: "Sede", imageUrl: "", href: "" },
+              { id: "landing_logo_5", label: "Partner", subLabel: "Soporte", imageUrl: "", href: "" },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "featureCards",
+          data: {
+            eyebrow: "Recorrido principal",
+            titulo: "Tres bloques para dejar la portada mejor ordenada",
+            descripcion: "Explica rapido como el usuario avanza, que obtiene y por que confiar en la plataforma.",
+            columns: 3,
+            items: [
+              { id: "landing_card_1", icon: "sparkles", title: "Mensaje principal", description: "Aclara la propuesta de valor desde el primer scroll.", accentColor: "#E8392A" },
+              { id: "landing_card_2", icon: "target", title: "Ruta intuitiva", description: "Deja claro a donde ir despues: registro, simulador o cursos.", accentColor: "#2563EB" },
+              { id: "landing_card_3", icon: "shield", title: "Cierre profesional", description: "Termina la portada con confianza, claridad y conversion.", accentColor: "#10B981" },
+            ],
+            appearance: cardAppearance,
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "cta",
+          data: {
+            titulo: "Deja una accion final visible al terminar la portada",
+            descripcion: "Buen cierre para home: accion principal fuerte y alternativa secundaria.",
+            ctaPrimario: "Registrarse gratis",
+            ctaPrimarioHref: "/registro",
+            ctaSecundario: "Iniciar sesion",
+            ctaSecundarioHref: "/login",
+            primaryAction: { type: "page", href: "/registro" },
+            secondaryAction: { type: "page", href: "/login" },
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+      ],
+    },
+    {
+      id: "scroll-story-journey",
+      label: "Scroll story",
+      description: "Preset inspirado en scroll sections para contar una historia por etapas con contenido editorial, visual y cierre corto.",
+      group: "media",
+      family: "Scroll",
+      tags: ["Scroll", "Story", "Journey"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Recorrido",
+            titulo: "Cuenta la historia por pasos y mejora el ritmo del scroll",
+            descripcion: "Este patron funciona bien para landing, docentes, modulos internos o paginas de producto que necesitan una narrativa mas guiada.",
+            body: "Empieza con una idea fuerte, continua con apoyo visual y termina con tarjetas o un cierre corto que deje clara la siguiente accion.",
+            bullets: ["Inicio editorial", "Apoyo visual", "Cierre con estructura"],
+            alignment: "left",
+            maxWidth: "xl",
+            primaryLabel: "Seguir leyendo",
+            primaryHref: "/",
+            primaryAction: { type: "page", href: "/" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "imageText",
+          data: {
+            titulo: "Inserta una captura o escena clave en medio del recorrido",
+            descripcion: "Usa una captura de cursos, IA, simuladores o dashboard para que la historia no se vea solo como texto.",
+            bullets: ["Captura editable", "CTA opcional", "Alineacion flexible"],
+            imageUrl: "",
+            imagePosition: "left",
+            ctaLabel: "Ver modulo",
+            ctaHref: "/",
+            ctaAction: { type: "page", href: "/" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "featureCards",
+          data: {
+            eyebrow: "Lo que se lleva el usuario",
+            titulo: "Tres ideas para rematar el recorrido",
+            descripcion: "Perfecto para cerrar la historia con beneficios o pasos siguientes.",
+            columns: 3,
+            items: [
+              { id: "scroll_story_1", icon: "book-open", title: "Contexto", description: "Explica el problema o la oportunidad con claridad.", accentColor: "#E8392A" },
+              { id: "scroll_story_2", icon: "presentation", title: "Visual", description: "Aterriza la idea con una escena o captura del sistema.", accentColor: "#2563EB" },
+              { id: "scroll_story_3", icon: "check-circle", title: "Accion", description: "Termina con una conclusion concreta y facil de seguir.", accentColor: "#10B981" },
+            ],
+            appearance: cardAppearance,
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "footer-system-close",
+      label: "Footer editorial",
+      description: "Cierre visual inspirado en footers modernos usando bloques del sistema para links, soporte y mensaje final.",
+      group: "trust",
+      family: "Footer",
+      tags: ["Footer", "Cierre", "Soporte"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Cierre del sistema",
+            titulo: "Termina la pagina con una zona clara de soporte y navegacion",
+            descripcion: "Este preset sirve como cierre editorial antes del footer real, ideal para reforzar mensaje, contacto y acceso rapido.",
+            bullets: ["Mensaje final", "Recursos visibles", "Soporte claro"],
+            alignment: "left",
+            maxWidth: "xl",
+            primaryLabel: "Hablar con soporte",
+            primaryHref: "/contacto",
+            primaryAction: { type: "page", href: "/contacto" },
+            secondaryLabel: "Ver plataforma",
+            secondaryHref: "/",
+            secondaryAction: { type: "page", href: "/" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "logoStrip",
+          data: {
+            eyebrow: "Accesos y marcas",
+            titulo: "Recursos, aliados o areas del sistema",
+            descripcion: "Puedes usar esta franja como accesos cortos, bloques de soporte o ecosistema visual de la plataforma.",
+            columns: 4,
+            items: [
+              { id: "footer_1", label: "Soporte", subLabel: "Ayuda", imageUrl: "", href: "/contacto" },
+              { id: "footer_2", label: "Cursos", subLabel: "Catalogo", imageUrl: "", href: "/cursos" },
+              { id: "footer_3", label: "IA", subLabel: "Asistente", imageUrl: "", href: "/ia" },
+              { id: "footer_4", label: "Simulador", subLabel: "Practica", imageUrl: "", href: "/simulador" },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "textBanner",
+          data: {
+            subtitulo: "Soporte final",
+            titulo: "Deja una salida clara antes del footer global",
+            descripcion: "Ideal para cerrar una pagina con una ultima accion o nota importante del sistema.",
+            ctaLabel: "Ir al soporte",
+            ctaHref: "/contacto",
+            ctaAction: { type: "page", href: "/contacto" },
+            alignment: "center",
+          },
+          style: { bg: "dark", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "ia-workflow-grid",
+      label: "IA workflow",
+      description: "Preset pensado para pagina de IA con hero, capacidades y preguntas frecuentes editables desde el Studio.",
+      group: "conversion",
+      family: "AI Chat Components",
+      tags: ["IA", "Workflow", "Capabilities"],
+      blocks: [
+        {
+          type: "pageHero",
+          data: {
+            badge: "IA WORKFLOW",
+            badgeIcon: "sparkles",
+            accentColor: "#2563EB",
+            layout: "split",
+            titulo: "Presenta tu modulo de IA como una experiencia util y profesional",
+            subtitulo: "AI LAYER",
+            descripcion: "Hero listo para paginas de inteligencia artificial, tutores, diagnostico automatizado o asistentes guiados.",
+            features: ["Capacidades visibles", "CTA de prueba", "Narrativa mas clara"],
+            ctaPrimario: "Probar IA",
+            ctaSecundario: "Ver capacidades",
+            primaryAction: { type: "page", href: "/ia" },
+            secondaryAction: { type: "page", href: "/ia" },
+            rightPanel: "stats",
+            statsTitle: "Capacidades del modulo",
+            stats: [
+              { value: "24/7", label: "Disponibilidad", icon: "monitor", note: "siempre listo" },
+              { value: "3", label: "Modos de ayuda", icon: "sparkles", note: "editable" },
+              { value: "1 clic", label: "Acceso rapido", icon: "target", note: "sin friccion" },
+            ],
+            appearance: {
+              ...heroAppearance,
+              glowColor: "#2563EB",
+              shaderSecondaryColor: "#7C3AED",
+            },
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+        {
+          type: "featureCards",
+          data: {
+            eyebrow: "Capacidades",
+            titulo: "Explica que hace la IA en tres movimientos",
+            descripcion: "Una grilla clara para describir flujos, beneficios o roles del asistente.",
+            columns: 3,
+            items: [
+              { id: "ia_flow_1", icon: "lightbulb", title: "Analiza", description: "Resume informacion, diagnostica o interpreta datos rapidamente.", accentColor: "#2563EB" },
+              { id: "ia_flow_2", icon: "presentation", title: "Guia", description: "Ayuda al usuario a seguir un flujo mas ordenado.", accentColor: "#7C3AED" },
+              { id: "ia_flow_3", icon: "check-circle", title: "Acciona", description: "Conecta la respuesta con el siguiente paso del sistema.", accentColor: "#10B981" },
+            ],
+            appearance: cardAppearance,
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "faq",
+          data: {
+            titulo: "Preguntas habituales sobre el modulo IA",
+            descripcion: "Usa este bloque para aclarar alcance, uso y comportamiento del asistente.",
+            items: [
+              { id: "ia_workflow_faq_1", pregunta: "Que puede resolver este asistente?", respuesta: "Puede guiar, responder, resumir o orientar al usuario segun el flujo que definas." },
+              { id: "ia_workflow_faq_2", pregunta: "Se puede ajustar el contenido sin codigo?", respuesta: "Si. Todo el texto, CTA y estructura del preset se modifica desde el Studio." },
+              { id: "ia_workflow_faq_3", pregunta: "Sirve para soporte y estudio?", respuesta: "Si. El mismo patron funciona para tutores, FAQ inteligentes o diagnostico guiado." },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "ia-knowledge-base",
+      label: "IA knowledge base",
+      description: "Composicion orientada a documentar capacidades, casos de uso y soporte de un modulo IA dentro del CMS.",
+      group: "media",
+      family: "Docs",
+      tags: ["IA", "Docs", "Soporte"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Guia del modulo",
+            titulo: "Documenta la IA con una estructura que el admin pueda mantener",
+            descripcion: "Perfecto para explicar como usar el asistente, que cubre y que flujos estan disponibles.",
+            body: "Combina contenido editorial, preguntas frecuentes y un recurso embebido para dejar una zona de ayuda completa sin salir del CMS.",
+            bullets: ["Casos de uso", "Preguntas clave", "Recurso embebido"],
+            alignment: "left",
+            maxWidth: "xl",
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "faq",
+          data: {
+            titulo: "Base de conocimiento",
+            descripcion: "Preguntas listas para explicar el asistente o sus limitaciones.",
+            items: [
+              { id: "ia_docs_1", pregunta: "Como se usa este asistente?", respuesta: "Desde la pagina de IA o desde los accesos que conectes en el sitio." },
+              { id: "ia_docs_2", pregunta: "Puedo cambiar el tono o el objetivo?", respuesta: "Si. El contenido del modulo se ajusta desde el CMS y las acciones desde el inspector." },
+              { id: "ia_docs_3", pregunta: "Puedo insertar un video de demo?", respuesta: "Si. El siguiente bloque embed sirve para video, dashboard o guia externa." },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "embed",
+          data: {
+            titulo: "Demo o recurso IA",
+            descripcion: "Inserta una demo, dashboard, Loom o recurso externo para completar la explicacion.",
+            mode: "url",
+            url: "",
+            html: "",
+            height: 420,
+          },
+          style: { bg: "dark", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "courses-conversion-stack",
+      label: "Cursos conversion",
+      description: "Preset para llevar cursos al frente con una banda comercial, catalogo editable y cierre final listo para convertir.",
+      group: "dynamic",
+      family: "Popular",
+      tags: ["Cursos", "Conversion", "Catalogo"],
+      blocks: [
+        {
+          type: "textBanner",
+          data: {
+            subtitulo: "CURSOS",
+            titulo: "Empuja el catalogo con un mensaje comercial mas claro",
+            descripcion: "Ideal para abrir la seccion de cursos con mas jerarquia antes del catalogo o del feed.",
+            ctaLabel: "Explorar catalogo",
+            ctaHref: "/cursos",
+            ctaAction: { type: "page", href: "/cursos" },
+            alignment: "center",
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "coursesCatalog",
+          data: {
+            ...cloneStudioValue(DEFAULT_PUBLIC_COURSES_HUB_CONTENT),
+            variant: homeVariant ? "home" : "page",
+            badge: "Cursos recomendados",
+            titulo: "Catalogo conectado listo para editar",
+            descripcion: "Conecta cursos visibles, filtros y mensajes del estado vacio desde el mismo panel del CMS.",
+            ctaAction: { type: "page", href: "/cursos" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "cta",
+          data: {
+            titulo: "Cierra el modulo de cursos con una accion concreta",
+            descripcion: "Despues del catalogo, deja una salida rapida a registro, dashboard o matricula.",
+            ctaPrimario: "Ir a cursos",
+            ctaPrimarioHref: "/cursos",
+            ctaSecundario: "Entrar al dashboard",
+            ctaSecundarioHref: "/dashboard/cursos",
+            primaryAction: { type: "page", href: "/cursos" },
+            secondaryAction: { type: "page", href: "/dashboard/cursos" },
+          },
+          style: { bg: "darkDeep", padding: "lg" },
+        },
+      ],
+    },
+    {
+      id: "courses-category-launch",
+      label: "Cursos por categorias",
+      description: "Preset para presentar categorias de cursos con narrativa editorial y luego abrir el feed dinamico conectado al admin.",
+      group: "dynamic",
+      family: "Features",
+      tags: ["Cursos", "Categorias", "Feed"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Categorias visibles",
+            titulo: "Ordena el catalogo por enfoques y guia mejor la exploracion",
+            descripcion: "Sirve para dar contexto antes del listado de cursos y comunicar por que el usuario deberia explorar esta oferta.",
+            bullets: ["Narrativa inicial", "Tarjetas de apoyo", "Feed conectado"],
+            alignment: "center",
+            maxWidth: "xl",
+            primaryLabel: "Ver cursos",
+            primaryHref: "/cursos",
+            primaryAction: { type: "page", href: "/cursos" },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "featureCards",
+          data: {
+            eyebrow: "Categorias sugeridas",
+            titulo: "Tres rutas para explicar mejor la oferta academica",
+            descripcion: "Usa estas tarjetas como capas del catalogo: pedagogia, herramientas, especializacion o cualquier otra categoria.",
+            columns: 3,
+            items: [
+              { id: "course_cat_1", icon: "graduation-cap", title: "Pedagogia", description: "Cursos enfocados en practica docente y planificacion.", accentColor: "#E8392A" },
+              { id: "course_cat_2", icon: "monitor", title: "Herramientas", description: "Capacitaciones digitales y recursos para usar en clase.", accentColor: "#2563EB" },
+              { id: "course_cat_3", icon: "award", title: "Especializacion", description: "Trayectos para profundizar y fortalecer perfil profesional.", accentColor: "#10B981" },
+            ],
+            appearance: cardAppearance,
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "coursesFeed",
+          data: {
+            badge: "Cursos conectados",
+            titulo: "Cursos visibles en esta categoria",
+            descripcion: "Este bloque se actualiza con cursos publicados y mantiene el mismo tono visual del Studio.",
+            ctaLabel: "Abrir cursos",
+            ctaHref: "/cursos",
+            ctaAction: { type: "page", href: "/cursos" },
+          },
+          settings: {
+            source: {
+              mode: "auto",
+              order: "latest",
+              limit: 3,
+              display: "grid",
+              columns: 3,
+              showMeta: true,
+              showButton: true,
+              showBadge: true,
+            },
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+      ],
+    },
+    {
+      id: "animated-media-showcase",
+      label: "Animated showcase",
+      description: "Preset inspirado en secciones visuales modernas para mostrar capturas, narrativa corta y un cierre mas llamativo.",
+      group: "media",
+      family: "Animations",
+      tags: ["Animations", "Media", "Showcase"],
+      blocks: [
+        {
+          type: "richText",
+          data: {
+            eyebrow: "Showcase",
+            titulo: "Dale mas ritmo a una seccion visual sin salir del sistema",
+            descripcion: "Buen patron para destacar una experiencia, caso de uso o modulo del producto con mejor presencia.",
+            bullets: ["Imagenes o capturas", "Narrativa breve", "Cierre visual"],
+            alignment: "center",
+            maxWidth: "xl",
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "gallery",
+          data: {
+            titulo: "Escenas del sistema",
+            descripcion: "Sube capturas para crear una banda visual mas rica dentro del CMS.",
+            columns: 3,
+            images: [
+              { id: "animated_gallery_1", url: "", alt: "Escena 1", caption: "Reemplaza con una captura real" },
+              { id: "animated_gallery_2", url: "", alt: "Escena 2", caption: "Mantiene el ritmo visual de la pagina" },
+              { id: "animated_gallery_3", url: "", alt: "Escena 3", caption: "Sirve para cursos, IA o simuladores" },
+            ],
+          },
+          style: { bg: "transparent", padding: "md" },
+        },
+        {
+          type: "textBanner",
+          data: {
+            subtitulo: "Cierre visual",
+            titulo: "Remata el showcase con una accion o mensaje breve",
+            descripcion: "Ideal para acompañar la galeria con un CTA final sin romper el ritmo.",
+            ctaLabel: "Ver modulo",
+            ctaHref: "/",
+            ctaAction: { type: "page", href: "/" },
+            alignment: "center",
+          },
+          style: { bg: "dark", padding: "md" },
+        },
+      ],
+    },
+  ]
+}
+
+type StudioPresetContext = {
+  home?: boolean
+  route?: string | null
+  title?: string | null
+}
+
+function getStudioPresetContextLabel(context: StudioPresetContext) {
+  if (context.home) return "Inicio"
+
+  const route = (context.route || "").toLowerCase()
+  const title = (context.title || "").toLowerCase()
+  const haystack = `${route} ${title}`
+
+  if (haystack.includes("ia")) return "IA"
+  if (haystack.includes("curso")) return "Cursos"
+  if (haystack.includes("simul")) return "Simulador"
+  if (haystack.includes("docente")) return "Docentes EC"
+  return "esta pagina"
+}
+
+function getRecommendedStudioPresetIds(context: StudioPresetContext) {
+  if (context.home) {
+    return [
+      "landing-editorial-journey",
+      "hero-spotlight",
+      "benefits-bento",
+      "trust-strip",
+      "form-conversion",
+      "footer-system-close",
+    ]
+  }
+
+  const route = (context.route || "").toLowerCase()
+  const title = (context.title || "").toLowerCase()
+  const haystack = `${route} ${title}`
+
+  if (haystack.includes("ia")) {
+    return [
+      "ia-workflow-grid",
+      "ai-command-center",
+      "ia-knowledge-base",
+      "cta-buttons-stack",
+      "docs-knowledge-stack",
+      "testimonials-editorial-proof",
+    ]
+  }
+
+  if (haystack.includes("curso")) {
+    return [
+      "courses-conversion-stack",
+      "courses-catalog",
+      "courses-category-launch",
+      "courses-highlight",
+      "popular-picks-courses",
+      "comparison-editorial",
+    ]
+  }
+
+  if (haystack.includes("simul")) {
+    return [
+      "simulators-launch",
+      "scroll-story-journey",
+      "comparison-editorial",
+      "faq-close",
+      "announcement-launch",
+    ]
+  }
+
+  if (haystack.includes("docente")) {
+    return [
+      "featured-launch-grid",
+      "story-media",
+      "trust-strip",
+      "scroll-story-journey",
+      "testimonials-editorial-proof",
+    ]
+  }
+
+  return [
+    "hero-spotlight",
+    "benefits-bento",
+    "cta-buttons-stack",
+    "docs-knowledge-stack",
+  ]
+}
+
+function getRecommendedStudioPresets(presets: StudioComponentPreset[], context: StudioPresetContext) {
+  const recommendedIds = getRecommendedStudioPresetIds(context)
+  const presetMap = new Map(presets.map((preset) => [preset.id, preset]))
+
+  return recommendedIds
+    .map((id) => presetMap.get(id))
+    .filter((preset): preset is StudioComponentPreset => Boolean(preset))
+}
+
+const DYNAMIC_LINKED_SECTION_TYPES = ["simulatorsFeed", "coursesFeed", "coursesCatalog", "evaluationsFeed"] as const satisfies ReadonlyArray<CMSSectionType>
+
+function isDynamicLinkedSectionType(type: CMSSectionType): type is (typeof DYNAMIC_LINKED_SECTION_TYPES)[number] {
+  return (DYNAMIC_LINKED_SECTION_TYPES as readonly CMSSectionType[]).includes(type)
+}
+
 type StudioInspectorTab = typeof STUDIO_INSPECTOR_TABS[number]["id"]
 type StudioViewportMode = typeof STUDIO_DEVICES[number]["id"]
 type StudioPageRecord = {
@@ -4806,6 +7713,8 @@ function getStudioEditingTips(section: CMSSection | null) {
     case "coursesFeed":
     case "evaluationsFeed":
       return ["Edita el titulo y CTA directo sobre el canvas.", "En el inspector ajusta fuente, orden y cantidad de items."]
+    case "coursesCatalog":
+      return ["Usa este bloque para conectar la portada con el catalogo publico de cursos.", "Desde Contenido ajustas el copy y desde Acciones decides a donde va el CTA principal."]
     default:
       return ["Selecciona el bloque y usa el inspector para contenido, estilo y visibilidad."]
   }
@@ -4897,15 +7806,15 @@ function getStudioSectionOptions(sections: CMSSection[]) {
 
 function getActionSummary(action?: CMSActionConfig) {
   if (!action?.type || action.type === "none") return "Sin accion"
-  if (action.type === "popup") return `Popup · ${action.popupId || "sin seleccionar"}`
-  if (action.type === "section") return `Seccion · ${action.sectionId || "sin destino"}`
+  if (action.type === "popup") return `Popup - ${action.popupId || "sin seleccionar"}`
+  if (action.type === "section") return `Seccion - ${action.sectionId || "sin destino"}`
   if (action.type === "simulator") {
-    if (action.formMode === "section" && action.sectionId) return "Simulador · previo formulario en pagina"
-    if (action.formMode === "page" && action.formPageHref) return `Simulador · via pagina ${action.formPageHref}`
-    return action.popupId ? "Simulador · previo popup" : `Simulador · ${action.href || "sin destino"}`
+    if (action.formMode === "section" && action.sectionId) return "Simulador - previo formulario en pagina"
+    if (action.formMode === "page" && action.formPageHref) return `Simulador - via pagina ${action.formPageHref}`
+    return action.popupId ? "Simulador - previo popup" : `Simulador - ${action.href || "sin destino"}`
   }
-  if (action.type === "external") return `Externo · ${action.href || "sin URL"}`
-  return `Pagina · ${action.href || "sin destino"}`
+  if (action.type === "external") return `Externo - ${action.href || "sin URL"}`
+  return `Pagina - ${action.href || "sin destino"}`
 }
 
 function getSectionActionSummaries(section: CMSSection, config: CMSConfig) {
@@ -4926,6 +7835,7 @@ function getSectionActionSummaries(section: CMSSection, config: CMSConfig) {
     case "imageText":
     case "simulatorsFeed":
     case "coursesFeed":
+    case "coursesCatalog":
     case "evaluationsFeed":
       return [{ label: "CTA del bloque", value: getActionSummary(section.data?.ctaAction) }]
     case "formBuilder":
@@ -5764,7 +8674,6 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const [selectedSectionId, setSelectedSectionId] = useState("")
   const [showAdd, setShowAdd] = useState(false)
   const [insertIndex, setInsertIndex] = useState<number | null>(null)
-  const [componentSearch, setComponentSearch] = useState("")
   const [selectedPopupId, setSelectedPopupId] = useState("")
   const [selectedSimulatorId, setSelectedSimulatorId] = useState("")
   const [formInspectorTarget, setFormInspectorTarget] = useState<"section" | "popup" | null>(null)
@@ -5795,6 +8704,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const [htmlEl, setHtmlEl] = useState<EditorElementInfo | null>(null)
   const [htmlEditing, setHtmlEditing] = useState(false)
   const [htmlInteractionLocked, setHtmlInteractionLocked] = useState(false)
+  const [htmlInteractionKind, setHtmlInteractionKind] = useState<"move" | "resize" | "group" | null>(null)
+  const [htmlMoveArmed, setHtmlMoveArmed] = useState(false)
   const [htmlInspectorActiveTab, setHtmlInspectorActiveTab] = useState<HtmlInspectorTab>("content")
   const [selectedNavPageSlug, setSelectedNavPageSlug] = useState<string | null>(null)
   const htmlIframeRef = useRef<HTMLIFrameElement | null>(null)
@@ -5876,13 +8787,29 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   ], [config])
 
   useEffect(() => {
-    const requested = sanitizeStudioSlug(searchParams.get("page") ?? "") || "inicio"
-    const nextSlug = pages.some((page) => page.slug === requested) ? requested : "inicio"
-    setSelectedPageSlug((current) => (current === nextSlug ? current : nextSlug))
+    const currentSearch =
+      typeof window !== "undefined"
+        ? window.location.search
+        : `?${searchParams.toString()}`
+
+    const requested = sanitizeStudioSlug(new URLSearchParams(currentSearch).get("page") ?? "")
+
+    setSelectedPageSlug((current) => {
+      const fallbackSlug = pages.some((page) => page.slug === current)
+        ? current
+        : pages[0]?.slug ?? "inicio"
+      const nextSlug = requested && pages.some((page) => page.slug === requested)
+        ? requested
+        : fallbackSlug
+      return current === nextSlug ? current : nextSlug
+    })
   }, [pages, searchParams])
 
   const currentPage = pages.find((page) => page.slug === selectedPageSlug) ?? pages[0]
-  const currentSections = currentPage?.sections ?? []
+  const liveSyncedStudioPage =
+    Boolean(currentPage?.builtin) &&
+    (currentPage?.slug === "simulador" || currentPage?.slug === "cursos")
+  const currentSections = liveSyncedStudioPage ? [] : currentPage?.sections ?? []
   const selectedSection = currentSections.find((section) => section.id === selectedSectionId) ?? null
   const studioAssets = useMemo(() => getStudioAssets(currentSections), [currentSections])
   const selectedPopup = config.popups.find((popup) => popup.id === selectedPopupId) ?? config.popups[0] ?? null
@@ -5905,7 +8832,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       ? config.popups.find((popup) => popup.id === selectedPopupId && popup.type === "form") ?? null
       : null
   const selectedFeedSection =
-    simulatorInspectorTarget !== "item" && selectedSection && ["simulatorsFeed", "coursesFeed", "evaluationsFeed"].includes(selectedSection.type)
+    simulatorInspectorTarget !== "item" && selectedSection && isDynamicLinkedSectionType(selectedSection.type)
       ? selectedSection
       : null
   const selectedHtmlActionBinding = useMemo(() => {
@@ -5969,7 +8896,11 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     const syncShellMetrics = () => {
       const visualViewport = window.visualViewport
       const viewportWidth = Math.round(visualViewport?.width || window.innerWidth || 0)
-      const viewportHeight = Math.round((visualViewport?.height || window.innerHeight || 0) + (visualViewport?.offsetTop || 0))
+      const innerHeight = Math.round(window.innerHeight || 0)
+      const visualHeight = Math.round(visualViewport?.height || 0)
+      const viewportHeight = visualHeight > 0
+        ? Math.min(innerHeight > 0 ? innerHeight : visualHeight, visualHeight)
+        : innerHeight
       setShellWidth(viewportWidth > 0 ? viewportWidth : window.innerWidth)
       setMobileShellHeight(viewportHeight > 0 ? viewportHeight : null)
     }
@@ -5999,7 +8930,6 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     window.addEventListener("pageshow", queueSyncShellMetrics)
     window.addEventListener("pagehide", queueSyncShellMetrics)
     window.visualViewport?.addEventListener("resize", queueSyncShellMetrics)
-    window.visualViewport?.addEventListener("scroll", queueSyncShellMetrics)
     document.addEventListener("visibilitychange", handleVisibilitySync)
 
     return () => {
@@ -6011,7 +8941,6 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       window.removeEventListener("pageshow", queueSyncShellMetrics)
       window.removeEventListener("pagehide", queueSyncShellMetrics)
       window.visualViewport?.removeEventListener("resize", queueSyncShellMetrics)
-      window.visualViewport?.removeEventListener("scroll", queueSyncShellMetrics)
       document.removeEventListener("visibilitychange", handleVisibilitySync)
     }
   }, [])
@@ -6022,6 +8951,26 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     const handler = (e: MediaQueryListEvent) => setIsTouchDevice(e.matches)
     mq.addEventListener("change", handler)
     return () => mq.removeEventListener("change", handler)
+  }, [])
+
+  // Lock document scroll so iOS doesn't scroll the page when inputs are focused
+  useEffect(() => {
+    const html = document.documentElement
+    const body = document.body
+    const prevHtmlOverflow = html.style.overflow
+    const prevBodyOverflow = body.style.overflow
+    const prevHtmlHeight = html.style.height
+    const prevBodyHeight = body.style.height
+    html.style.overflow = 'hidden'
+    html.style.height = '100%'
+    body.style.overflow = 'hidden'
+    body.style.height = '100%'
+    return () => {
+      html.style.overflow = prevHtmlOverflow
+      html.style.height = prevHtmlHeight
+      body.style.overflow = prevBodyOverflow
+      body.style.height = prevBodyHeight
+    }
   }, [])
 
   useEffect(() => {
@@ -6114,6 +9063,29 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       setFocusRightOpen(true)
     }
   }, [focusRightOpen, htmlEditing, htmlEl, mobileStudioLayout, selectedSection?.type])
+
+  useEffect(() => {
+    if (selectedSection?.type !== "customCode") {
+      setHtmlMoveArmed(false)
+      return
+    }
+    const doc = htmlIframeRef.current?.contentDocument
+    const root = doc?.documentElement
+    if (!root) {
+      setHtmlMoveArmed(false)
+      return
+    }
+    const syncMoveArmedState = () => {
+      setHtmlMoveArmed(root.getAttribute("data-he-free-move-active") === "1")
+    }
+    syncMoveArmedState()
+    const observer = new MutationObserver(syncMoveArmedState)
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["data-he-free-move-active"],
+    })
+    return () => observer.disconnect()
+  }, [htmlEl?.eid, htmlEditing, selectedSection?.id, selectedSection?.type])
 
   useEffect(() => {
     if (selectedSection?.type !== "customCode" || !htmlEl) return
@@ -6232,7 +9204,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }, [leftTab, selectedSection])
 
   useEffect(() => {
-    if (leftTab === "simulators" && selectedSection && ["simulatorsFeed", "coursesFeed", "evaluationsFeed"].includes(selectedSection.type)) {
+    if (leftTab === "simulators" && selectedSection && isDynamicLinkedSectionType(selectedSection.type)) {
       setSimulatorInspectorTarget("feed")
     }
   }, [leftTab, selectedSection])
@@ -6333,6 +9305,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     selectedHtmlEidRef.current = nextEid
     setHtmlEl(info)
     setHtmlEditing(false)
+    setHtmlInteractionKind(null)
+    setHtmlMoveArmed(false)
     if (!info) {
       setHtmlInspectorActiveTab("content")
     }
@@ -6349,6 +9323,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   const handleHtmlEditingChange = useCallback((editing: boolean) => {
     setHtmlEditing(editing)
     if (editing) {
+      setHtmlInteractionKind(null)
+      setHtmlMoveArmed(false)
+    }
+    if (editing) {
       mobileHtmlInspectorPinnedRef.current = true
       setLeftTab("layers")
       setRightPanelCollapsed(false)
@@ -6361,8 +9339,12 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     }
   }, [effectiveFocusMode, mobileStudioLayout, studioMode])
 
-  const handleHtmlInteractionLockChange = useCallback((locked: boolean) => {
+  const handleHtmlInteractionLockChange = useCallback((locked: boolean, kind?: "move" | "resize" | "group" | null) => {
     setHtmlInteractionLocked(locked)
+    setHtmlInteractionKind(locked ? (kind ?? null) : null)
+    if (!locked && kind !== "move") {
+      setHtmlMoveArmed(false)
+    }
   }, [])
 
   const handleHtmlOpenInspector = useCallback(() => {
@@ -6381,16 +9363,26 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }, [htmlIframeRef])
 
   const triggerHtmlRuntimeToolbarAction = useCallback((tool: "group" | "edit" | "drag" | "up" | "down" | "delete") => {
+    if (tool === "edit" && mobileStudioLayout) {
+      handleHtmlOpenInspector()
+      return
+    }
     const frameDoc = htmlIframeRef.current?.contentDocument
     const button = frameDoc?.querySelector(`[data-he-runtime="toolbar"] button[data-tool="${tool}"]`) as HTMLButtonElement | null
     if (!button || button.disabled) return
     button.click()
+    if (tool === "drag") {
+      window.setTimeout(() => {
+        const moveActive = frameDoc?.documentElement?.getAttribute("data-he-free-move-active") === "1"
+        setHtmlMoveArmed(moveActive)
+      }, 0)
+    }
     if (tool === "edit") {
       window.setTimeout(() => {
         handleHtmlOpenInspector()
       }, 0)
     }
-  }, [handleHtmlOpenInspector, htmlIframeRef])
+  }, [handleHtmlOpenInspector, htmlIframeRef, mobileStudioLayout])
 
   const handleHtmlSnapshot = useCallback((nextHtml: string) => {
     if (selectedSection?.type !== "customCode") return
@@ -6447,7 +9439,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     setInsertIndex(null)
     setShowAdd(false)
     setLeftTab("layers")
-    setInspectorTab("content")
+    setInspectorTab(type === "customCode" ? "advanced" : "content")
     setRightPanelCollapsed(false)
     setSelectedSectionId(nextSection.id)
   }
@@ -6482,9 +9474,36 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     setInsertIndex(null)
     setShowAdd(false)
     setLeftTab("layers")
-    setInspectorTab("content")
+    setInspectorTab(type === "customCode" ? "advanced" : "content")
     setRightPanelCollapsed(false)
     setSelectedSectionId(nextSection.id)
+  }
+
+  const createPresetSections = (preset: StudioComponentPreset) => {
+    const sectionsToInsert = preset.blocks.map((block, index) => {
+      const defaultData = DEFAULTS[block.type] ? cloneStudioValue(DEFAULTS[block.type]) : {}
+      return {
+        id: `${block.type}_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 6)}`,
+        type: block.type,
+        visible: block.visible ?? true,
+        data: block.data ? cloneStudioValue(block.data) : defaultData,
+        style: block.style ? cloneStudioValue(block.style) : undefined,
+        settings: buildStudioPresetSettings(block.type, block.settings),
+      } satisfies CMSSection
+    })
+
+    if (sectionsToInsert.length === 0) return
+
+    const next = [...currentSections]
+    const targetIndex = insertIndex == null ? next.length : Math.max(0, Math.min(insertIndex, next.length))
+    next.splice(targetIndex, 0, ...sectionsToInsert)
+    updateActiveSections(next)
+    setInsertIndex(null)
+    setShowAdd(false)
+    setLeftTab("layers")
+    setInspectorTab(sectionsToInsert[0]?.type === "customCode" ? "advanced" : "content")
+    setRightPanelCollapsed(false)
+    setSelectedSectionId(sectionsToInsert[0]?.id ?? "")
   }
 
   const moveSection = (id: string, dir: -1 | 1) => {
@@ -6543,12 +9562,27 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }
 
   const deleteSection = (id: string) => {
-    const target = currentSections.find((section) => section.id === id)
+    const targetIndex = currentSections.findIndex((section) => section.id === id)
+    const target = targetIndex >= 0 ? currentSections[targetIndex] : null
     if (!target) return
     if (!confirm(`Eliminar el bloque "${getStudioSectionMeta(target.type).label ?? target.type}"?`)) return
     const next = currentSections.filter((section) => section.id !== id)
+    const nextSelectedId = selectedSectionId === id
+      ? next[Math.min(targetIndex, Math.max(0, next.length - 1))]?.id ?? ""
+      : selectedSectionId
+
     updateActiveSections(next)
-    if (selectedSectionId === id) setSelectedSectionId(next[0]?.id ?? "")
+    if (selectedSectionId === id) {
+      if (htmlSnapshotTimerRef.current) {
+        window.clearTimeout(htmlSnapshotTimerRef.current)
+        htmlSnapshotTimerRef.current = null
+      }
+      clearHtmlElementSelection()
+      setLeftTab("layers")
+      setRightPanelCollapsed(false)
+      setSelectedSectionId(nextSelectedId)
+      setInspectorTab(nextSelectedId ? "content" : "advanced")
+    }
   }
 
   const updateSelectedSectionData = (data: Record<string, any>) => {
@@ -7063,7 +10097,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     contentOnly?: boolean
     onlyAdvanced?: boolean
   } = {}) => (
-    <div className={cn("grid gap-1 border-b border-white/8 px-4 py-3", onlyAdvanced ? "grid-cols-1" : inspectorTabs.length === 3 ? "grid-cols-3" : "grid-cols-4")}>
+    <div className={cn("flex gap-1 border-b border-white/[0.06] px-3 py-2", onlyAdvanced ? "" : "")}>
       {(onlyAdvanced ? inspectorTabs.filter((tabItem) => tabItem.id === "advanced") : inspectorTabs).map((tabItem) => {
         const disabled = (disableAll && tabItem.id !== "advanced") || (contentOnly && tabItem.id !== "content")
         return (
@@ -7077,12 +10111,14 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             disabled={disabled}
             title={tabItem.label}
             className={cn(
-              "inline-flex min-w-0 items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-all disabled:cursor-not-allowed disabled:opacity-35",
-              inspectorTab === tabItem.id ? "bg-white/10 text-white shadow-sm" : "text-white/40 hover:text-white/70"
+              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-all disabled:cursor-not-allowed disabled:opacity-30",
+              inspectorTab === tabItem.id
+                ? "bg-primary/12 text-primary"
+                : "text-white/45 hover:text-white/70 hover:bg-white/[0.04]"
             )}
           >
             <tabItem.icon className="h-3.5 w-3.5 flex-shrink-0" />
-            <span className="truncate">{tabItem.shortLabel}</span>
+            <span className="hidden sm:inline">{tabItem.shortLabel}</span>
           </button>
         )
       })}
@@ -7090,22 +10126,18 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   )
 
   const renderCollapsedInspectorRail = () => (
-    <div className="flex h-full flex-col items-center gap-3 px-2 py-3">
+    <div className="flex h-full flex-col items-center gap-1 px-1.5 py-2">
       <button
         type="button"
         onClick={() => setRightPanelCollapsed(false)}
-        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/50 transition-all hover:border-white/20 hover:text-white"
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-white/40 transition-all hover:bg-white/[0.06] hover:text-white"
         aria-label="Abrir inspector"
         title="Abrir inspector"
       >
-        <ChevronLeft className="h-4 w-4" />
+        <ChevronLeft className="h-3.5 w-3.5" />
       </button>
 
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-[#101926] text-primary">
-        {SelectedSectionIcon ? <SelectedSectionIcon className="h-5 w-5" /> : <Pencil className="h-5 w-5" />}
-      </div>
-
-      <div className="grid w-full gap-2">
+      <div className="mt-1 grid w-full gap-1">
         {(!selectedSection ? inspectorTabs.filter((tabItem) => tabItem.id === "advanced") : inspectorTabs).map((tabItem) => (
           <button
             key={tabItem.id}
@@ -7115,26 +10147,18 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               setRightPanelCollapsed(false)
             }}
             className={cn(
-              "inline-flex h-11 w-full items-center justify-center rounded-2xl border transition-all",
+              "group relative inline-flex h-9 w-full items-center justify-center rounded-lg transition-all",
               inspectorTab === tabItem.id
-                ? "border-primary/45 bg-primary/10 text-primary"
-                : "border-white/8 bg-white/[0.03] text-white/45 hover:text-white/70"
+                ? "bg-primary/12 text-primary"
+                : "text-white/35 hover:bg-white/[0.05] hover:text-white/60"
             )}
             aria-label={tabItem.label}
             title={tabItem.label}
           >
             <tabItem.icon className="h-4 w-4" />
+            {inspectorTab === tabItem.id && <div className="absolute right-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-l-full bg-primary" />}
           </button>
         ))}
-      </div>
-
-      <div className="mt-auto text-center">
-        <div className="text-[10px] uppercase tracking-[0.24em] text-white/25">
-          {selectedSection ? "Bloque" : "Panel"}
-        </div>
-        <div className="mt-1 text-[11px] font-medium text-white/55 [writing-mode:vertical-rl] rotate-180">
-          {selectedSectionMeta?.label ?? "Inspector"}
-        </div>
       </div>
     </div>
   )
@@ -7456,18 +10480,18 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   }
 
   const renderLeftIconRail = () => (
-    <div className="flex h-full w-[64px] flex-shrink-0 flex-col items-center gap-2 border-r border-white/8 bg-[#050c16] px-2 py-3">
+    <div className="flex h-full w-[48px] flex-shrink-0 flex-col items-center gap-1 border-r border-white/[0.06] bg-[#050b14] px-1.5 py-2">
       <button
         type="button"
         onClick={() => setLeftPanelCollapsed((value) => !value)}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-white/50 transition-all hover:border-white/20 hover:text-white"
-        aria-label={leftPanelCollapsed ? "Abrir panel izquierdo" : "Colapsar panel izquierdo"}
-        title={leftPanelCollapsed ? "Abrir panel izquierdo" : "Colapsar panel izquierdo"}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-white/40 transition-all hover:bg-white/[0.06] hover:text-white"
+        aria-label={leftPanelCollapsed ? "Abrir panel" : "Cerrar panel"}
+        title={leftPanelCollapsed ? "Abrir panel" : "Cerrar panel"}
       >
-        {leftPanelCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        {leftPanelCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
       </button>
 
-      <div className="mt-2 grid w-full gap-2">
+      <div className="mt-1 grid w-full gap-1">
         {STUDIO_LEFT_TABS.map((tabItem) => (
           <button
             key={tabItem.id}
@@ -7477,16 +10501,16 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               setLeftPanelCollapsed(false)
             }}
             className={cn(
-              "inline-flex h-11 w-full flex-col items-center justify-center gap-1 rounded-2xl border transition-all",
+              "group relative inline-flex h-9 w-full items-center justify-center rounded-lg transition-all",
               leftTab === tabItem.id
-                ? "border-primary/45 bg-primary/10 text-primary"
-                : "border-white/8 bg-white/[0.03] text-white/45 hover:text-white/70"
+                ? "bg-primary/12 text-primary"
+                : "text-white/35 hover:bg-white/[0.05] hover:text-white/60"
             )}
             aria-label={tabItem.label}
             title={tabItem.label}
           >
             <tabItem.icon className="h-4 w-4" />
-            <span className="text-[10px] font-medium leading-none">{tabItem.label.slice(0, 3)}</span>
+            {leftTab === tabItem.id && <div className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-r-full bg-primary" />}
           </button>
         ))}
       </div>
@@ -7495,14 +10519,14 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const renderPagesSidebar = () => (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Paginas</div>
-          <div className="text-sm font-semibold text-white">Sitio publicado</div>
+          <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/30">Paginas</div>
+          <div className="text-[13px] font-semibold text-white">Sitio publicado</div>
         </div>
-        <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/50">{pages.length}</span>
+        <span className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-white/40">{pages.length}</span>
       </div>
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div className="flex-1 space-y-1.5 overflow-y-auto p-2.5">
         {pages.map((page) => (
           <div
             key={page.slug}
@@ -7511,46 +10535,46 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             onClick={() => activatePage(page.slug, "pages")}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") activatePage(page.slug, "pages") }}
             className={cn(
-              "group w-full cursor-pointer rounded-[24px] border px-4 py-4 text-left transition-all",
+              "group w-full cursor-pointer rounded-xl border px-3 py-2.5 text-left transition-all",
               selectedPageSlug === page.slug
-                ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]"
-                : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]"
+                ? "border-primary/50 bg-primary/[0.08]"
+                : "border-white/[0.06] bg-white/[0.02] hover:border-primary/20 hover:bg-white/[0.04]"
             )}
           >
-            <div className="flex items-start gap-3.5">
-              <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl border border-white/8 bg-[#0b1017] text-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <Globe className="h-4 w-4" />
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] bg-[#0b1017] text-white/35">
+                <Globe className="h-3.5 w-3.5" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-start gap-2">
-                  <div className="min-w-0 flex-1 line-clamp-2 text-[15px] font-semibold leading-5 text-white">{page.title}</div>
-                  {page.home && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Home</span>}
-                  {!page.home && page.showInNav !== false && <span className="rounded-full bg-emerald-500/12 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Menu</span>}
+                <div className="flex items-center gap-1.5">
+                  <div className="min-w-0 flex-1 text-[12px] font-medium text-white truncate">{page.title}</div>
+                  {page.home && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold text-primary">Home</span>}
+                  {!page.home && page.showInNav !== false && <span className="rounded bg-emerald-500/12 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300">Menu</span>}
                 </div>
-                <div className="mt-1 break-all text-[11px] leading-5 text-white/38">{page.route}</div>
+                <div className="text-[10px] text-white/30 truncate">{page.route}</div>
               </div>
             </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-              <a href={page.route} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-primary/30 hover:text-primary">
-                <ExternalLink className="h-3.5 w-3.5" />
+            <div className={cn("mt-2 flex items-center gap-1 transition-opacity", selectedPageSlug === page.slug ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
+              <a href={page.route} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()} className="inline-flex h-6 w-6 items-center justify-center rounded text-white/30 transition-all hover:bg-white/[0.08] hover:text-white/60">
+                <ExternalLink className="h-2.5 w-2.5" />
               </a>
               {!page.home && (
-                <button type="button" onClick={(event) => { event.stopPropagation(); duplicatePage(page.slug) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-white/20 hover:text-white/75">
-                  <Copy className="h-3.5 w-3.5" />
+                <button type="button" onClick={(event) => { event.stopPropagation(); duplicatePage(page.slug) }} className="inline-flex h-6 w-6 items-center justify-center rounded text-white/30 transition-all hover:bg-white/[0.08] hover:text-white/60">
+                  <Copy className="h-2.5 w-2.5" />
                 </button>
               )}
               {!page.home && (
-                <button type="button" onClick={(event) => { event.stopPropagation(); deletePage(page.slug) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-red-400/35 hover:text-red-400">
-                  <Trash2 className="h-3.5 w-3.5" />
+                <button type="button" onClick={(event) => { event.stopPropagation(); deletePage(page.slug) }} className="inline-flex h-6 w-6 items-center justify-center rounded text-white/30 transition-all hover:bg-red-500/10 hover:text-red-400">
+                  <Trash2 className="h-2.5 w-2.5" />
                 </button>
               )}
             </div>
           </div>
         ))}
       </div>
-      <div className="border-t border-white/8 p-4">
-        <button type="button" onClick={() => setShowNewPage(true)} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 bg-white/[0.03] text-sm font-semibold text-white/55 transition-all hover:border-primary/40 hover:text-primary">
-          <Plus className="h-4 w-4" />
+      <div className="border-t border-white/[0.06] p-2.5">
+        <button type="button" onClick={() => setShowNewPage(true)} className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-white/[0.08] bg-white/[0.02] text-[12px] font-medium text-white/45 transition-all hover:border-primary/30 hover:text-primary">
+          <Plus className="h-3.5 w-3.5" />
           Nueva pagina
         </button>
       </div>
@@ -7559,39 +10583,38 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   const renderLayersSidebar = () => (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Secciones</div>
-            <div className="text-sm font-semibold text-white">{currentPageTitle}</div>
+            <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/30">Secciones</div>
+            <div className="text-[13px] font-semibold text-white">{currentPageTitle}</div>
           </div>
-        <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/50">{currentSections.length}</span>
+        <span className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold text-white/40">{currentSections.length}</span>
       </div>
-      <div className="border-b border-white/8 px-4 py-3">
+      <div className="border-b border-white/[0.06] px-3 py-2.5">
         <button
           type="button"
           onClick={() => {
             setInsertIndex(null)
             setShowAdd(true)
           }}
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-[20px] bg-primary text-sm font-semibold text-white transition-all hover:bg-primary/90 shadow-[0_14px_30px_rgba(232,57,42,0.18)]"
+          className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-primary text-[12px] font-semibold text-white transition-all hover:bg-primary/90 shadow-[0_8px_20px_rgba(232,57,42,0.15)]"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-3.5 w-3.5" />
           Agregar bloque
         </button>
       </div>
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div className="flex-1 space-y-1.5 overflow-y-auto p-2.5">
         {currentSections.length === 0 ? (
-          <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
-            <LayoutTemplate className="h-8 w-8 text-white/20" />
-            <div className="text-sm font-semibold text-white">Sin bloques</div>
-            <div className="text-xs text-white/45">Agrega el primer bloque para empezar a editar esta pagina.</div>
+          <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/[0.08] bg-white/[0.02] px-4 text-center">
+            <LayoutTemplate className="h-7 w-7 text-white/15" />
+            <div className="text-[13px] font-semibold text-white">Sin bloques</div>
+            <div className="text-[11px] text-white/35">Agrega el primer bloque para empezar.</div>
           </div>
         ) : (
           currentSections.map((section, index) => {
             const meta = getStudioSectionMeta(section.type)
             const Icon = meta?.icon ?? LayoutTemplate
             const active = selectedSectionId === section.id
-            const children = getStudioLayerChildren(section, config)
             return (
               <div
                 key={section.id}
@@ -7641,100 +10664,47 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   }
                 }}
                 className={cn(
-                  "group w-full cursor-pointer rounded-[24px] border px-4 py-4 text-left transition-all",
-                  active ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]" : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]",
-                  !section.visible && "opacity-60",
-                  draggingSectionId === section.id && "opacity-40",
-                  dropTargetId === section.id && draggingSectionId !== section.id && "border-primary/45 bg-primary/[0.08]"
+                  "group w-full cursor-pointer rounded-xl border text-left transition-all",
+                  active ? "border-primary/50 bg-primary/[0.08] shadow-[0_0_0_1px_rgba(232,57,42,0.1)]" : "border-white/[0.06] bg-white/[0.02] hover:border-primary/20 hover:bg-white/[0.04]",
+                  !section.visible && "opacity-50",
+                  draggingSectionId === section.id && "opacity-30",
+                  dropTargetId === section.id && draggingSectionId !== section.id && "border-primary/40 bg-primary/[0.06]"
                 )}
               >
-                <div className="flex items-start gap-3.5">
-                  <div className={cn("mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]", meta?.color ?? "bg-white/5 text-white/40")}>
-                    <Icon className="h-4 w-4" />
+                {/* Compact card layout */}
+                <div className="flex items-center gap-2 px-2.5 py-2">
+                  <div className="cursor-grab text-white/20 active:cursor-grabbing">
+                    <GripVertical className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-white/[0.06] px-1 text-[9px] font-bold text-white/35">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <div className={cn("flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg", meta?.color ?? "bg-white/5 text-white/40")}>
+                    <Icon className="h-3 w-3" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="line-clamp-2 text-[15px] font-semibold leading-5 text-white">{meta?.label ?? section.type}</div>
-                        <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/30">Bloque {index + 1}</div>
-                      </div>
-                      {!section.visible && <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] text-white/50">Oculto</span>}
-                    </div>
-                    {children.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {children.slice(0, 3).map((child, childIndex) => (
-                          <span
-                            key={`${section.id}-${childIndex}`}
-                            className="max-w-full rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[11px] leading-4 text-white/55"
-                          >
-                            <span className="line-clamp-1">{child}</span>
-                          </span>
-                        ))}
-                        {children.length > 3 ? (
-                          <span className="rounded-full border border-primary/20 bg-primary/8 px-2.5 py-1 text-[11px] font-medium text-primary/85">
-                            +{children.length - 3} mas
-                          </span>
-                        ) : null}
-                      </div>
-                    )}
+                    <div className="text-[12px] font-medium text-white leading-tight truncate">{meta?.label ?? section.type}</div>
+                    {meta?.desc ? <div className="text-[10px] text-white/30 truncate leading-tight">{meta.desc}</div> : null}
+                  </div>
+                  {!section.visible && (
+                    <EyeOff className="h-3 w-3 flex-shrink-0 text-white/25" />
+                  )}
+                </div>
+
+                {/* Inline toolbar - only visible on active/hover */}
+                <div className={cn(
+                  "flex items-center justify-between border-t px-2 py-1 transition-all",
+                  active ? "border-primary/15" : "border-white/[0.04] opacity-0 group-hover:opacity-100"
+                )}>
+                  <div className="flex items-center gap-0.5">
+                    <button type="button" title="Subir" disabled={index === 0} onClick={(event) => { event.stopPropagation(); moveSection(section.id, -1) }} className="inline-flex h-6 w-6 items-center justify-center rounded text-white/30 transition-all hover:bg-white/[0.08] hover:text-white/60 disabled:opacity-15"><ArrowUp className="h-2.5 w-2.5" /></button>
+                    <button type="button" title="Bajar" disabled={index === currentSections.length - 1} onClick={(event) => { event.stopPropagation(); moveSection(section.id, 1) }} className="inline-flex h-6 w-6 items-center justify-center rounded text-white/30 transition-all hover:bg-white/[0.08] hover:text-white/60 disabled:opacity-15"><ArrowDown className="h-2.5 w-2.5" /></button>
+                    <div className="mx-0.5 h-3 w-px bg-white/[0.06]" />
+                    <button type="button" title={section.visible ? "Ocultar" : "Mostrar"} onClick={(event) => { event.stopPropagation(); toggleSectionVisibility(section.id) }} className="inline-flex h-6 w-6 items-center justify-center rounded text-white/30 transition-all hover:bg-primary/10 hover:text-white/60">{section.visible ? <Eye className="h-2.5 w-2.5" /> : <EyeOff className="h-2.5 w-2.5" />}</button>
+                    <button type="button" title="Duplicar" onClick={(event) => { event.stopPropagation(); duplicateSectionInPage(section.id) }} className="inline-flex h-6 w-6 items-center justify-center rounded text-white/30 transition-all hover:bg-white/[0.08] hover:text-white/60"><Copy className="h-2.5 w-2.5" /></button>
+                    {meta?.deletable && <button type="button" title="Eliminar" onClick={(event) => { event.stopPropagation(); deleteSection(section.id) }} className="inline-flex h-6 w-6 items-center justify-center rounded text-white/30 transition-all hover:bg-red-500/10 hover:text-red-400"><Trash2 className="h-2.5 w-2.5" /></button>}
                   </div>
                 </div>
-                {showMobileButtons ? (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      disabled={index === 0}
-                      onClick={(event) => { event.stopPropagation(); moveSection(section.id, -1) }}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] text-xs font-semibold text-white/68 transition-all hover:border-white/20 hover:text-white disabled:opacity-30"
-                    >
-                      <ArrowUp className="h-3.5 w-3.5" />
-                      Subir
-                    </button>
-                    <button
-                      type="button"
-                      disabled={index === currentSections.length - 1}
-                      onClick={(event) => { event.stopPropagation(); moveSection(section.id, 1) }}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] text-xs font-semibold text-white/68 transition-all hover:border-white/20 hover:text-white disabled:opacity-30"
-                    >
-                      <ArrowDown className="h-3.5 w-3.5" />
-                      Bajar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => { event.stopPropagation(); toggleSectionVisibility(section.id) }}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] text-xs font-semibold text-white/68 transition-all hover:border-primary/30 hover:text-white"
-                    >
-                      {section.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                      {section.visible ? "Visible" : "Oculto"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => { event.stopPropagation(); duplicateSectionInPage(section.id) }}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] text-xs font-semibold text-white/68 transition-all hover:border-white/20 hover:text-white"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                      Duplicar
-                    </button>
-                    {meta?.deletable ? (
-                      <button
-                        type="button"
-                        onClick={(event) => { event.stopPropagation(); deleteSection(section.id) }}
-                        className="col-span-2 inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-red-400/20 bg-red-500/[0.08] text-xs font-semibold text-red-300 transition-all hover:bg-red-500/[0.14]"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Eliminar bloque
-                      </button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className={cn("mt-4 flex flex-wrap items-center gap-2 transition-opacity", active ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100")}>
-                    <button type="button" title="Subir bloque" disabled={index === 0} onClick={(event) => { event.stopPropagation(); moveSection(section.id, -1) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-white/20 hover:text-white/75 disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button>
-                    <button type="button" title="Bajar bloque" disabled={index === currentSections.length - 1} onClick={(event) => { event.stopPropagation(); moveSection(section.id, 1) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-white/20 hover:text-white/75 disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button>
-                    <button type="button" title={section.visible ? "Ocultar bloque" : "Mostrar bloque"} onClick={(event) => { event.stopPropagation(); toggleSectionVisibility(section.id) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-primary/30 hover:text-white/75">{section.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}</button>
-                    <button type="button" title="Duplicar bloque" onClick={(event) => { event.stopPropagation(); duplicateSectionInPage(section.id) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-white/20 hover:text-white/75"><Copy className="h-3.5 w-3.5" /></button>
-                    {meta?.deletable && <button type="button" title="Eliminar bloque" onClick={(event) => { event.stopPropagation(); deleteSection(section.id) }} className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/8 bg-white/[0.03] text-white/42 transition-all hover:border-red-400/35 hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>}
-                  </div>
-                )}
               </div>
             )
           })
@@ -7742,7 +10712,6 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       </div>
     </div>
   )
-
   const renderNavigationSidebar = () => {
     const allPages = config.pages ?? []
     const manualItems = config.nav.items
@@ -7757,6 +10726,11 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     const hiddenPages = allPages.filter(p => p.showInNav === false)
     const manualHrefSet = new Set(manualItems.map((item) => normalizeNavHref(item.href)))
     const autoNavPages = navPages.filter((page) => !manualHrefSet.has(normalizeNavHref(`/${page.slug}`)))
+    const findPageByHref = (href: string) => {
+      const normalizedHref = normalizeNavHref(href)
+      if (!normalizedHref || /^https?:\/\//i.test(normalizedHref) || normalizedHref.startsWith("#")) return null
+      return allPages.find((page) => normalizeNavHref(`/${page.slug}`) === normalizedHref) ?? null
+    }
     const combinedEntries = [
       ...manualItems.map((item, index) => ({
         key: item.id || `manual-${index}`,
@@ -7767,7 +10741,16 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         kind: "Manual" as const,
         icon: Link2,
         onClick: () => {
+          const linkedPage = findPageByHref(item.href)
+          if (linkedPage) {
+            setSelectedNavPageSlug(null)
+            setInspectorTab("content")
+            if (!mobileStudioLayout) setRightPanelCollapsed(false)
+            activatePage(linkedPage.slug, "layers")
+            return
+          }
           setSelectedNavPageSlug(null)
+          setLeftTab("navigation")
           setInspectorTab("content")
           if (mobileStudioLayout) setFocusRightOpen(true)
         },
@@ -7781,9 +10764,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         kind: "En menu" as const,
         icon: Globe,
         onClick: () => {
-          setSelectedNavPageSlug(page.slug)
+          setSelectedNavPageSlug(null)
           setInspectorTab("content")
-          if (mobileStudioLayout) setFocusRightOpen(true)
+          if (!mobileStudioLayout) setRightPanelCollapsed(false)
+          activatePage(page.slug, "layers")
         },
       })),
     ]
@@ -7795,7 +10779,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Menu</div>
           <div className="text-sm font-semibold text-white">Menu del sitio</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-0.5 text-[11px] font-semibold text-white/50">{totalInNav} en nav</span>
           <button
             type="button"
@@ -7815,7 +10799,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             <button
               type="button"
               onClick={() => { setInspectorTab("content"); if (mobileStudioLayout) setFocusRightOpen(true) }}
-              className="flex items-center gap-1 rounded-lg border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-white/45 hover:border-primary/30 hover:text-white transition-all"
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[10px] font-semibold whitespace-nowrap text-white/45 transition-all hover:border-primary/30 hover:text-white"
             >
               <Plus className="h-3 w-3" />
               Agregar link
@@ -7829,23 +10813,25 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 key={entry.key}
                 type="button"
                 onClick={entry.onClick}
-                className="flex w-full items-start gap-3 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-3.5 text-left transition-all hover:border-primary/30 hover:bg-white/[0.05]"
+                className="flex w-full min-w-0 items-start gap-3 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-3.5 text-left transition-all hover:border-primary/30 hover:bg-white/[0.05]"
               >
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-[#0b1017] text-white/35">
                   <Icon className="h-3.5 w-3.5" />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-start gap-1.5">
-                    <span className="min-w-0 flex-1 line-clamp-2 text-[15px] font-semibold leading-5 text-white">{entry.label}</span>
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <div className="truncate text-[15px] font-semibold leading-5 text-white" title={entry.label}>
+                    {entry.label}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                      entry.kind === "Manual" ? "bg-emerald-500/12 text-emerald-300" : "bg-primary/12 text-primary"
+                    )}>{entry.kind}</span>
                     {entry.badge && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-primary">{entry.badge}</span>}
                     {entry.external && <span className="rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-blue-300">ext</span>}
                   </div>
-                  <div className="mt-1 break-all text-[11px] leading-5 text-white/32">{entry.href}</div>
+                  <div className="mt-2 truncate text-[11px] leading-5 text-white/32" title={entry.href}>{entry.href}</div>
                 </div>
-                <span className={cn(
-                  "flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                  entry.kind === "Manual" ? "bg-emerald-500/12 text-emerald-300" : "bg-primary/12 text-primary"
-                )}>{entry.kind}</span>
               </button>
             )})}
             {combinedEntries.length === 0 && (
@@ -7865,27 +10851,30 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   key={`nav-hidden-${page.slug}`}
                   type="button"
                   onClick={() => {
-                    setSelectedNavPageSlug(page.slug)
+                    setSelectedNavPageSlug(null)
                     setInspectorTab("content")
-                    if (mobileStudioLayout) setFocusRightOpen(true)
+                    if (!mobileStudioLayout) setRightPanelCollapsed(false)
+                    activatePage(page.slug, "layers")
                   }}
-                  className="flex w-full items-start gap-3 rounded-[22px] border border-white/5 bg-white/[0.02] px-4 py-3.5 text-left transition-all hover:border-white/12 hover:bg-white/[0.04] opacity-55 hover:opacity-80"
+                  className="flex w-full min-w-0 items-start gap-3 rounded-[22px] border border-white/5 bg-white/[0.02] px-4 py-3.5 text-left opacity-55 transition-all hover:border-white/12 hover:bg-white/[0.04] hover:opacity-80"
                 >
                   <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-[#0b1017] text-white/20">
                     <Globe className="h-3.5 w-3.5" />
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="line-clamp-2 text-[15px] font-semibold leading-5 text-white/60">{page.navLabel || page.title}</div>
-                    <div className="mt-1 break-all text-[11px] leading-5 text-white/25">/{page.slug}</div>
+                  <div className="min-w-0 flex-1 overflow-hidden">
+                    <div className="truncate text-[15px] font-semibold leading-5 text-white/60" title={page.navLabel || page.title}>{page.navLabel || page.title}</div>
+                    <div className="mt-2 truncate text-[11px] leading-5 text-white/25" title={`/${page.slug}`}>/{page.slug}</div>
+                    <div className="mt-2">
+                      <span className="inline-flex rounded-full bg-white/8 px-2 py-0.5 text-[10px] font-semibold text-white/30">Oculta</span>
+                    </div>
                   </div>
-                  <span className="flex-shrink-0 rounded-full bg-white/8 px-2 py-0.5 text-[10px] font-semibold text-white/30">Oculta</span>
                 </button>
               ))}
             </div>
           </div>
         )}
         <div className="rounded-2xl border border-white/6 bg-white/[0.02] px-3 py-2.5 text-[11px] text-white/35 leading-5">
-          Haz clic en un item para editarlo en el inspector. Las paginas ocultas no aparecen en el menu publico.
+          Haz clic en una pagina para abrirla en el canvas y editar sus bloques. Los links externos o manuales siguen editandose desde Navegacion.
         </div>
       </div>
     </div>
@@ -7930,27 +10919,10 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
               {!currentPage.home && (
                 <>
                   <div className="grid gap-3 rounded-2xl border border-white/8 bg-white/[0.03] p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-white">Mostrar en navegacion</div>
-                        <div className="text-xs text-white/45">Si la activas, la pagina aparece automaticamente en el menu publico.</div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => updateCurrentPageMeta({ showInNav: currentPage.showInNav === false })}
-                        className={cn(
-                          "relative inline-flex h-7 w-12 items-center rounded-full border transition-all",
-                          currentPage.showInNav === false ? "border-white/10 bg-white/5" : "border-emerald-400/35 bg-emerald-500/20"
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "inline-block h-5 w-5 rounded-full bg-white transition-all",
-                            currentPage.showInNav === false ? "translate-x-1" : "translate-x-6"
-                          )}
-                        />
-                      </button>
-                    </div>
+                    <StudioVisibilityToggle
+                      enabled={currentPage.showInNav !== false}
+                      onToggle={() => updateCurrentPageMeta({ showInNav: currentPage.showInNav === false })}
+                    />
                     <F label="Texto del menu">
                       <input
                         className={iCls}
@@ -8008,18 +10980,26 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
   )
 
   const renderComponentsSidebar = () => {
-    const addableList = currentPage.home ? ADDABLE : ADDABLE_PAGE
-    const normalizedSearch = componentSearch.trim().toLowerCase()
+    const addableList = currentPage.home ? ADDABLE : liveSyncedStudioPage ? [] : ADDABLE_PAGE
+    const editorPageMode: StudioEditorPageMode = currentPage.home ? "home" : "page"
+    const availablePresets = getStudioComponentPresets(editorPageMode)
+    const recommendedPresets = getRecommendedStudioPresets(availablePresets, {
+      home: currentPage.home,
+      route: currentRoute,
+      title: currentPageTitle,
+    })
+    const recommendedPresetIds = new Set(recommendedPresets.map((preset) => preset.id))
+    const genericPresets = availablePresets.filter((preset) => !recommendedPresetIds.has(preset.id))
+    const recommendationLabel = getStudioPresetContextLabel({
+      home: currentPage.home,
+      route: currentRoute,
+      title: currentPageTitle,
+    })
+    const presetFamilies = Array.from(new Set(availablePresets.map((preset) => preset.family).filter((family): family is string => Boolean(family))))
     const groupedBlocks = STUDIO_BLOCK_GROUPS
       .map((group) => ({
         ...group,
-        types: group.types.filter((type) => {
-          if (!addableList.includes(type)) return false
-          if (!normalizedSearch) return true
-          const meta = getStudioSectionMeta(type)
-          const haystack = `${meta.label} ${meta.desc ?? ""}`.toLowerCase()
-          return haystack.includes(normalizedSearch)
-        }),
+        types: group.types.filter((type) => addableList.includes(type)),
       }))
       .filter((group) => group.types.length > 0)
 
@@ -8027,26 +11007,69 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Bloques</div>
-            <div className="text-sm font-semibold text-white">Biblioteca visual</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Biblioteca</div>
+            <div className="text-sm font-semibold text-white">Bloques y presets</div>
           </div>
-          <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">{addableList.length}</span>
+          <span className="rounded-full border border-white/8 bg-white/5 px-2.5 py-0.5 text-[11px] text-white/45">{availablePresets.length + addableList.length}</span>
         </div>
-        <div className="border-b border-white/8 px-4 py-3">
-          <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/5 px-3 py-3 text-xs leading-5 text-white/55">
-            Usa este panel como biblioteca universal: tarjetas, videos, FAQs, formularios, simuladores, cursos, evaluaciones, galerias y bloques HTML.
-          </div>
-          <div className="mt-3">
-            <input
-              className={iCls}
-              value={componentSearch}
-              placeholder="Buscar bloque..."
-              onChange={(event) => setComponentSearch(event.target.value)}
-            />
+        <div className="border-b border-white/8 px-4 py-4">
+          <div className="rounded-2xl border border-primary/15 bg-primary/[0.05] px-4 py-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
+                <LayoutTemplate className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-white">Selecciona por categoria o preset</div>
+                <div className="mt-1 text-xs leading-5 text-white/50">
+                  Inserta bloques individuales o presets completos inspirados en bibliotecas modernas, todos editables desde el Studio.
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           <div className="space-y-5">
+            {availablePresets.length > 0 ? (
+              <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] p-3">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-white">Presets listos para usar</div>
+                  <div className="mt-1 text-xs leading-5 text-white/45">
+                    Inserta composiciones completas y luego cambia textos, iconos, enlaces, estilos y fuentes desde el editor visual.
+                  </div>
+                  {presetFamilies.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {presetFamilies.slice(0, 8).map((family) => (
+                        <span key={family} className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-medium text-white/55">
+                          {family}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                </div>
+              {recommendedPresets.length > 0 ? (
+                <div className="mt-3">
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-primary/75">
+                    Recomendados para {recommendationLabel}
+                  </div>
+                  <div className="space-y-2.5">
+                    {recommendedPresets.map((preset) => (
+                      <StudioPresetCard key={`recommended-${preset.id}`} preset={preset} compact onUse={createPresetSections} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div className="mt-3 space-y-2.5">
+                {genericPresets.map((preset) => (
+                  <StudioPresetCard key={preset.id} preset={preset} compact onUse={createPresetSections} />
+                ))}
+                </div>
+              </div>
+            ) : null}
             <div className="rounded-2xl border border-primary/15 bg-primary/[0.04] p-3">
               <div className="flex items-start gap-3">
                 <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -8073,22 +11096,34 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             {groupedBlocks.length === 0 ? (
               <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-6 text-center">
                 <LayoutTemplate className="h-8 w-8 text-white/20" />
-                <div className="mt-3 text-sm font-semibold text-white">Sin coincidencias</div>
-                <div className="mt-2 text-xs leading-5 text-white/45">Prueba con otro nombre de bloque o limpia la busqueda.</div>
+                <div className="mt-3 text-sm font-semibold text-white">No hay bloques disponibles</div>
+                <div className="mt-2 text-xs leading-5 text-white/45">Esta página no tiene bloques adicionales para mostrar en la biblioteca actual.</div>
               </div>
             ) : (
               groupedBlocks.map((group) => (
                 <div key={group.id}>
-                  <div className="mb-3 flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">{group.label}</div>
-                      {"description" in group ? <div className="mt-1 max-w-[260px] text-[11px] leading-5 text-white/38">{group.description}</div> : null}
-                    </div>
-                    <div className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/35">{group.types.length}</div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3">
+                  {(() => {
+                    const groupMeta = getStudioBlockGroupMeta(group.id)
+                    const GroupIcon = groupMeta.icon
+                    return (
+                      <div className="mb-3 flex items-start justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3.5 py-3.5">
+                        <div className="flex items-start gap-3">
+                          <div className={cn("flex h-9 w-9 items-center justify-center rounded-2xl border", groupMeta.iconWrapClass)}>
+                            <GroupIcon className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">{group.label}</div>
+                            {"description" in group ? <div className="mt-1 max-w-[260px] text-[11px] leading-5 text-white/40">{group.description}</div> : null}
+                          </div>
+                        </div>
+                        <div className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-0.5 text-[10px] text-white/35">{group.types.length}</div>
+                      </div>
+                    )
+                  })()}
+                  <div className="space-y-2.5">
                     {group.types.map((type) => {
                       const meta = getStudioSectionMeta(type)
+                      const profile = getLibraryCapabilities(type)
                       const Icon = meta.icon
                       const previewSection: CMSSection = {
                         id: `library-${type}`,
@@ -8102,21 +11137,32 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                           key={type}
                           type="button"
                           onClick={() => addSection(type)}
-                          className="group overflow-hidden rounded-2xl border border-white/8 bg-white/[0.03] text-left transition-all hover:border-primary/35 hover:bg-white/[0.05]"
+                          className="group w-full rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.05] to-white/[0.02] p-3 text-left transition-all hover:border-primary/40 hover:bg-white/[0.05]"
                         >
-                          <div className="min-h-[88px] bg-[#08111b]">
-                            <SectionMiniPreview section={previewSection} />
-                          </div>
-                          <div className="flex items-start gap-3 border-t border-white/8 px-3 py-3">
-                            <div className={cn("mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl", meta.color)}>
-                              <Icon className="h-4 w-4" />
+                          <div className="flex items-start gap-3">
+                            <div className="relative h-[74px] w-[96px] flex-shrink-0 overflow-hidden rounded-xl border border-white/8 bg-[#08111b]">
+                              <SectionMiniPreview section={previewSection} />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="text-sm font-semibold text-white">{meta.label}</div>
-                              <div className="mt-1 text-xs leading-5 text-white/45">{meta.desc ?? "Bloque reutilizable del editor."}</div>
-                            </div>
-                            <div className="pt-1 text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                              <Plus className="h-4 w-4" />
+                              <div className="flex items-start gap-2">
+                                <div className={cn("mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-white/8", meta.color)}>
+                                  <Icon className="h-3.5 w-3.5" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-semibold text-white">{meta.label}</div>
+                                  <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-white/45">{meta.desc ?? "Bloque reusable del editor."}</div>
+                                </div>
+                                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/[0.08] text-primary transition-all group-hover:bg-primary group-hover:text-white">
+                                  <Plus className="h-3.5 w-3.5" />
+                                </div>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {profile.tags.slice(0, 2).map((tag) => (
+                                  <span key={tag} className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-medium text-white/55">
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
                           </div>
                         </button>
@@ -8324,27 +11370,31 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-white/8 px-4 py-3">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Simuladores</div>
-          <div className="text-sm font-semibold text-white">Contenido reutilizable</div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Dinamicos</div>
+          <div className="text-sm font-semibold text-white">Contenido conectado</div>
         </div>
         <span className="rounded-full border border-white/8 bg-white/5 px-2 py-0.5 text-[11px] text-white/45">{studioSimulatorItems.length}</span>
       </div>
       <div className="border-b border-white/8 p-4">
         <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-3 py-3 text-xs leading-5 text-white/50">
-          Los simuladores, evaluaciones y cursos son opcionales. Solo agrega estos bloques si quieres conectarlos a la pagina actual.
+          Conecta simuladores, evaluaciones y cursos publicados sin salir del Studio. Usa estos bloques cuando quieras mostrar contenido vivo dentro de la pagina actual.
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <button type="button" onClick={() => addSection("simulatorsFeed")} className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-semibold text-white transition-all hover:bg-primary/90">
             <Plus className="h-4 w-4" />
-            Bloque sim
+            Simuladores
           </button>
           <button type="button" onClick={() => addSection("evaluationsFeed")} className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] text-sm font-semibold text-white/75 transition-all hover:border-primary/35 hover:text-white">
             <Plus className="h-4 w-4" />
-            Bloque eval
+            Evaluaciones
           </button>
           <button type="button" onClick={() => addSection("coursesFeed")} className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] text-sm font-semibold text-white/75 transition-all hover:border-primary/35 hover:text-white">
             <Plus className="h-4 w-4" />
-            Bloque curso
+            Cursos
+          </button>
+          <button type="button" onClick={() => addSection("coursesCatalog")} className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] text-sm font-semibold text-white/75 transition-all hover:border-primary/35 hover:text-white">
+            <Plus className="h-4 w-4" />
+            Catalogo cursos
           </button>
         </div>
       </div>
@@ -8352,13 +11402,13 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         <div>
           <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#5d7fa8]">Bloques en esta pagina</div>
           <div className="space-y-2">
-            {currentSections.filter((section) => ["simulatorsFeed", "coursesFeed", "evaluationsFeed"].includes(section.type)).length === 0 ? (
+            {currentSections.filter((section) => isDynamicLinkedSectionType(section.type)).length === 0 ? (
               <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45">
                 Esta pagina aun no tiene bloques conectados. Agrega uno arriba si quieres mostrar simuladores, cursos o evaluaciones.
               </div>
             ) : (
               currentSections
-                .filter((section) => ["simulatorsFeed", "coursesFeed", "evaluationsFeed"].includes(section.type))
+                .filter((section) => isDynamicLinkedSectionType(section.type))
                 .map((section) => {
                   const meta = getStudioSectionMeta(section.type)
                   const Icon = meta?.icon ?? Target
@@ -8417,36 +11467,41 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm text-white/45">Publica simuladores o evaluaciones para conectarlos desde el Studio.</div>
         ) : (
           studioSimulatorItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => {
-                setSimulatorInspectorTarget("item")
-                setSelectedSectionId("")
-                setSelectedPopupId("")
-                setSelectedSimulatorId(item.id)
-                setLeftTab("simulators")
-                setInspectorTab("content")
-                setRightPanelCollapsed(false)
-              }}
-              className={cn(
-                "w-full rounded-2xl border px-3 py-3 text-left transition-all",
-                selectedSimulatorId === item.id ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]" : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]"
-              )}
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/8 bg-[#0b1017] text-xl">
-                  {item.emoji || "🎯"}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <div className="truncate text-sm font-semibold text-white">{item.title}</div>
-                    <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] text-white/50">{item.kind}</span>
+            (() => {
+              const ItemIcon = getStudioLinkedContentIcon(item.kind)
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setSimulatorInspectorTarget("item")
+                    setSelectedSectionId("")
+                    setSelectedPopupId("")
+                    setSelectedSimulatorId(item.id)
+                    setLeftTab("simulators")
+                    setInspectorTab("content")
+                    setRightPanelCollapsed(false)
+                  }}
+                  className={cn(
+                    "w-full rounded-2xl border px-3 py-3 text-left transition-all",
+                    selectedSimulatorId === item.id ? "border-primary/60 bg-primary/10 shadow-[0_0_0_1px_rgba(232,57,42,0.16)]" : "border-white/8 bg-white/[0.03] hover:border-primary/25 hover:bg-white/[0.05]"
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/8 bg-[#0b1017] text-white/60">
+                      <ItemIcon className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="truncate text-sm font-semibold text-white">{item.title}</div>
+                        <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] text-white/50">{item.kind}</span>
+                      </div>
+                      <div className="mt-1 truncate text-[11px] uppercase tracking-[0.18em] text-white/30">{item.href}</div>
+                    </div>
                   </div>
-                  <div className="mt-1 truncate text-[11px] uppercase tracking-[0.18em] text-white/30">{item.href}</div>
-                </div>
-              </div>
-            </button>
+                </button>
+              )
+            })()
           ))
         )}
       </div>
@@ -8531,6 +11586,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           <div className="text-xs font-bold uppercase tracking-[0.2em] text-white/35">Accesos rapidos</div>
           <div className="mt-3 grid grid-cols-1 gap-2">
             <button type="button" onClick={() => setLeftTab("pages")} className="rounded-xl border border-white/8 px-3 py-2 text-left text-sm text-white/65 transition-all hover:border-primary/35 hover:text-white">Editar paginas</button>
+            <button type="button" onClick={() => setLeftTab("components")} className="rounded-xl border border-white/8 px-3 py-2 text-left text-sm text-white/65 transition-all hover:border-primary/35 hover:text-white">Abrir biblioteca visual</button>
+            <button type="button" onClick={() => setLeftTab("simulators")} className="rounded-xl border border-white/8 px-3 py-2 text-left text-sm text-white/65 transition-all hover:border-primary/35 hover:text-white">Editar dinamicos y cursos</button>
             <button type="button" onClick={() => setLeftTab("navigation")} className="rounded-xl border border-white/8 px-3 py-2 text-left text-sm text-white/65 transition-all hover:border-primary/35 hover:text-white">Editar navegacion</button>
             <button type="button" onClick={() => setLeftTab("assets")} className="rounded-xl border border-white/8 px-3 py-2 text-left text-sm text-white/65 transition-all hover:border-primary/35 hover:text-white">Ver assets</button>
           </div>
@@ -8748,9 +11805,14 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             <>
               <Card title="Resumen">
                 <div className="flex items-start gap-4">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/8 bg-[#0b1017] text-2xl">
-                    {selectedSimulator.emoji || "🎯"}
-                  </div>
+                  {(() => {
+                    const ItemIcon = getStudioLinkedContentIcon(selectedSimulator.kind)
+                    return (
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/8 bg-[#0b1017] text-white/65">
+                        <ItemIcon className="h-6 w-6" />
+                      </div>
+                    )
+                  })()}
                   <div className="min-w-0 flex-1">
                     <div className="text-base font-semibold text-white">{selectedSimulator.title}</div>
                     <div className="mt-1 text-sm text-white/55">{selectedSimulator.subtitle || selectedSimulator.category || "Publicado desde el admin"}</div>
@@ -8822,29 +11884,36 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     )
   }
 
-  const renderLayersInspector = () => (
+  const renderLayersInspector = () => {
+    const selectedSectionIndex = selectedSection ? currentSections.findIndex(s => s.id === selectedSection.id) + 1 : null
+    return (
     <div className="flex h-full min-h-0 flex-col">
       {selectedSection?.type === "customCode" ? null : (
-        <div className="border-b border-white/8 px-5 py-4">
+        <div className="border-b border-white/[0.06] px-4 py-2.5">
           {selectedSection ? (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               {(() => {
                 const meta = getStudioSectionMeta(selectedSection.type)
                 const Icon = meta?.icon ?? LayoutTemplate
-                return <div className={cn("flex h-10 w-10 items-center justify-center rounded-2xl", meta?.color ?? "bg-white/5 text-white/35")}><Icon className="h-4 w-4" /></div>
+                return <div className={cn("flex h-7 w-7 items-center justify-center rounded-lg flex-shrink-0", meta?.color ?? "bg-white/5 text-white/35")}><Icon className="h-3.5 w-3.5" /></div>
               })()}
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-white">{getStudioSectionMeta(selectedSection.type).label ?? selectedSection.type}</div>
-                <div className="text-xs text-white/40">{currentRoute}</div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <div className="text-[13px] font-semibold text-white truncate">{getStudioSectionMeta(selectedSection.type).label ?? selectedSection.type}</div>
+                  {selectedSectionIndex && (
+                    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded bg-primary/20 px-1 text-[9px] font-bold text-primary/80">{selectedSectionIndex}</span>
+                  )}
+                </div>
+                <div className="text-[10px] text-white/30 mt-0.5 truncate">{currentRoute}</div>
               </div>
-              <div className="ml-auto">{renderInspectorCollapseAction()}</div>
+              <div className="ml-auto flex-shrink-0">{renderInspectorCollapseAction()}</div>
             </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-white/35"><LayoutTemplate className="h-4 w-4" /></div>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-white">Selecciona un bloque</div>
-                <div className="text-xs text-white/40">Haz clic en el canvas o en la lista de capas.</div>
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.04] text-white/30"><LayoutTemplate className="h-3.5 w-3.5" /></div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-semibold text-white">Selecciona un bloque</div>
+                <div className="text-[10px] text-white/30">Haz clic en el canvas o en las capas.</div>
               </div>
               <div className="ml-auto">{renderInspectorCollapseAction()}</div>
             </div>
@@ -8888,7 +11957,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
             </div>
           )
         ) : selectedSection.type === "customCode" ? (
-          <div className="flex min-h-0 min-w-0 flex-col gap-3 p-4 pb-8">
+          <div className={cn("flex min-h-0 min-w-0 flex-col gap-3 p-4", mobileStudioLayout ? "pb-[calc(env(safe-area-inset-bottom)+112px)]" : "pb-8")}>
             {renderCustomCodeInspectorHeaderCard()}
             <div
               className={cn(
@@ -9120,7 +12189,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   onSyncFlow={syncConnectedFlow}
                 />
               </>
-            ) : selectedSection.type === "textBanner" || selectedSection.type === "imageText" || selectedSection.type === "simulatorsFeed" || selectedSection.type === "coursesFeed" || selectedSection.type === "evaluationsFeed" ? (
+            ) : selectedSection.type === "textBanner" || selectedSection.type === "imageText" || selectedSection.type === "simulatorsFeed" || selectedSection.type === "coursesFeed" || selectedSection.type === "coursesCatalog" || selectedSection.type === "evaluationsFeed" ? (
               <ActionConfigEditor
                 title="CTA del bloque"
                 action={selectedSection.data?.ctaAction}
@@ -9362,7 +12431,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         )}
       </div>
     </div>
-  )
+    )
+  }
 
   const forceHtmlInspector =
     selectedSection?.type === "customCode" && (Boolean(htmlEl) || htmlEditing)
@@ -9371,11 +12441,16 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     () => [
       { key: "delete", label: "Eliminar", onClick: () => triggerHtmlRuntimeToolbarAction("delete"), danger: true },
       { key: "edit", label: "Editar", onClick: () => triggerHtmlRuntimeToolbarAction("edit") },
-      { key: "drag", label: "Mover", onClick: () => triggerHtmlRuntimeToolbarAction("drag") },
+      {
+        key: "drag",
+        label: htmlMoveArmed || htmlInteractionKind === "move" ? "Soltar" : "Mover",
+        onClick: () => triggerHtmlRuntimeToolbarAction("drag"),
+        active: htmlMoveArmed || htmlInteractionKind === "move",
+      },
       { key: "up", label: "Subir", onClick: () => triggerHtmlRuntimeToolbarAction("up") },
       { key: "down", label: "Bajar", onClick: () => triggerHtmlRuntimeToolbarAction("down") },
     ],
-    [triggerHtmlRuntimeToolbarAction]
+    [htmlInteractionKind, htmlMoveArmed, triggerHtmlRuntimeToolbarAction]
   )
 
   const renderNavigationInspector = () => {
@@ -9494,22 +12569,12 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                 <button type="button" onClick={() => setSelectedNavPageSlug(null)} className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/8 text-white/40 hover:text-white transition-colors"><ChevronLeft className="h-3.5 w-3.5" /></button>
               }>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.03] p-3">
-                    <div>
-                      <div className="text-sm font-semibold text-white">Mostrar en menu</div>
-                      <div className="text-xs text-white/40">Aparece en la barra de navegacion publica</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => updatePageMeta({ showInNav: selectedPage.showInNav === false })}
-                      className={cn(
-                        "relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full border transition-all",
-                        selectedPage.showInNav === false ? "border-white/10 bg-white/5" : "border-emerald-400/35 bg-emerald-500/20"
-                      )}
-                    >
-                      <span className={cn("inline-block h-5 w-5 rounded-full bg-white transition-all", selectedPage.showInNav === false ? "translate-x-1" : "translate-x-6")} />
-                    </button>
-                  </div>
+                  <StudioVisibilityToggle
+                    enabled={selectedPage.showInNav !== false}
+                    title="Mostrar en menu"
+                    description="Aparece en la barra de navegacion publica."
+                    onToggle={() => updatePageMeta({ showInNav: selectedPage.showInNav === false })}
+                  />
                   <F label="Texto en el menu">
                     <input
                       className={iCls}
@@ -9986,6 +13051,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                       "touch-manipulation inline-flex h-10 shrink-0 items-center justify-center rounded-xl border px-3 text-xs font-semibold transition-all",
                       button.danger
                         ? "border-primary/30 bg-primary/10 text-primary hover:border-primary/45 hover:bg-primary/14"
+                        : button.active
+                          ? "border-primary/40 bg-primary/12 text-primary shadow-[0_10px_26px_rgba(232,57,42,0.22)]"
                         : "border-white/10 bg-white/[0.03] text-white/78 hover:border-white/20 hover:text-white"
                     )}
                   >
@@ -10134,7 +13201,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
     if (mobileStudioLayout) {
       return (
-        <div className="pointer-events-auto absolute inset-0 z-40 bg-[#02050b]/76 backdrop-blur-sm" onClick={() => setFocusLeftOpen(false)}>
+        <div className="pointer-events-auto fixed inset-x-0 top-0 z-50 bg-[#02050b]/76 backdrop-blur-sm" style={{ height: mobileShellHeight ? `${mobileShellHeight}px` : '100dvh' }} onClick={() => setFocusLeftOpen(false)}>
           <div
             className="absolute inset-x-0 bottom-0 top-[10%] flex flex-col overflow-hidden rounded-t-[32px] border border-white/10 bg-[#08111b]/98 shadow-[0_30px_90px_rgba(0,0,0,0.5)]"
             onClick={(event) => event.stopPropagation()}
@@ -10196,7 +13263,8 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         (Boolean(htmlEl) || htmlEditing)
       return (
         <div
-          className="pointer-events-auto absolute inset-0 z-40 bg-[#02050b]/82 backdrop-blur-sm"
+          className="pointer-events-auto fixed inset-x-0 top-0 z-50 bg-[#02050b]/82 backdrop-blur-sm"
+          style={{ height: mobileShellHeight ? `${mobileShellHeight}px` : '100dvh' }}
           onClick={(event) => {
             if (event.target !== event.currentTarget) return
             if (Date.now() < mobileDrawerInteractionLockRef.current) return
@@ -10310,7 +13378,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
     if (!mobileStudioLayout || !mobileControlsOpen) return null
 
     return (
-      <div className="pointer-events-auto absolute inset-0 z-40 bg-[#02050b]/76 backdrop-blur-sm" onClick={() => setMobileControlsOpen(false)}>
+      <div className="pointer-events-auto fixed inset-x-0 top-0 z-50 bg-[#02050b]/76 backdrop-blur-sm" style={{ height: mobileShellHeight ? `${mobileShellHeight}px` : '100dvh' }} onClick={() => setMobileControlsOpen(false)}>
         <div
           className="absolute inset-x-0 bottom-0 top-[12%] flex flex-col overflow-hidden rounded-t-[32px] border border-white/10 bg-[#08111b]/98 shadow-[0_30px_90px_rgba(0,0,0,0.5)]"
           onClick={(event) => event.stopPropagation()}
@@ -10543,12 +13611,13 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
   return (
       <div
+        data-studio-root="1"
         className="relative grid h-[100dvh] min-h-[100svh] w-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[#07111f] pt-[env(safe-area-inset-top)] text-white"
         style={mobileShellHeight ? { height: `${mobileShellHeight}px`, minHeight: `${mobileShellHeight}px`, maxHeight: `${mobileShellHeight}px` } : undefined}
         onTouchStart={handleMobileRootTouchStart}
         onTouchEnd={handleMobileRootTouchEnd}
       >
-      <header className="relative z-30 flex w-full min-w-0 max-w-full flex-shrink-0 flex-col gap-2 overflow-hidden border-b border-white/10 bg-[#08111f] px-3 py-2.5 sm:px-4 xl:px-5">
+      <header className="relative z-30 flex w-full min-w-0 max-w-full flex-shrink-0 flex-col gap-1.5 overflow-hidden border-b border-white/[0.06] bg-[#08111f] px-3 py-2 sm:px-4 xl:px-5">
         {mobileStudioLayout ? (
           <>
             <div className="flex items-center gap-2">
@@ -10633,159 +13702,94 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
           </>
         ) : (
           <>
-            <div className="flex w-full min-w-0 max-w-full flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0 flex-1">
-                <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-primary">Studio</div>
-                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
-                  <div className="truncate text-lg font-semibold text-white">{currentPageTitle}</div>
-                  <span className="truncate text-xs uppercase tracking-[0.18em] text-white/28">{currentRoute}</span>
+            {/* ── Row 1: Title + Status + Actions ── */}
+            <div className="flex w-full min-w-0 max-w-full items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Studio</span>
+                    <span className="truncate text-sm font-semibold text-white">{currentPageTitle}</span>
+                    <span className="hidden truncate text-[11px] text-white/25 lg:block">{currentRoute}</span>
+                  </div>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {changed && !isAutosaving && <span className="rounded-full border border-amber-400/25 bg-amber-400/10 px-2.5 py-1 text-[11px] text-amber-300">Sin guardar</span>}
-                  {saved && !changed && <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] text-emerald-300">Guardado</span>}
-                  {isAutosaving && <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2.5 py-1 text-[11px] text-sky-300">Auto guardando...</span>}
-                  {published && <span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-[11px] text-primary">Publicado</span>}
-                  {compactStudioLayout && studioMode === "edit" && (
-                    <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] text-primary">
-                      {mobileStudioLayout ? "Editor movil: usa el dock inferior" : "Edicion compacta: usa paneles flotantes"}
-                    </span>
-                  )}
+                <div className="flex items-center gap-1.5">
+                  {changed && !isAutosaving && <span className="rounded-md border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">Sin guardar</span>}
+                  {saved && !changed && <span className="rounded-md border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300">Guardado</span>}
+                  {isAutosaving && <span className="rounded-md border border-sky-400/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-300">Guardando...</span>}
+                  {published && <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Publicado</span>}
                 </div>
               </div>
 
-              <div className="studio-scroll flex min-w-0 max-w-full items-center gap-2 overflow-x-auto pb-1 lg:justify-end lg:pb-0">
-                <a href={currentRoute} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-white/10 px-3.5 text-sm font-medium text-white/65 transition-all hover:border-white/20 hover:text-white whitespace-nowrap">
-                  <ExternalLink className="h-4 w-4" />
-                  Ver sitio
+              <div className="flex shrink-0 items-center gap-1.5">
+                <a href={currentRoute} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-[12px] font-medium text-white/55 transition-all hover:border-white/20 hover:text-white whitespace-nowrap" title="Ver sitio">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span className="hidden xl:inline">Ver sitio</span>
                 </a>
-                <button onClick={handleSave} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-primary px-3.5 text-sm font-semibold text-white transition-all hover:bg-primary/90 whitespace-nowrap">
-                  <Save className="h-4 w-4" />
+                <button onClick={handleSave} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 text-[12px] font-semibold text-white transition-all hover:bg-primary/90 whitespace-nowrap">
+                  <Save className="h-3.5 w-3.5" />
                   Guardar
                 </button>
-                <button onClick={handlePublish} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-primary/30 bg-primary/12 px-3.5 text-sm font-semibold text-primary transition-all hover:bg-primary/20 whitespace-nowrap">
-                  <Check className="h-4 w-4" />
+                <button onClick={handlePublish} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 text-[12px] font-semibold text-primary transition-all hover:bg-primary/20 whitespace-nowrap">
+                  <Check className="h-3.5 w-3.5" />
                   Publicar
                 </button>
-                <a href="/admin" className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-white/10 px-3.5 text-sm font-medium text-white/65 transition-all hover:border-white/20 hover:text-white whitespace-nowrap">
-                  <ArrowLeft className="h-4 w-4" />
-                  Volver al admin
+                <a href="/admin" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-[12px] font-medium text-white/55 transition-all hover:border-white/20 hover:text-white whitespace-nowrap" title="Volver al admin">
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  <span className="hidden xl:inline">Volver al admin</span>
                 </a>
               </div>
             </div>
 
-            <div className="studio-scroll flex w-full min-w-0 max-w-full items-center gap-2 overflow-x-auto pb-1 lg:justify-center lg:pb-0">
-              <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  disabled={!past.length}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-white/40 transition-all hover:text-white disabled:cursor-not-allowed disabled:opacity-25"
-                  aria-label="Deshacer"
-                >
-                  <Undo2 className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRedo}
-                  disabled={!future.length}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-white/40 transition-all hover:text-white disabled:cursor-not-allowed disabled:opacity-25"
-                  aria-label="Rehacer"
-                >
-                  <Redo2 className="h-4 w-4" />
-                </button>
+            {/* ── Row 2: Unified Toolbar ── */}
+            <div className="studio-scroll flex w-full min-w-0 max-w-full items-center gap-1.5 overflow-x-auto lg:justify-center">
+              <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-white/[0.07] bg-white/[0.02] p-0.5">
+                <button type="button" onClick={handleUndo} disabled={!past.length} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/35 transition-all hover:bg-white/[0.06] hover:text-white disabled:opacity-20" aria-label="Deshacer"><Undo2 className="h-3.5 w-3.5" /></button>
+                <button type="button" onClick={handleRedo} disabled={!future.length} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/35 transition-all hover:bg-white/[0.06] hover:text-white disabled:opacity-20" aria-label="Rehacer"><Redo2 className="h-3.5 w-3.5" /></button>
               </div>
-              <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+
+              <div className="h-5 w-px bg-white/[0.06]" />
+
+              <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-white/[0.07] bg-white/[0.02] p-0.5">
                 {STUDIO_DEVICES.map((device) => (
-                  <button
-                    key={device.id}
-                    type="button"
-                    onClick={() => setViewport(device.id)}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-all",
-                      viewport === device.id ? "bg-primary text-white" : "text-white/40 hover:text-white/70"
-                    )}
-                  >
-                    <device.icon className="h-3.5 w-3.5" />
+                  <button key={device.id} type="button" onClick={() => setViewport(device.id)} className={cn("inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-all", viewport === device.id ? "bg-primary text-white" : "text-white/35 hover:text-white/60")}>
+                    <device.icon className="h-3 w-3" />
                     {device.label}
                   </button>
                 ))}
               </div>
-              <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
-                <button
-                  type="button"
-                  onClick={() => setZoomMode("fit")}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold transition-all",
-                    zoomMode === "fit"
-                      ? "bg-primary/20 text-primary border border-primary/40"
-                      : "text-white/40 hover:text-white/70 border border-transparent"
-                  )}
-                >
-                  Fit
-                </button>
+
+              <div className="h-5 w-px bg-white/[0.06]" />
+
+              <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-white/[0.07] bg-white/[0.02] p-0.5">
+                <button type="button" onClick={() => setZoomMode("fit")} className={cn("inline-flex items-center rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition-all", zoomMode === "fit" ? "bg-primary/20 text-primary" : "text-white/35 hover:text-white/60")}>Fit</button>
                 {([100, 75, 50] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setZoomMode(value)}
-                    className={cn(
-                      "inline-flex items-center rounded-xl px-3 py-2 text-xs font-medium transition-all",
-                      zoomMode === value ? "bg-white/10 text-white" : "text-white/40 hover:text-white/70"
-                    )}
-                  >
-                    {value}%
-                  </button>
+                  <button key={value} type="button" onClick={() => setZoomMode(value)} className={cn("inline-flex items-center rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-all", zoomMode === value ? "bg-white/[0.08] text-white" : "text-white/35 hover:text-white/60")}>{value}%</button>
                 ))}
               </div>
-              <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+
+              <div className="h-5 w-px bg-white/[0.06]" />
+
+              <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-white/[0.07] bg-white/[0.02] p-0.5">
                 {studioModeOptions.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setStudioMode(option.id)}
-                    className={cn(
-                      "inline-flex items-center rounded-xl px-3 py-2 text-xs font-medium transition-all",
-                      studioMode === option.id ? "bg-white/10 text-white" : "text-white/40 hover:text-white/70"
-                    )}
-                  >
-                    {option.label}
-                  </button>
+                  <button key={option.id} type="button" onClick={() => setStudioMode(option.id)} className={cn("inline-flex items-center rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-all", studioMode === option.id ? "bg-white/[0.08] text-white" : "text-white/35 hover:text-white/60")}>{option.label}</button>
                 ))}
               </div>
+
               {compactStudioLayout ? (
-                <div className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-3.5 text-xs font-semibold text-primary whitespace-nowrap">
-                  <Smartphone className="h-4 w-4" />
-                  Navegacion compacta
+                <div className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-2.5 text-[11px] font-medium text-primary whitespace-nowrap">
+                  <Smartphone className="h-3 w-3" />
+                  Compacto
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setFocusMode((value) => !value)}
-                  className={cn(
-                    "inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-all whitespace-nowrap",
-                    focusMode
-                      ? "border-primary/35 bg-primary/12 text-primary"
-                      : "border-white/10 text-white/60 hover:border-white/20 hover:text-white"
-                  )}
-                >
-                  <Monitor className="h-4 w-4" />
+                <button type="button" onClick={() => setFocusMode((value) => !value)} className={cn("inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-all whitespace-nowrap", focusMode ? "border-primary/35 bg-primary/10 text-primary" : "border-white/[0.07] text-white/40 hover:text-white/60")}>
+                  <Monitor className="h-3 w-3" />
                   {focusMode ? "Salir enfoque" : "Modo enfoque"}
                 </button>
               )}
               {!compactStudioLayout && viewport === "desktop" && (
-                <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+                <div className="flex shrink-0 items-center gap-0.5 rounded-lg border border-white/[0.07] bg-white/[0.02] p-0.5">
                   {([1440, 1280] as const).map((width) => (
-                    <button
-                      key={width}
-                      type="button"
-                      onClick={() => setDesktopWidth(width)}
-                      className={cn(
-                        "inline-flex items-center rounded-xl px-3 py-2 text-xs font-medium transition-all",
-                        desktopWidth === width ? "bg-white/10 text-white" : "text-white/40 hover:text-white/70"
-                      )}
-                    >
-                      {width}px
-                    </button>
+                    <button key={width} type="button" onClick={() => setDesktopWidth(width)} className={cn("inline-flex items-center rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-all", desktopWidth === width ? "bg-white/[0.08] text-white" : "text-white/35 hover:text-white/60")}>{width}px</button>
                   ))}
                 </div>
               )}
@@ -10796,7 +13800,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
 
       <div className="relative flex min-h-0 flex-1 w-full min-w-0 max-w-full overflow-hidden">
         {!canvasOnlyMode && (
-          <aside className={cn("flex min-h-0 flex-shrink-0 border-r border-white/10 bg-[#060d18] transition-all duration-200", leftPanelCollapsed ? "w-[64px]" : "w-[clamp(248px,20vw,312px)] max-[1200px]:w-[248px]")}>
+          <aside className={cn("flex min-h-0 flex-shrink-0 border-r border-white/[0.06] bg-[#060d18] transition-all duration-200", leftPanelCollapsed ? "w-[48px]" : "w-[clamp(252px,20vw,304px)] min-w-[252px] max-[1200px]:w-[252px]")}>
             {renderLeftIconRail()}
             {!leftPanelCollapsed && (
               <div className="min-h-0 min-w-0 flex-1">
@@ -10875,7 +13879,7 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
         </main>
 
         {!canvasOnlyMode && (
-          <aside className={cn("relative flex min-h-0 flex-shrink-0 flex-col border-l border-white/10 bg-[#08111b] transition-all duration-200", rightPanelCollapsed ? "w-[64px]" : "w-[clamp(240px,28vw,360px)] min-w-[240px] max-[1200px]:w-[280px]")}>
+          <aside className={cn("relative flex min-h-0 flex-shrink-0 flex-col border-l border-white/[0.06] bg-[#08111b] transition-all duration-200", rightPanelCollapsed ? "w-[48px]" : "w-[clamp(240px,26vw,340px)] min-w-[240px] max-[1200px]:w-[260px]")}>
             {rightPanelCollapsed ? (
               renderCollapsedInspectorRail()
             ) : (
@@ -10900,8 +13904,11 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
       {showAdd && (
         <AddModal
           onAdd={addSection}
+          onAddPreset={createPresetSections}
           onClose={() => { setInsertIndex(null); setShowAdd(false) }}
           pageMode={!currentPage.home}
+          pageTitle={currentPageTitle}
+          pageRoute={currentRoute}
           viewportHeight={mobileShellHeight}
         />
       )}
@@ -10965,7 +13972,7 @@ function DashboardLayout({ config, onChange }: { config: CMSConfig; onChange: CM
   }
 
   const handleReset = () => {
-    if (!confirm("Â¿Restablecer toda la configuracion al estado por defecto?")) return
+    if (!confirm("Restablecer toda la configuracion al estado por defecto?")) return
     onChange({ ...DEFAULT_CMS }); setChanged(true)
   }
 
@@ -11028,8 +14035,6 @@ function DashboardLayout({ config, onChange }: { config: CMSConfig; onChange: CM
     </div>
   )
 }
-
-// â”€â”€â”€ Main export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function AdminCMSPage({ studioMode = false }: { studioMode?: boolean }) {
   const [config, setConfig] = useState<CMSConfig | null>(null)

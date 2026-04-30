@@ -6,6 +6,10 @@ export function crearSimuladorBase() {
     descripcion: "Preparacion docente",
     categoria: "",
     estado: "borrador",
+    publicarEnPaginaPrincipal: true,
+    contentMode: "html",
+    htmlContent: "",
+    htmlImportName: "",
     config: {
       tiempoPregunta: 60,
       preguntasMax: 120,
@@ -23,6 +27,14 @@ export function crearSimuladorBase() {
 }
 
 export function calcularErrores(simulador) {
+  if (simulador.contentMode === "html") {
+    const htmlVacio = !String(simulador.htmlContent || "").trim()
+    return {
+      camposInvalidos: 0,
+      preguntasInvalidas: htmlVacio ? 1 : 0,
+    }
+  }
+
   const camposInvalidos = simulador.formulario.filter(
     (campo) => !campo.label || !campo.name
   )

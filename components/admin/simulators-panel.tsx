@@ -4,13 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
-  AlertCircle, Archive, Award, BarChart2, BookOpen, Check, CheckCircle2,
-  ChevronDown, ChevronUp, Clock, Copy, Eye, FileText, Filter, Globe,
-  GripVertical, HelpCircle, LayoutGrid, Loader2, Palette, Pencil, Play,
-  Plus, RefreshCw, Save, Search, Settings, Sliders, Sparkles, Star,
-  Tag, Trash2, Trophy, Upload, Users, X, Zap,
+  AlertCircle, Archive, Award, BarChart2, BookOpen, Briefcase, Calendar,
+  Check, CheckCircle2, ChevronDown, ChevronUp, Clock, ClipboardList, Copy,
+  Eye, FileText, Filter, Globe, GripVertical, GraduationCap, HelpCircle,
+  LayoutGrid, Loader2, Mail, MapPin, Palette, Pencil, Play, Plus, RefreshCw,
+  Save, School, Search, Settings, Sliders, Smartphone, Sparkles, Star,
+  Target, Tag, Trash2, Trophy, Upload, Users, User, X, Zap, Building,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { SystemSelect } from "@/components/ui/system-select"
 import type {
   CampoBuilder, CampoTipo, PreguntaBuilder, SimuladorBuilder,
 } from "@/simuladores/types"
@@ -18,12 +20,238 @@ import {
   actualizarSimulador, eliminarSimulador, getSimuladores, guardarSimulador,
 } from "@/simuladores/storage"
 
+type CursoAdminLite = {
+  id: string
+  titulo: string
+  categoria?: string
+  secciones: Array<{
+    id: string
+    titulo: string
+    descripcion?: string
+    orden: number
+    recursos: Array<{
+      id: string
+      tipo: string
+      titulo: string
+      descripcion?: string
+      simuladorId?: string
+      evaluacionId?: string
+      url?: string
+      archivoNombre?: string
+      duracionMinutos?: number
+      orden: number
+      gratis: boolean
+    }>
+  }>
+}
+
+const CURSOS_KEY = "he_cursos"
+const CURSOS_EVENT = "he-cursos-updated"
+
 // ─────────────────────────────────────────────────────────────────
 // UTILS
 // ─────────────────────────────────────────────────────────────────
 
 function uid() {
   return `id_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+}
+
+function getCursosAdminLite(): CursoAdminLite[] {
+  if (typeof window === "undefined") return []
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CURSOS_KEY) || "[]")
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveCursosAdminLite(cursos: CursoAdminLite[]) {
+  if (typeof window === "undefined") return
+  window.localStorage.setItem(CURSOS_KEY, JSON.stringify(cursos))
+  window.dispatchEvent(new CustomEvent(CURSOS_EVENT))
+}
+
+function normalizeCourseAssignments(sim: SimuladorBuilder) {
+  const ids = Array.from(
+    new Set(
+      [
+        ...(sim.cursoIds || []),
+        sim.cursoId || "",
+      ].map((value) => value.trim()).filter(Boolean),
+    ),
+  )
+
+  const titulos = Array.from(
+    new Set(
+      [
+        ...(sim.cursoTitulos || []),
+        sim.cursoTitulo || "",
+      ].map((value) => value.trim()).filter(Boolean),
+    ),
+  )
+
+  return {
+    ...sim,
+    cursoIds: ids,
+    cursoTitulos: titulos,
+    cursoId: ids[0],
+    cursoTitulo: titulos[0],
+  }
+}
+
+function syncSimulatorCourses(sim: SimuladorBuilder, cursos: CursoAdminLite[]) {
+  const desiredCourseIds = new Set((sim.cursoIds || []).filter(Boolean))
+  let changed = false
+
+  const nextCursos = cursos.map((curso) => {
+    const hasLinkedResource = curso.secciones.some((sec) =>
+      sec.recursos.some((rec) => rec.tipo === "simulador" && rec.simuladorId === sim.id)
+    )
+    const shouldBeLinked = desiredCourseIds.has(curso.id)
+
+    if (!shouldBeLinked && !hasLinkedResource) {
+      return curso
+    }
+
+    if (!shouldBeLinked && hasLinkedResource) {
+      changed = true
+      return {
+        ...curso,
+        secciones: curso.secciones.map((sec) => ({
+          ...sec,
+          recursos: sec.recursos.filter((rec) => !(rec.tipo === "simulador" && rec.simuladorId === sim.id)),
+        })),
+      }
+    }
+
+    if (shouldBeLinked && hasLinkedResource) {
+      changed = true
+      return {
+        ...curso,
+        secciones: curso.secciones.map((sec) => ({
+          ...sec,
+          recursos: sec.recursos.map((rec) =>
+            rec.tipo === "simulador" && rec.simuladorId === sim.id
+              ? {
+                  ...rec,
+                  titulo: sim.titulo || rec.titulo || "Simulador",
+                  descripcion: sim.descripcion || rec.descripcion || "",
+                }
+              : rec
+          ),
+        })),
+      }
+    }
+
+    changed = true
+    const targetSection =
+      curso.secciones.find((sec) => sec.titulo.trim().toLowerCase() === "simuladores") ||
+      curso.secciones[curso.secciones.length - 1] ||
+      null
+
+    const newResource = {
+      id: uid(),
+      tipo: "simulador",
+      titulo: sim.titulo || "Simulador",
+      descripcion: sim.descripcion || "",
+      simuladorId: sim.id,
+      evaluacionId: "",
+      url: "",
+      archivoNombre: "",
+      duracionMinutos: 30,
+      orden: 0,
+      gratis: true,
+    }
+
+    if (!targetSection) {
+      return {
+        ...curso,
+        secciones: [
+          ...curso.secciones,
+          {
+            id: uid(),
+            titulo: "Simuladores",
+            descripcion: "Simuladores vinculados desde el modulo de simuladores.",
+            orden: curso.secciones.length,
+            recursos: [{ ...newResource, orden: 0 }],
+          },
+        ],
+      }
+    }
+
+    return {
+      ...curso,
+      secciones: curso.secciones.map((sec) =>
+        sec.id !== targetSection.id
+          ? sec
+          : {
+              ...sec,
+              recursos: [
+                ...sec.recursos,
+                { ...newResource, orden: sec.recursos.length },
+              ],
+            }
+      ),
+    }
+  })
+
+  if (changed) {
+    saveCursosAdminLite(nextCursos)
+  }
+}
+
+function removeSimulatorFromCourses(simuladorId: string, cursos: CursoAdminLite[]) {
+  let changed = false
+  const nextCursos = cursos.map((curso) => {
+    const nextSecciones = curso.secciones.map((sec) => {
+      const nextRecursos = sec.recursos.filter((rec) => !(rec.tipo === "simulador" && rec.simuladorId === simuladorId))
+      if (nextRecursos.length !== sec.recursos.length) {
+        changed = true
+      }
+      return { ...sec, recursos: nextRecursos }
+    })
+    return { ...curso, secciones: nextSecciones }
+  })
+
+  if (changed) {
+    saveCursosAdminLite(nextCursos)
+  }
+}
+
+function getSystemIcon(value: unknown, className: string) {
+  if (typeof value !== "string") {
+    return <Target className={className} />
+  }
+
+  const icono = value.trim()
+  if (!icono) {
+    return <Target className={className} />
+  }
+
+  if (/^(data:|https?:|\/)/.test(icono)) {
+    return <img src={icono} alt="Icono del simulador" className={`${className} object-cover`} />
+  }
+
+  const normalized = icono.toLowerCase().replace(/[-_\s]/g, "")
+  if (/^[\p{Extended_Pictographic}]+$/u.test(icono)) {
+    return <Target className={className} />
+  }
+
+  switch (normalized) {
+    case "target": return <Target className={className} />
+    case "users": return <Users className={className} />
+    case "user": return <User className={className} />
+    case "trophy": return <Trophy className={className} />
+    case "sparkles": return <Sparkles className={className} />
+    case "mail": return <Mail className={className} />
+    case "phone": return <Smartphone className={className} />
+    case "calendar":
+    case "calendardays": return <Calendar className={className} />
+    case "presentation": return <Users className={className} />
+    case "building": return <Building className={className} />
+    default: return <Target className={className} />
+  }
 }
 
 function crearSimuladorBase(): SimuladorBuilder {
@@ -34,8 +262,12 @@ function crearSimuladorBase(): SimuladorBuilder {
     subtitulo: "",
     categoria: "",
     tags: [],
-    icono: "🎯",
+    icono: "target",
     estado: "borrador",
+    publicarEnPaginaPrincipal: true,
+    contentMode: "html",
+    htmlContent: "",
+    htmlImportName: "",
     formMode: "personalizado",
     formulario: [],
     preguntas: [],
@@ -201,9 +433,7 @@ function Sel({
           {label}
         </label>
       )}
-      <select className={inputCls} value={value} onChange={e => onChange(e.target.value)}>
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+      <SystemSelect value={value} onValueChange={onChange} options={options} />
       {hint && <span className="text-[11px] text-muted-foreground/60">{hint}</span>}
     </div>
   )
@@ -375,11 +605,12 @@ const MOTORES = [
   { n: 4, title: "Motor Renderizador", desc: "Presentación del simulacro para el usuario", color: "text-emerald-400", bg: "bg-emerald-500/8 border-emerald-500/20" },
 ]
 
-function PanelLista({ simuladores, onEditar, onEliminar, onNuevo }: {
+function PanelLista({ simuladores, onEditar, onEliminar, onNuevo, onToggleHome }: {
   simuladores: SimuladorBuilder[]
   onEditar: (s: SimuladorBuilder) => void
   onEliminar: (id: string) => void
   onNuevo: () => void
+  onToggleHome: (id: string, value: boolean) => void
 }) {
   const [q, setQ] = useState("")
   const [est, setEst] = useState("todos")
@@ -439,17 +670,19 @@ function PanelLista({ simuladores, onEditar, onEliminar, onNuevo }: {
             onChange={e => setQ(e.target.value)}
           />
         </div>
-        <select
-          className={cn(inputCls, "sm:w-48")}
-          value={est}
-          onChange={e => setEst(e.target.value)}
-        >
-          <option value="todos">Todos los estados</option>
-          <option value="borrador">🟡 Borrador</option>
-          <option value="en_revision">🔵 En revisión</option>
-          <option value="publicado">🟢 Publicado</option>
-          <option value="archivado">⚫ Archivado</option>
-        </select>
+        <div className="sm:w-48">
+          <SystemSelect
+            value={est}
+            onValueChange={setEst}
+            options={[
+              { value: "todos", label: "Todos los estados" },
+              { value: "borrador", label: "Borrador" },
+              { value: "en_revision", label: "En revisión" },
+              { value: "publicado", label: "Publicado" },
+              { value: "archivado", label: "Archivado" },
+            ]}
+          />
+        </div>
         <Btn variant="primary" onClick={onNuevo}>
           <Plus className="h-4 w-4" />Nuevo simulador
         </Btn>
@@ -491,10 +724,15 @@ function PanelLista({ simuladores, onEditar, onEliminar, onNuevo }: {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map(sim => {
             const badge = estadoBadge(sim.estado)
-            const errP = sim.preguntas.filter(p => !p.pregunta || p.opciones.filter(Boolean).length < 2).length
-            const pct = sim.config.preguntasMax > 0
-              ? Math.min(100, Math.round((sim.preguntas.length / sim.config.preguntasMax) * 100))
-              : 0
+            const isHtml = sim.contentMode === "html"
+            const errP = isHtml
+              ? (String(sim.htmlContent || "").trim() ? 0 : 1)
+              : sim.preguntas.filter(p => !p.pregunta || p.opciones.filter(Boolean).length < 2).length
+            const pct = isHtml
+              ? (String(sim.htmlContent || "").trim() ? 100 : 0)
+              : sim.config.preguntasMax > 0
+                ? Math.min(100, Math.round((sim.preguntas.length / sim.config.preguntasMax) * 100))
+                : 0
             const cp = (sim as any).tema?.colorPrimario || "#e53935"
             return (
               <div key={sim.id} className="group rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/30 hover:shadow-md transition-all">
@@ -504,11 +742,7 @@ function PanelLista({ simuladores, onEditar, onEliminar, onNuevo }: {
                   {/* Header */}
                   <div className="flex items-start gap-3">
                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl text-2xl shrink-0 overflow-hidden" style={{ background: `${cp}15` }}>
-                      {(sim as any).icono?.startsWith("data:") || (sim as any).icono?.startsWith("http") || (sim as any).icono?.startsWith("/")
-                        // eslint-disable-next-line @next/next/no-img-element
-                        ? <img src={(sim as any).icono} alt="" className="h-full w-full object-cover" />
-                        : <span>{(sim as any).icono || "🎯"}</span>
-                      }
+                      {getSystemIcon((sim as any).icono, "h-7 w-7 text-foreground")}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
@@ -528,13 +762,28 @@ function PanelLista({ simuladores, onEditar, onEliminar, onNuevo }: {
                       <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                         {(sim as any).subtitulo || sim.descripcion || <span className="italic">Sin descripción</span>}
                       </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onToggleHome(sim.id, sim.publicarEnPaginaPrincipal === false)}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold transition-all",
+                            sim.publicarEnPaginaPrincipal !== false
+                              ? "border-sky-500/20 bg-sky-500/10 text-sky-300"
+                              : "border-border bg-secondary/20 text-muted-foreground hover:border-sky-500/20 hover:text-sky-300"
+                          )}
+                        >
+                          <Eye className="h-2.5 w-2.5" />
+                          {sim.publicarEnPaginaPrincipal !== false ? "Inicio activado" : "Inicio desactivado"}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   {/* Progress */}
                   <div>
                     <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
-                      <span>{sim.preguntas.length} / {sim.config.preguntasMax} preguntas</span>
+                      <span>{isHtml ? (sim.htmlImportName || "HTML completo") : `${sim.preguntas.length} / ${sim.config.preguntasMax} preguntas`}</span>
                       <span>{pct}%</span>
                     </div>
                     <div className="h-1.5 rounded-full bg-secondary/40 overflow-hidden">
@@ -545,7 +794,7 @@ function PanelLista({ simuladores, onEditar, onEliminar, onNuevo }: {
                   {/* Meta */}
                   <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
                     <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{sim.config.tiempoPregunta}s/preg</span>
-                    <span className="flex items-center gap-1"><FileText className="h-3 w-3" />{sim.formulario.length} campos</span>
+                    <span className="flex items-center gap-1"><FileText className="h-3 w-3" />{isHtml ? "HTML importado" : `${sim.formulario.length} campos`}</span>
                     <span className="flex items-center gap-1"><Users className="h-3 w-3" />{sim.config.intentosMax ?? 3} intentos</span>
                     {(sim as any).categoria && (
                       <span className="flex items-center gap-1"><Tag className="h-3 w-3" />{(sim as any).categoria}</span>
@@ -581,13 +830,22 @@ function PanelLista({ simuladores, onEditar, onEliminar, onNuevo }: {
 // PANEL: GENERAL
 // ─────────────────────────────────────────────────────────────────
 
-function PanelGeneral({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: SimuladorBuilder) => void }) {
+function PanelGeneral({
+  sim,
+  setSim,
+  cursosDisponibles,
+}: {
+  sim: SimuladorBuilder
+  setSim: (s: SimuladorBuilder) => void
+  cursosDisponibles: CursoAdminLite[]
+}) {
   const set = (p: Partial<SimuladorBuilder>) => setSim({ ...sim, ...p })
   const tema = (sim as any).tema || {}
   const cert = (sim as any).certificado || {}
   const setTema = (p: object) => set({ tema: { ...tema, ...p } } as any)
   const setCert = (p: object) => set({ certificado: { ...cert, ...p } } as any)
   const [tagsDraft, setTagsDraft] = useState(((sim as any).tags || []).join(", "))
+  const selectedCourseIds = Array.from(new Set((sim.cursoIds || []).filter(Boolean)))
 
   useEffect(() => {
     setTagsDraft(((sim as any).tags || []).join(", "))
@@ -595,6 +853,22 @@ function PanelGeneral({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: Simu
 
   const parseTags = (value: string) =>
     value.split(",").map((t) => t.trim()).filter(Boolean)
+
+  const toggleCurso = (cursoId: string) => {
+    const nextIds = selectedCourseIds.includes(cursoId)
+      ? selectedCourseIds.filter((id) => id !== cursoId)
+      : [...selectedCourseIds, cursoId]
+    const nextTitulos = cursosDisponibles
+      .filter((curso) => nextIds.includes(curso.id))
+      .map((curso) => curso.titulo)
+
+    set({
+      cursoIds: nextIds,
+      cursoTitulos: nextTitulos,
+      cursoId: nextIds[0],
+      cursoTitulo: nextTitulos[0],
+    })
+  }
 
   return (
     <div className="space-y-5">
@@ -635,31 +909,121 @@ function PanelGeneral({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: Simu
         </div>
       </SCard>
 
-      {/* Status & form mode */}
-      <SCard icon={<Settings className="h-4 w-4" />} title="Estado y acceso" subtitle="Controla quién puede verlo y cómo se capturan los datos">
+      {/* Status & content mode */}
+      <SCard icon={<Settings className="h-4 w-4" />} title="Estado y experiencia" subtitle="Define cómo se publica y si el simulador usa HTML completo o cuestionario clásico">
         <div className="grid gap-4 sm:grid-cols-2">
           <Sel
             label="Estado de publicación"
             value={sim.estado}
             onChange={v => set({ estado: v as any })}
             options={[
-              { value: "borrador",    label: "🟡 Borrador — solo visible para admin" },
-              { value: "en_revision", label: "🔵 En revisión — pendiente de aprobación" },
-              { value: "publicado",   label: "🟢 Publicado — visible para usuarios" },
-              { value: "archivado",   label: "⚫ Archivado — desactivado" },
+              { value: "borrador",    label: "Borrador — solo visible para admin" },
+              { value: "en_revision", label: "En revisión — pendiente de aprobación" },
+              { value: "publicado",   label: "Publicado — visible para usuarios" },
+              { value: "archivado",   label: "Archivado — desactivado" },
             ]}
           />
           <Sel
-            label="Formulario inicial"
-            value={(sim as any).formMode || "personalizado"}
-            onChange={v => set({ formMode: v as any })}
+            label="Tipo de simulador"
+            value={sim.contentMode || "html"}
+            onChange={v => set({
+              contentMode: v as "html" | "quiz",
+              formMode: v === "html" ? "ninguno" : sim.formMode || "personalizado",
+            } as Partial<SimuladorBuilder>)}
             options={[
-              { value: "personalizado", label: "📋 Personalizado — diseñas los campos" },
-              { value: "perfil",        label: "👤 Perfil del usuario — datos automáticos" },
-              { value: "ninguno",       label: "⛔ Sin formulario — va directo al simulacro" },
+              { value: "html", label: "HTML completo — importar diseño entero tipo Moodle u otra plantilla" },
+              { value: "quiz", label: "Cuestionario clásico — banco de preguntas del sistema" },
             ]}
-            hint="Define si el usuario completa datos antes de comenzar"
+            hint="El modo HTML usa un archivo completo; el modo clásico usa preguntas internas."
           />
+        </div>
+        {(sim.contentMode || "html") === "quiz" && (
+          <div className="mt-4">
+            <Sel
+              label="Flujo inicial del cuestionario"
+              value={(sim as any).formMode || "personalizado"}
+              onChange={v => set({ formMode: v as any })}
+              options={[
+                { value: "personalizado", label: "Personalizado — diseñas los campos" },
+                { value: "perfil", label: "Perfil del usuario — datos automáticos" },
+                { value: "ninguno", label: "Sin formulario — va directo al simulacro" },
+              ]}
+              hint="Solo aplica al modo clásico."
+            />
+          </div>
+        )}
+        <div className="mt-4 rounded-xl border border-border bg-secondary/5 divide-y divide-border/60">
+          <Toggle
+            label="Publicar en pagina principal"
+            sublabel="Si esta activo y el simulador esta publicado, aparecera en la portada y en /simulador para los estudiantes."
+            value={sim.publicarEnPaginaPrincipal !== false}
+            onChange={v => set({ publicarEnPaginaPrincipal: v })}
+          />
+        </div>
+      </SCard>
+
+      <SCard
+        icon={<BookOpen className="h-4 w-4" />}
+        title="Cursos de destino"
+        subtitle="Este modulo decide a que cursos se envia el simulador y si tambien sale en la portada."
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-secondary/5 p-4">
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Enviar a cursos</div>
+            <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
+              Selecciona uno o varios cursos. El simulador quedara vinculado automaticamente a esos cursos desde aqui, sin crearlo dentro del modulo de cursos.
+            </p>
+            {cursosDisponibles.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+                Aun no hay cursos disponibles para vincular.
+              </div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {cursosDisponibles.map((curso) => {
+                  const active = selectedCourseIds.includes(curso.id)
+                  return (
+                    <button
+                      key={curso.id}
+                      type="button"
+                      onClick={() => toggleCurso(curso.id)}
+                      className={cn(
+                        "rounded-xl border px-4 py-3 text-left transition-all",
+                        active
+                          ? "border-primary/40 bg-primary/10 text-foreground"
+                          : "border-border bg-card hover:border-primary/25 hover:bg-secondary/10"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">{curso.titulo || "Curso sin titulo"}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {curso.categoria || "Sin categoria"} · {curso.secciones.length} secciones
+                          </div>
+                        </div>
+                        <div
+                          className={cn(
+                            "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+                            active ? "border-primary bg-primary text-white" : "border-border text-transparent"
+                          )}
+                        >
+                          <Check className="h-3 w-3" />
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full border border-border bg-secondary/10 px-3 py-1.5 text-xs text-muted-foreground">
+              Inicio: {sim.publicarEnPaginaPrincipal !== false ? "Activado" : "Desactivado"}
+            </span>
+            <span className="rounded-full border border-border bg-secondary/10 px-3 py-1.5 text-xs text-muted-foreground">
+              Cursos enlazados: {selectedCourseIds.length}
+            </span>
+          </div>
         </div>
       </SCard>
 
@@ -730,12 +1094,12 @@ function PanelGeneral({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: Simu
 // PANEL: FORMULARIO
 // ─────────────────────────────────────────────────────────────────
 
-const TIPOS_CAMPO: { tipo: CampoTipo; label: string; icon: string; desc: string; grupo: string }[] = [
+const TIPOS_CAMPO: { tipo: CampoTipo; label: string; icon: React.ReactNode; desc: string; grupo: string }[] = [
   { tipo: "text",     label: "Texto corto",   icon: "T",  desc: "Nombre, ciudad…",        grupo: "Texto" },
   { tipo: "email",    label: "Email",          icon: "@",  desc: "Correo electrónico",      grupo: "Texto" },
   { tipo: "tel",      label: "Teléfono",       icon: "✆",  desc: "Número de teléfono",      grupo: "Texto" },
   { tipo: "number",   label: "Número",         icon: "#",  desc: "Edad, código…",           grupo: "Texto" },
-  { tipo: "date",     label: "Fecha",          icon: "📅", desc: "Fecha de nacimiento",      grupo: "Texto" },
+  { tipo: "date",     label: "Fecha",          icon: <Calendar className="h-3.5 w-3.5" />, desc: "Fecha de nacimiento",      grupo: "Texto" },
   { tipo: "textarea", label: "Texto largo",    icon: "¶",  desc: "Respuestas largas",        grupo: "Texto" },
   { tipo: "select",   label: "Desplegable",    icon: "▾",  desc: "Lista de opciones",        grupo: "Selección" },
   { tipo: "radio",    label: "Opción única",   icon: "◉",  desc: "Una opción de varias",     grupo: "Selección" },
@@ -746,26 +1110,26 @@ const TIPOS_CAMPO: { tipo: CampoTipo; label: string; icon: string; desc: string;
 ]
 
 const CAMPOS_RAPIDOS = [
-  { label: "Nombres",               name: "nombres",       type: "text"   as CampoTipo, required: true,  icon: "👤", placeholder: "Tus nombres" },
-  { label: "Apellidos",             name: "apellidos",     type: "text"   as CampoTipo, required: true,  icon: "👤", placeholder: "Tus apellidos" },
-  { label: "Correo electrónico",    name: "correo",        type: "email"  as CampoTipo, required: true,  icon: "✉️", placeholder: "tucorreo@ejemplo.com" },
-  { label: "Teléfono / Celular",    name: "telefono",      type: "tel"    as CampoTipo, required: false, icon: "📱", placeholder: "09 999 9999" },
-  { label: "Fecha de nacimiento",   name: "fecha_nac",     type: "date"   as CampoTipo, required: false, icon: "📅" },
-  { label: "Ciudad",                name: "ciudad",        type: "text"   as CampoTipo, required: false, icon: "🏙️", placeholder: "Tu ciudad" },
-  { label: "Institución educativa", name: "institucion",   type: "text"   as CampoTipo, required: false, icon: "🏫", placeholder: "Nombre de tu institución" },
-  { label: "Especialidad",          name: "especialidad",  type: "text"   as CampoTipo, required: false, icon: "📚", placeholder: "Ej: Matemáticas" },
-  { label: "Cargo / Función",       name: "cargo",         type: "text"   as CampoTipo, required: false, icon: "💼", placeholder: "Ej: Docente titular" },
-  { label: "Género",                name: "genero",        type: "radio"  as CampoTipo, required: false, icon: "👥", options: ["Masculino", "Femenino", "No especifica"] },
+  { label: "Nombres",               name: "nombres",       type: "text"   as CampoTipo, required: true,  icon: <User className="h-4 w-4" />, placeholder: "Tus nombres" },
+  { label: "Apellidos",             name: "apellidos",     type: "text"   as CampoTipo, required: true,  icon: <User className="h-4 w-4" />, placeholder: "Tus apellidos" },
+  { label: "Correo electrónico",    name: "correo",        type: "email"  as CampoTipo, required: true,  icon: <Mail className="h-4 w-4" />, placeholder: "tucorreo@ejemplo.com" },
+  { label: "Teléfono / Celular",    name: "telefono",      type: "tel"    as CampoTipo, required: false, icon: <Smartphone className="h-4 w-4" />, placeholder: "09 999 9999" },
+  { label: "Fecha de nacimiento",   name: "fecha_nac",     type: "date"   as CampoTipo, required: false, icon: <Calendar className="h-4 w-4" /> },
+  { label: "Ciudad",                name: "ciudad",        type: "text"   as CampoTipo, required: false, icon: <MapPin className="h-4 w-4" />, placeholder: "Tu ciudad" },
+  { label: "Institución educativa", name: "institucion",   type: "text"   as CampoTipo, required: false, icon: <School className="h-4 w-4" />, placeholder: "Nombre de tu institución" },
+  { label: "Especialidad",          name: "especialidad",  type: "text"   as CampoTipo, required: false, icon: <BookOpen className="h-4 w-4" />, placeholder: "Ej: Matemáticas" },
+  { label: "Cargo / Función",       name: "cargo",         type: "text"   as CampoTipo, required: false, icon: <Briefcase className="h-4 w-4" />, placeholder: "Ej: Docente titular" },
+  { label: "Género",                name: "genero",        type: "radio"  as CampoTipo, required: false, icon: <Users className="h-4 w-4" />, options: ["Masculino", "Femenino", "No especifica"] },
   {
-    label: "Subnivel educativo", name: "subnivel", type: "select" as CampoTipo, required: false, icon: "🎓",
+    label: "Subnivel educativo", name: "subnivel", type: "select" as CampoTipo, required: false, icon: <GraduationCap className="h-4 w-4" />,
     options: ["Inicial", "Básica Elemental (1°-3°)", "Básica Media (4°-6°)", "Básica Superior (7°-9°)", "Bachillerato General Unificado"],
   },
   {
-    label: "Provincia", name: "provincia", type: "select" as CampoTipo, required: false, icon: "📍",
+    label: "Provincia", name: "provincia", type: "select" as CampoTipo, required: false, icon: <MapPin className="h-4 w-4" />,
     options: ["Azuay","Bolívar","Cañar","Carchi","Chimborazo","Cotopaxi","El Oro","Esmeraldas","Galápagos","Guayas","Imbabura","Loja","Los Ríos","Manabí","Morona Santiago","Napo","Orellana","Pastaza","Pichincha","Santa Elena","Santo Domingo","Sucumbíos","Tungurahua","Zamora Chinchipe"],
   },
   {
-    label: "Nivel de instrucción", name: "instruccion", type: "select" as CampoTipo, required: false, icon: "🎓",
+    label: "Nivel de instrucción", name: "instruccion", type: "select" as CampoTipo, required: false, icon: <GraduationCap className="h-4 w-4" />,
     options: ["Bachillerato", "Tecnólogo/Técnico", "Tercer Nivel", "Cuarto Nivel / Maestría", "Doctorado / PhD"],
   },
 ]
@@ -818,7 +1182,7 @@ function PanelFormulario({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: S
   if (formMode === "ninguno") return (
     <SCard icon={<FileText className="h-4 w-4" />} title="Sin formulario" subtitle="El simulacro inicia directamente">
       <div className="rounded-xl border border-dashed border-border bg-secondary/5 p-8 text-center">
-        <div className="text-4xl mb-3">⛔</div>
+        <X className="mx-auto mb-3 h-10 w-10 text-primary" />
         <div className="text-sm font-semibold text-foreground mb-1">Modo sin formulario activo</div>
         <div className="text-xs text-muted-foreground mb-4">Los participantes irán directamente al simulacro sin completar datos.</div>
         <Btn size="sm" onClick={() => setSim({ ...sim, formMode: "personalizado" })}>Activar formulario personalizado</Btn>
@@ -829,7 +1193,7 @@ function PanelFormulario({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: S
   if (formMode === "perfil") return (
     <SCard icon={<Users className="h-4 w-4" />} title="Perfil del usuario" subtitle="Datos automáticos del perfil guardado">
       <div className="rounded-xl border border-dashed border-border bg-secondary/5 p-8 text-center">
-        <div className="text-4xl mb-3">👤</div>
+        <Users className="mx-auto mb-3 h-10 w-10 text-primary" />
         <div className="text-sm text-muted-foreground">Los datos del participante se toman del perfil guardado.</div>
       </div>
     </SCard>
@@ -901,7 +1265,7 @@ function PanelFormulario({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: S
         {sim.formulario.length === 0 ? (
           <div className="p-5">
             <div className="rounded-xl border border-dashed border-border py-12 text-center">
-              <div className="text-3xl mb-2">📋</div>
+              <FileText className="mx-auto mb-2 h-10 w-10 text-primary" />
               <div className="text-xs text-muted-foreground">Usa campos rápidos o el botón "Agregar campo" para empezar</div>
             </div>
           </div>
@@ -1305,18 +1669,26 @@ function PanelPreguntas({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: Si
                 <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground/40" />
                 <input className={cn(inputCls, "pl-9 h-8 text-xs")} placeholder="Buscar preguntas…" value={q} onChange={e => setQ(e.target.value)} />
               </div>
-              <select className={cn(inputCls, "w-36 h-8 text-xs")} value={dif} onChange={e => setDif(e.target.value)}>
-                <option value="todos">Todas</option>
-                <option value="basico">Básico</option>
-                <option value="intermedio">Intermedio</option>
-                <option value="avanzado">Avanzado</option>
-              </select>
+              <div className="w-36">
+                <SystemSelect
+                  value={dif}
+                  onValueChange={setDif}
+                  size="sm"
+                  triggerClassName="text-xs"
+                  options={[
+                    { value: "todos", label: "Todas" },
+                    { value: "basico", label: "Básico" },
+                    { value: "intermedio", label: "Intermedio" },
+                    { value: "avanzado", label: "Avanzado" },
+                  ]}
+                />
+              </div>
             </div>
           )}
 
           {sim.preguntas.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border py-14 text-center">
-              <div className="text-3xl mb-2">✏️</div>
+              <Pencil className="mx-auto mb-2 h-10 w-10 text-primary" />
               <div className="text-xs text-muted-foreground mb-4">Sin preguntas. Agrega la primera o importa desde texto.</div>
               <Btn size="sm" onClick={add}><Plus className="h-3.5 w-3.5" />Primera pregunta</Btn>
             </div>
@@ -1424,9 +1796,9 @@ function PanelPreguntas({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: Si
                           <Inp label="Categoría temática" value={preg.categoria || ""} onChange={v => updP(preg.id, { categoria: v })} placeholder="Ej: Didáctica" />
                           <Inp label="Subtema" value={preg.tema || ""} onChange={v => updP(preg.id, { tema: v })} placeholder="Ej: Estrategias activas" />
                           <Sel label="Dificultad" value={preg.dificultad || "basico"} onChange={v => updP(preg.id, { dificultad: v as any })} options={[
-                            { value: "basico",     label: "🟢 Básico" },
-                            { value: "intermedio", label: "🟡 Intermedio" },
-                            { value: "avanzado",   label: "🔴 Avanzado" },
+                            { value: "basico",     label: "Básico" },
+                            { value: "intermedio", label: "Intermedio" },
+                            { value: "avanzado",   label: "Avanzado" },
                           ]} />
                           <Inp label="Año / Fuente" value={preg.anio ? String(preg.anio) : ""} onChange={v => updP(preg.id, { anio: Number(v) })} type="number" placeholder={String(new Date().getFullYear())} />
                         </div>
@@ -1452,6 +1824,117 @@ function PanelPreguntas({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: Si
 // ─────────────────────────────────────────────────────────────────
 // PANEL: CONFIGURACIÓN
 // ─────────────────────────────────────────────────────────────────
+
+function PanelHtmlContent({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: SimuladorBuilder) => void }) {
+  const html = String(sim.htmlContent || "")
+  const hasHtml = html.trim().length > 0
+
+  const setHtml = (nextHtml: string, fileName?: string) =>
+    setSim({
+      ...sim,
+      contentMode: "html",
+      formMode: "ninguno",
+      htmlContent: nextHtml,
+      htmlImportName: fileName ?? sim.htmlImportName,
+    })
+
+  const onFile = async (file?: File | null) => {
+    if (!file) return
+    const text = await file.text()
+    setHtml(text, file.name)
+  }
+
+  return (
+    <div className="space-y-5">
+      <SCard
+        icon={<Upload className="h-4 w-4" />}
+        title="HTML completo del simulador"
+        subtitle="Importa un archivo HTML entero o pega el código completo del diseño."
+        action={
+          <div className="flex gap-2">
+            <label className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition-all hover:bg-secondary/30">
+              <Upload className="h-3.5 w-3.5" />
+              Cargar HTML
+              <input
+                type="file"
+                accept=".html,text/html"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.currentTarget.value = ""
+                  void onFile(file)
+                }}
+              />
+            </label>
+            {hasHtml && (
+              <Btn size="sm" variant="danger" onClick={() => setHtml("", "")}>
+                <Trash2 className="h-3.5 w-3.5" />
+                Limpiar
+              </Btn>
+            )}
+          </div>
+        }
+        noPad
+      >
+        <div className="space-y-4 p-4">
+          <div className="rounded-2xl border border-border bg-secondary/10 p-4">
+            <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">Modo recomendado</div>
+            <div className="mt-2 text-sm font-semibold text-foreground">Importación completa estilo Moodle / plantilla externa</div>
+            <div className="mt-1 text-xs leading-5 text-muted-foreground">
+              Aquí ya no construyes campos manualmente. El simulador usará el HTML completo que importes desde admin y lo mostrará tal cual en la vista pública.
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+              <span className="rounded-full border border-border bg-card px-2.5 py-1">Acepta archivos `.html`</span>
+              <span className="rounded-full border border-border bg-card px-2.5 py-1">También puedes pegar HTML crudo</span>
+              <span className="rounded-full border border-border bg-card px-2.5 py-1">Ideal para diseños completos</span>
+            </div>
+          </div>
+
+          <Inp
+            label="Pega aquí el HTML completo"
+            value={html}
+            onChange={(value) => setHtml(value)}
+            placeholder="<!DOCTYPE html><html>...</html>"
+            rows={16}
+            hint={sim.htmlImportName ? `Archivo actual: ${sim.htmlImportName}` : "Puedes pegar un archivo completo exportado desde otra plataforma o tu propio diseño HTML."}
+          />
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-border bg-card px-4 py-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Estado</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">{hasHtml ? "HTML listo" : "Sin HTML cargado"}</div>
+            </div>
+            <div className="rounded-xl border border-border bg-card px-4 py-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tamaño</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">{html.length.toLocaleString()} caracteres</div>
+            </div>
+            <div className="rounded-xl border border-border bg-card px-4 py-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Render</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">Iframe seguro</div>
+            </div>
+          </div>
+        </div>
+      </SCard>
+
+      <SCard icon={<Eye className="h-4 w-4" />} title="Vista previa del HTML" subtitle="Así se renderizará el simulador importado">
+        {!hasHtml ? (
+          <div className="rounded-2xl border border-dashed border-border bg-secondary/10 py-16 text-center text-sm text-muted-foreground">
+            Carga un archivo HTML o pega el contenido completo para ver la vista previa.
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-border bg-white">
+            <iframe
+              title={`Vista previa HTML ${sim.titulo || sim.id}`}
+              srcDoc={html}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              className="h-[760px] w-full"
+            />
+          </div>
+        )}
+      </SCard>
+    </div>
+  )
+}
 
 function PanelConfig({ sim, setSim }: { sim: SimuladorBuilder; setSim: (s: SimuladorBuilder) => void }) {
   const cfg = sim.config
@@ -1539,6 +2022,49 @@ function PanelPreview({ sim }: { sim: SimuladorBuilder }) {
   const ct = tema.colorTexto || "#1a1a2e"
   const br = tema.borderRadius === "cuadrado" ? "6px" : tema.borderRadius === "pill" ? "20px" : "14px"
   const formMode = (sim as any).formMode || "personalizado"
+  const isHtml = sim.contentMode === "html"
+  const hasHtml = String(sim.htmlContent || "").trim().length > 0
+
+  if (isHtml) {
+    return (
+      <div className="space-y-5">
+        <SCard icon={<Eye className="h-4 w-4" />} title="Vista previa completa" subtitle="Simulación del simulador HTML tal como lo verán los usuarios">
+          {!hasHtml ? (
+            <div className="rounded-2xl border border-dashed border-border bg-secondary/10 py-20 text-center text-sm text-muted-foreground">
+              Aún no hay HTML importado. Carga un archivo o pega el contenido desde la pestaña Contenido HTML.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-border bg-white">
+              <iframe
+                title={`Vista previa completa ${sim.titulo || sim.id}`}
+                srcDoc={String(sim.htmlContent || "")}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                className="h-[820px] w-full"
+              />
+            </div>
+          )}
+        </SCard>
+
+        <SCard icon={<Settings className="h-4 w-4" />} title="Ficha técnica" subtitle="Resumen del simulador importado">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {[
+              ["ID", sim.id],
+              ["Estado", sim.estado],
+              ["Modo", "HTML completo"],
+              ["Archivo", sim.htmlImportName || "Pegado manual"],
+              ["Tamaño", `${String(sim.htmlContent || "").length.toLocaleString()} chars`],
+              ["Creado", sim.createdAt ? new Date(sim.createdAt).toLocaleDateString("es") : "—"],
+            ].map(([k, v]) => (
+              <div key={k} className="flex flex-col gap-0.5 rounded-xl border border-border bg-secondary/10 px-3 py-2.5">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wide">{k}</div>
+                <div className="text-xs font-bold text-foreground font-mono truncate">{String(v)}</div>
+              </div>
+            ))}
+          </div>
+        </SCard>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
@@ -1547,11 +2073,7 @@ function PanelPreview({ sim }: { sim: SimuladorBuilder }) {
           {/* Banner */}
           <div className="px-8 py-10 text-center" style={{ background: `linear-gradient(135deg, ${cp} 0%, ${cs} 100%)`, color: "#fff" }}>
             <div className="flex justify-center mb-4">
-              {(sim as any).icono?.startsWith("data:") || (sim as any).icono?.startsWith("http") || (sim as any).icono?.startsWith("/")
-                // eslint-disable-next-line @next/next/no-img-element
-                ? <img src={(sim as any).icono} alt="" className="h-16 w-16 rounded-2xl object-cover shadow-lg" />
-                : <span className="text-5xl">{(sim as any).icono || "🎯"}</span>
-              }
+              {getSystemIcon((sim as any).icono, "h-16 w-16 text-white")}
             </div>
             <div className="text-2xl font-bold mb-1">{sim.titulo || "Título del simulador"}</div>
             {(sim as any).subtitulo && <div className="text-sm opacity-80 mt-1">{(sim as any).subtitulo}</div>}
@@ -1562,7 +2084,7 @@ function PanelPreview({ sim }: { sim: SimuladorBuilder }) {
             {/* Instructions */}
             {(sim as any).instrucciones && (
               <div className="rounded-xl p-4" style={{ background: `${cp}10`, border: `1px solid ${cp}25` }}>
-                <div className="text-xs font-bold mb-1.5" style={{ color: cp }}>📌 Instrucciones</div>
+                <div className="text-xs font-bold mb-1.5" style={{ color: cp }}>Instrucciones</div>
                 <div className="text-sm opacity-80">{(sim as any).instrucciones}</div>
               </div>
             )}
@@ -1603,14 +2125,15 @@ function PanelPreview({ sim }: { sim: SimuladorBuilder }) {
             {/* Info pills */}
             <div className="flex flex-wrap justify-center gap-2 py-3 border-t" style={{ borderColor: `${ct}15` }}>
               {[
-                `📋 ${sim.preguntas.length} preguntas`,
-                `⏱ ${sim.config.tiempoPregunta}s por pregunta`,
-                sim.config.retroalimentacion !== false && "💡 Retroalimentación",
-                sim.config.revisionFinal !== false && "📊 Revisión final",
-                (sim as any).certificado?.habilitado && "🏆 Certificado",
+                { icon: <ClipboardList className="h-3.5 w-3.5" />, label: `${sim.preguntas.length} preguntas` },
+                { icon: <Clock className="h-3.5 w-3.5" />, label: `${sim.config.tiempoPregunta}s por pregunta` },
+                sim.config.retroalimentacion !== false && { icon: <Sparkles className="h-3.5 w-3.5" />, label: "Retroalimentación" },
+                sim.config.revisionFinal !== false && { icon: <BarChart2 className="h-3.5 w-3.5" />, label: "Revisión final" },
+                (sim as any).certificado?.habilitado && { icon: <Trophy className="h-3.5 w-3.5" />, label: "Certificado" },
               ].filter(Boolean).map((p, i) => (
-                <span key={i} className="text-xs px-3 py-1.5 rounded-full font-medium" style={{ background: `${cp}12`, color: cp, border: `1px solid ${cp}25` }}>
-                  {p as string}
+                <span key={i} className="text-xs px-3 py-1.5 rounded-full font-medium flex items-center gap-1.5" style={{ background: `${cp}12`, color: cp, border: `1px solid ${cp}25` }}>
+                  {p.icon}
+                  <span>{p.label}</span>
                 </span>
               ))}
             </div>
@@ -1656,21 +2179,19 @@ function PanelPreview({ sim }: { sim: SimuladorBuilder }) {
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────
 
-type TabId = "lista" | "general" | "formulario" | "preguntas" | "configuracion" | "preview"
+type TabId = "lista" | "general" | "preguntas"
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode; req?: boolean }[] = [
   { id: "lista",         label: "Lista simuladores", icon: <LayoutGrid className="h-3.5 w-3.5" /> },
   { id: "general",       label: "General",           icon: <Sparkles className="h-3.5 w-3.5" />,   req: true },
-  { id: "formulario",    label: "Formulario",        icon: <FileText className="h-3.5 w-3.5" />,    req: true },
-  { id: "preguntas",     label: "Banco de preguntas",icon: <BookOpen className="h-3.5 w-3.5" />,    req: true },
-  { id: "configuracion", label: "Configuración",     icon: <Sliders className="h-3.5 w-3.5" />,    req: true },
-  { id: "preview",       label: "Vista previa",      icon: <Eye className="h-3.5 w-3.5" />,         req: true },
+  { id: "preguntas",     label: "Contenido HTML",    icon: <Upload className="h-3.5 w-3.5" />,      req: true },
 ]
 
 export default function AdminSimulatorsPanel() {
   const searchParams = useSearchParams()
   const [tab, setTab] = useState<TabId>("lista")
   const [simuladores, setSimuladores] = useState<SimuladorBuilder[]>([])
+  const [cursosDisponibles, setCursosDisponibles] = useState<CursoAdminLite[]>([])
   const [sim, setSim] = useState<SimuladorBuilder | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -1678,15 +2199,35 @@ export default function AdminSimulatorsPanel() {
   const simId = searchParams.get("simId")
   const tabParam = searchParams.get("tab")
   const fromCurso = searchParams.get("from") === "curso"
+  const cursoPreseleccionado = searchParams.get("cursoId") || ""
 
-  useEffect(() => { if (typeof window !== "undefined") setSimuladores(getSimuladores()) }, [])
-  const refresh = useCallback(() => setSimuladores(getSimuladores()), [])
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    setSimuladores(getSimuladores())
+    setCursosDisponibles(getCursosAdminLite())
+  }, [])
+  const refresh = useCallback(() => {
+    setSimuladores(getSimuladores())
+    setCursosDisponibles(getCursosAdminLite())
+  }, [])
 
   useEffect(() => {
     if (!simId || simuladores.length === 0) return
     const found = simuladores.find((item) => item.id === simId)
     if (!found) return
-    setSim(found)
+    setSim(normalizeCourseAssignments(found))
+    if (tabParam === "formulario") {
+      setTab("preguntas")
+      return
+    }
+    if (tabParam === "configuracion") {
+      setTab("preguntas")
+      return
+    }
+    if (tabParam === "preview") {
+      setTab("preguntas")
+      return
+    }
     if (tabParam && TABS.some((item) => item.id === tabParam)) {
       setTab(tabParam as TabId)
       return
@@ -1694,40 +2235,73 @@ export default function AdminSimulatorsPanel() {
     setTab("general")
   }, [simId, simuladores, tabParam])
 
-  const handleNuevo = () => { setSim(crearSimuladorBase()); setTab("general") }
-  const handleEditar = (s: SimuladorBuilder) => { setSim({ ...s }); setTab("general") }
+  const handleNuevo = () => {
+    const cursos = getCursosAdminLite()
+    const cursoSeleccionado = cursos.find((curso) => curso.id === cursoPreseleccionado)
+    setSim(
+      normalizeCourseAssignments({
+        ...crearSimuladorBase(),
+        cursoIds: cursoSeleccionado ? [cursoSeleccionado.id] : [],
+        cursoTitulos: cursoSeleccionado ? [cursoSeleccionado.titulo] : [],
+        cursoId: cursoSeleccionado?.id,
+        cursoTitulo: cursoSeleccionado?.titulo,
+      }),
+    )
+    setTab("general")
+  }
+  const handleEditar = (s: SimuladorBuilder) => { setSim(normalizeCourseAssignments({ ...s })); setTab("general") }
 
   const handleGuardar = async () => {
     if (!sim) return
     setSaving(true)
     await new Promise(r => setTimeout(r, 150))
-    const updSim = { ...sim, updatedAt: new Date().toISOString() }
+    const updSim = normalizeCourseAssignments({ ...sim, updatedAt: new Date().toISOString() })
     const existe = (getSimuladores() as any[]).find((s: any) => s.id === updSim.id)
     if (existe) actualizarSimulador(updSim as any)
     else guardarSimulador(updSim as any)
+    syncSimulatorCourses(updSim, getCursosAdminLite())
     setSim(updSim); refresh(); setSaving(false); setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
 
   const handlePublicar = () => {
     if (!sim) return
-    const pub = { ...sim, estado: "publicado" as const, updatedAt: new Date().toISOString() }
+    const pub = normalizeCourseAssignments({ ...sim, estado: "publicado" as const, updatedAt: new Date().toISOString() })
     const existe = (getSimuladores() as any[]).find((s: any) => s.id === pub.id)
     if (existe) actualizarSimulador(pub as any)
     else guardarSimulador(pub as any)
+    syncSimulatorCourses(pub, getCursosAdminLite())
     setSim(pub); refresh(); setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
 
   const handleDel = (id: string) => {
+    removeSimulatorFromCourses(id, getCursosAdminLite())
     eliminarSimulador(id); refresh()
     if (sim?.id === id) { setSim(null); setTab("lista") }
     setConfirmDel(null)
   }
 
+  const handleToggleHome = (id: string, value: boolean) => {
+    const existing = getSimuladores().find((item: any) => item.id === id) as SimuladorBuilder | undefined
+    if (!existing) return
+    const updated = normalizeCourseAssignments({
+      ...existing,
+      publicarEnPaginaPrincipal: value,
+      updatedAt: new Date().toISOString(),
+    })
+    actualizarSimulador(updated as any)
+    if (sim?.id === id) {
+      setSim(updated)
+    }
+    refresh()
+  }
+
   const errores = sim ? {
-    preguntas: sim.preguntas.filter(p => !p.pregunta || p.opciones.filter(Boolean).length < 2).length,
-    campos:    sim.formulario.filter(c => c.type !== "divider" && c.type !== "heading" && !c.label).length,
+    preguntas:
+      sim.contentMode === "html"
+        ? (String(sim.htmlContent || "").trim() ? 0 : 1)
+        : sim.preguntas.filter(p => !p.pregunta || p.opciones.filter(Boolean).length < 2).length,
   } : null
 
   const badge = sim ? estadoBadge(sim.estado) : null
@@ -1741,7 +2315,7 @@ export default function AdminSimulatorsPanel() {
           <div>
             <div className="text-[10px] font-bold uppercase tracking-widest text-primary mb-0.5">Simuladores</div>
             <h1 className="text-xl font-bold text-foreground tracking-tight">Constructor Profesional</h1>
-            <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">Motor visual tipo SaaS para crear simuladores, formularios y bancos de preguntas con localStorage.</p>
+            <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">Crea simuladores profesionales con HTML completo desde un solo panel.</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {fromCurso && (
@@ -1799,9 +2373,6 @@ export default function AdminSimulatorsPanel() {
                 {t.id === "preguntas"  && (errores?.preguntas ?? 0) > 0 && (
                   <span className="flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">{errores!.preguntas}</span>
                 )}
-                {t.id === "formulario" && (errores?.campos ?? 0) > 0 && (
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">{errores!.campos}</span>
-                )}
               </button>
             )
           })}
@@ -1827,18 +2398,28 @@ export default function AdminSimulatorsPanel() {
           <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold", badge.cls)}>
             {badge.label}
           </span>
+          <button
+            type="button"
+            onClick={() => setSim({ ...sim, publicarEnPaginaPrincipal: sim.publicarEnPaginaPrincipal === false })}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all",
+              sim.publicarEnPaginaPrincipal !== false
+                ? "border-sky-500/20 bg-sky-500/10 text-sky-300"
+                : "border-border bg-secondary/20 text-muted-foreground hover:border-sky-500/20 hover:text-sky-300"
+            )}
+          >
+            <Eye className="h-3 w-3" />
+            {sim.publicarEnPaginaPrincipal !== false ? "Inicio activado" : "Inicio desactivado"}
+          </button>
           <span className="ml-auto text-[10px] text-muted-foreground/30 font-mono hidden lg:block">{sim.id}</span>
         </div>
       )}
 
       {/* ── Content ── */}
       <div className="px-6 py-6 max-w-5xl mx-auto">
-        {tab === "lista"         && <PanelLista simuladores={simuladores} onEditar={handleEditar} onEliminar={id => setConfirmDel(id)} onNuevo={handleNuevo} />}
-        {tab === "general"       && sim && <PanelGeneral sim={sim} setSim={setSim} />}
-        {tab === "formulario"    && sim && <PanelFormulario sim={sim} setSim={setSim} />}
-        {tab === "preguntas"     && sim && <PanelPreguntas sim={sim} setSim={setSim} />}
-        {tab === "configuracion" && sim && <PanelConfig sim={sim} setSim={setSim} />}
-        {tab === "preview"       && sim && <PanelPreview sim={sim} />}
+        {tab === "lista"         && <PanelLista simuladores={simuladores} onEditar={handleEditar} onEliminar={id => setConfirmDel(id)} onNuevo={handleNuevo} onToggleHome={handleToggleHome} />}
+        {tab === "general"       && sim && <PanelGeneral sim={sim} setSim={setSim} cursosDisponibles={cursosDisponibles} />}
+        {tab === "preguntas"     && sim && ((sim.contentMode || "html") === "html" ? <PanelHtmlContent sim={sim} setSim={setSim} /> : <PanelPreguntas sim={sim} setSim={setSim} />)}
       </div>
 
       {/* ── Delete confirmation modal ── */}
@@ -1855,7 +2436,7 @@ export default function AdminSimulatorsPanel() {
               </div>
             </div>
             <p className="text-sm text-muted-foreground mb-5">
-              ¿Confirmas que deseas eliminar este simulador junto con su formulario y todas sus preguntas?
+              ¿Confirmas que deseas eliminar este simulador junto con su contenido y configuración?
             </p>
             <div className="flex gap-3">
               <Btn onClick={() => setConfirmDel(null)} className="flex-1">Cancelar</Btn>

@@ -4,28 +4,28 @@ import { cn } from "@/lib/utils"
 
 const SERVICES = [
   {
-    icon: "🎯",
+    icon: "target",
     title: "Simuladores QSM",
     description: "Practica con miles de preguntas actualizadas al formato INEVAL 2026.",
     tag: "Popular",
     num: "01"
   },
   {
-    icon: "📊",
+    icon: "bar-chart",
     title: "Dashboard Progreso",
     description: "Estadisticas detalladas de tu avance y areas de mejora.",
     tag: null,
     num: "02"
   },
   {
-    icon: "🧠",
+    icon: "brain",
     title: "Cursos Especializados",
     description: "17 perfiles docentes con contenido actualizado por expertos.",
     tag: null,
     num: "03"
   },
   {
-    icon: "🎓",
+    icon: "graduation-cap",
     title: "Asesoria SIME",
     description: "Guia personalizada para tu proceso de nombramiento docente.",
     tag: "Premium",

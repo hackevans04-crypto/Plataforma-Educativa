@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import type { MouseEvent, ReactNode } from "react"
-import { ArrowDown, ArrowUp, Award, BadgePlus, BookOpen, Copy, Code2, Eye, EyeOff, FileImage, FileText, GalleryVertical, GripVertical, HelpCircle, Layers, LayoutTemplate, MessageSquare, Minus, Pencil, PlayCircle, Plus, Sparkles, Star, Target, TextCursorInput, Trash2, Video } from "lucide-react"
+import { ArrowDown, ArrowUp, Award, BadgePlus, BookOpen, Copy, Code2, Eye, EyeOff, FileImage, FileText, GalleryVertical, GraduationCap, GripVertical, HelpCircle, Layers, LayoutTemplate, MessageSquare, Minus, Pencil, PlayCircle, Plus, Sparkles, Star, Target, TextCursorInput, Trash2, Video } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { CMSActionConfig, CMSConfig, CMSSection, CMSSectionType } from "@/hooks/use-cms"
 import type { EditorElementInfo } from "@/components/admin/html-editor-bridge"
@@ -28,6 +28,7 @@ import DynamicFeedSection from "@/components/landing/dynamic-feed-section"
 import { resolveLandingBuilderItems, useLandingBuilderData } from "@/hooks/use-landing-builder-data"
 import FormBuilderSection from "@/components/landing/form-builder-section"
 import LandingPopupHost from "@/components/landing/landing-popup-host"
+import PublicCoursesHub from "@/components/courses/public-courses-hub"
 import { EmbedSection, LogoStripSection, RichTextSection, SpacerSection } from "@/components/landing/cms-page-renderer"
 import { getLandingSectionDomId } from "@/hooks/use-landing-actions"
 
@@ -63,6 +64,7 @@ const SECTION_META: Record<CMSSectionType, { label: string; icon: ReactNode }> =
   featureCards: { label: "Tarjetas", icon: <BookOpen className="h-3.5 w-3.5" /> },
   simulatorsFeed: { label: "Simuladores", icon: <Target className="h-3.5 w-3.5" /> },
   coursesFeed: { label: "Cursos", icon: <BookOpen className="h-3.5 w-3.5" /> },
+  coursesCatalog: { label: "Catalogo cursos", icon: <GraduationCap className="h-3.5 w-3.5" /> },
   evaluationsFeed: { label: "Evaluaciones", icon: <Award className="h-3.5 w-3.5" /> },
   formBuilder: { label: "Formulario", icon: <FileText className="h-3.5 w-3.5" /> },
   richText: { label: "Contenido libre", icon: <TextCursorInput className="h-3.5 w-3.5" /> },
@@ -540,6 +542,14 @@ function renderSectionContent(
           onActivate={() => onSelect?.(section.id)}
           onFieldChange={(field, value) => onInlineUpdate?.(section.id, { [field]: value })}
           onCtaAction={() => onAction?.(section.data?.ctaAction, section.data?.ctaHref)}
+        />
+      )
+    case "coursesCatalog":
+      return (
+        <PublicCoursesHub
+          variant={section.data?.variant === "page" ? "page" : "home"}
+          content={section.data}
+          onCatalogAction={() => onAction?.(section.data?.ctaAction, section.data?.ctaHref)}
         />
       )
     default:

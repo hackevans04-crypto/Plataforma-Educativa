@@ -30,6 +30,15 @@ export type SiteIconName =
   | "play-circle"
   | "rocket"
   | "monitor"
+  | "beaker"
+  | "palette"
+  | "music"
+  | "dumbbell"
+  | "chef-hat"
+  | "calculator"
+  | "wrench"
+  | "pencil"
+  | "brain"
 
 interface SiteIconDefinition {
   name: SiteIconName
@@ -221,9 +230,101 @@ const ICONS: SiteIconDefinition[] = [
     keywords: ["monitor", "desktop", "screen", "device", "web"],
     paths: '<rect x="4" y="5" width="16" height="11" rx="2"></rect><path d="M9 19.5h6"></path><path d="M12 16v3.5"></path>',
   },
+  {
+    name: "beaker",
+    label: "Ciencias",
+    keywords: ["beaker", "flask", "science", "chemistry", "lab"],
+    paths: '<path d="M4.5 7.5h15v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3v-9Z"></path><path d="M8.5 7.5V5.5h7v2"></path><path d="M12 11v5"></path>',
+  },
+  {
+    name: "palette",
+    label: "Artes",
+    keywords: ["palette", "art", "creative", "design", "painting"],
+    paths: '<circle cx="12" cy="12" r="9"></circle><circle cx="7.5" cy="8.5" r="1.5" fill="currentColor"></circle><circle cx="12" cy="7" r="1.5" fill="currentColor"></circle><circle cx="16.5" cy="8.5" r="1.5" fill="currentColor"></circle><circle cx="17" cy="13" r="1.5" fill="currentColor"></circle><circle cx="14" cy="17" r="1.5" fill="currentColor"></circle><circle cx="8.5" cy="15.5" r="1.5" fill="currentColor"></circle>',
+  },
+  {
+    name: "music",
+    label: "Musica",
+    keywords: ["music", "song", "audio", "note", "sound"],
+    paths: '<path d="M7 17v-6a2 2 0 1 1 4 0v6"></path><path d="M11 11v-4a2 2 0 1 1 4 0v4"></path><path d="M15 3v8a2 2 0 1 1-4 0V3"></path><path d="M7 17a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"></path><path d="M15 11a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"></path>',
+  },
+  {
+    name: "dumbbell",
+    label: "Deportes",
+    keywords: ["dumbbell", "sport", "fitness", "exercise", "gym"],
+    paths: '<path d="M6 18.5h1v-12h-1a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1Z"></path><path d="M8 18.5h8v-12H8Z"></path><path d="M18 6.5h-1v12h1a1 1 0 0 0 1-1v-10a1 1 0 0 0-1-1Z"></path>',
+  },
+  {
+    name: "chef-hat",
+    label: "Cocina",
+    keywords: ["chef", "cooking", "cuisine", "kitchen", "food"],
+    paths: '<path d="M11 4h2v3h-2V4Z"></path><path d="M7 14h10l1-6H6l1 6Z"></path><path d="M7 14a2 2 0 0 0-2 2v1.5h14V16a2 2 0 0 0-2-2"></path><circle cx="7" cy="16.5" r=".5" fill="currentColor"></circle><circle cx="17" cy="16.5" r=".5" fill="currentColor"></circle>',
+  },
+  {
+    name: "calculator",
+    label: "Matematicas",
+    keywords: ["calculator", "math", "compute", "numbers", "calculation"],
+    paths: '<rect x="5" y="3" width="14" height="18" rx="2"></rect><rect x="7" y="6" width="10" height="3"></rect><path d="M7 11h10"></path><path d="M7 13.5h3.5"></path><path d="M13.5 13.5h3.5"></path><path d="M7 16h3.5"></path><path d="M13.5 16h3.5"></path>',
+  },
+  {
+    name: "wrench",
+    label: "Herramientas",
+    keywords: ["wrench", "tool", "repair", "settings", "configure"],
+    paths: '<path d="M6.5 11.5a5 5 0 0 1 8.2-3.8l4.2 4.2a1 1 0 0 1 0 1.4l-5 5a1 1 0 0 1-1.4 0l-4.2-4.2a5 5 0 0 1-1.8-2.6Z"></path><path d="M4.5 18l-2 2a1 1 0 0 1-1.4-1.4l2-2"></path>',
+  },
+  {
+    name: "pencil",
+    label: "Escritura",
+    keywords: ["pencil", "edit", "write", "draw", "compose"],
+    paths: '<path d="M17.5 2.5 19 4l-12 12H5v-2l12-12Z"></path><path d="m5 14-2 4.5 4.5-2L17.5 4"></path>',
+  },
+  {
+    name: "brain",
+    label: "Inteligencia",
+    keywords: ["brain", "mind", "smart", "intelligence", "cognitive"],
+    paths: '<path d="M9 4a1.5 1.5 0 0 0-1.5 1.5V7a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2v1.5a1.5 1.5 0 0 0 3 0V12a1.5 1.5 0 0 0 3 0V12a1.5 1.5 0 0 0 3 0v-1.5a1.5 1.5 0 0 0 1.5-1.5v-1a2 2 0 0 0-2-2V5.5A1.5 1.5 0 0 0 15 4a1.5 1.5 0 0 0-1.5 1.5V7h-3V5.5A1.5 1.5 0 0 0 9 4Z"></path><path d="M6.5 13.5a2 2 0 0 0-2 2v.5a2.5 2.5 0 0 0 2.5 2.5h11a2.5 2.5 0 0 0 2.5-2.5v-.5a2 2 0 0 0-2-2"></path>',
+  },
 ]
 
 export const SITE_ICON_OPTIONS = ICONS.map(({ name, label, keywords }) => ({ name, label, keywords }))
+
+export const siteIconRegistry = Object.fromEntries(
+  ICONS.map((icon) => [icon.name, icon])
+)
+
+const ICON_ALIAS_MAP: Record<string, SiteIconName> = {
+  users: "users",
+  user: "user",
+  trophy: "award",
+  award: "award",
+  star: "sparkles",
+  sparkles: "sparkles",
+  barchart3: "bar-chart",
+  "bar-chart": "bar-chart",
+  chart: "bar-chart",
+  target: "target",
+  bookopen: "book-open",
+  "book-open": "book-open",
+  books: "books",
+  graduationcap: "graduation-cap",
+  "graduation-cap": "graduation-cap",
+  monitor: "monitor",
+  globe: "globe",
+  clipboardlist: "clipboard-list",
+  "clipboard-list": "clipboard-list",
+  checkcircle: "check-circle",
+  "check-circle": "check-circle",
+  presentation: "presentation",
+  building: "building",
+  image: "image",
+  mail: "mail",
+  phone: "phone",
+  shield: "shield",
+  rocket: "rocket",
+  timer: "timer",
+  lightbulb: "lightbulb",
+  "light-bulb": "lightbulb",
+}
 
 export const EMOJI_ICON_MAP: Record<string, SiteIconName> = {
   "📋": "clipboard-list",
@@ -245,6 +346,19 @@ export const EMOJI_ICON_MAP: Record<string, SiteIconName> = {
   "🏫": "building",
   "🖼️": "image",
   "✨": "sparkles",
+  "💻": "monitor",
+  "🔬": "beaker",
+  "🎨": "palette",
+  "🎵": "music",
+  "⚽": "dumbbell",
+  "🍳": "chef-hat",
+  "📖": "book-open",
+  "🧮": "calculator",
+  "🌍": "globe",
+  "🔧": "wrench",
+  "✏️": "pencil",
+  "🚀": "rocket",
+  "🧠": "brain",
 }
 
 const ICON_LOOKUP = new Map(ICONS.map((icon) => [icon.name, icon]))
@@ -393,6 +507,34 @@ export function renderSiteIconSvg(
 ) {
   const size = Math.max(12, Number(options?.size ?? 18))
   return createIconMarkup(name, size, options?.color || "currentColor", options?.strokeWidth)
+}
+
+export function resolveSiteIconName(
+  value?: string | null,
+  fallback: SiteIconName = "sparkles"
+): SiteIconName {
+  if (!value) return fallback
+
+  const raw = String(value).trim()
+  if (!raw) return fallback
+
+  if (ICON_LOOKUP.has(raw as SiteIconName)) {
+    return raw as SiteIconName
+  }
+
+  const emojiMatch = EMOJI_ICON_MAP[raw]
+  if (emojiMatch) return emojiMatch
+
+  const normalized = raw
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-")
+
+  if (ICON_LOOKUP.has(normalized as SiteIconName)) {
+    return normalized as SiteIconName
+  }
+
+  const aliasKey = normalized.replace(/-/g, "")
+  return ICON_ALIAS_MAP[normalized] ?? ICON_ALIAS_MAP[aliasKey] ?? fallback
 }
 
 export function renderSiteIconHtml(

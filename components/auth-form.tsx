@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
 import { Eye, EyeOff, Loader2, Chrome, Facebook } from "lucide-react"
@@ -31,6 +31,7 @@ function PasswordStrength({ password }: { password: string }) {
 
 export default function AuthForm({ initialTab = "login" }: AuthFormProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { login, register, isLoading } = useAuth()
   const [tab, setTab] = useState<AuthTab>(initialTab)
   const [success, setSuccess] = useState(false)
@@ -48,16 +49,23 @@ export default function AuthForm({ initialTab = "login" }: AuthFormProps) {
     setTab(initialTab)
   }, [initialTab])
 
+  const returnToParam = searchParams.get("returnTo") || ""
+  const safeReturnTo =
+    returnToParam.startsWith("/") && !returnToParam.startsWith("//")
+      ? returnToParam
+      : ""
+  const authPageHref = (next: AuthTab) =>
+    safeReturnTo
+      ? `/${next === "login" ? "login" : "registro"}?returnTo=${encodeURIComponent(safeReturnTo)}`
+      : `/${next === "login" ? "login" : "registro"}`
+  const postAuthHref = safeReturnTo || ""
+
   const update = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }))
 
   const goTab = (next: AuthTab) => {
     setTab(next)
     setError("")
-    if (next === "login") {
-      router.push("/login")
-      return
-    }
-    router.push("/registro")
+    router.push(authPageHref(next))
   }
 
   const submit = async () => {
@@ -77,7 +85,7 @@ export default function AuthForm({ initialTab = "login" }: AuthFormProps) {
         const isAdmin = form.email.toLowerCase() === "admin@hackevans.com"
         setSuccess(true)
         setTimeout(() => {
-          router.push(isAdmin ? "/admin" : "/dashboard")
+          router.push(postAuthHref || (isAdmin ? "/admin" : "/dashboard"))
         }, 1500)
       } else {
         setError("Credenciales incorrectas.")
@@ -87,7 +95,7 @@ export default function AuthForm({ initialTab = "login" }: AuthFormProps) {
       if (ok) {
         setSuccess(true)
         setTimeout(() => {
-          router.push("/dashboard")
+          router.push(postAuthHref || "/dashboard")
         }, 1500)
       } else {
         setError("Este correo ya esta registrado.")

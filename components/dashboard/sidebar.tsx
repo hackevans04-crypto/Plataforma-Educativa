@@ -8,14 +8,17 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
 import {
   LayoutDashboard, BookOpen,
-  BarChart3, ChevronLeft, Menu, Award, Zap, Shield
+  BarChart3, ChevronLeft, Menu, Award, Shield, Target,
+  Headphones,
 } from "lucide-react"
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
   { icon: BookOpen, label: "Mis Cursos", href: "/dashboard/cursos" },
+  { icon: Target, label: "Simuladores", href: "/dashboard/simuladores" },
   { icon: BarChart3, label: "Mi Progreso", href: "/dashboard/progreso" },
   { icon: Award, label: "Logros", href: "/dashboard/logros" },
+  { icon: Headphones, label: "Soporte", href: "/dashboard/soporte" },
 ]
 
 export default function DashboardSidebar() {
@@ -82,10 +85,7 @@ export default function DashboardSidebar() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-foreground truncate">{user?.name}</div>
-                <div className="flex items-center gap-1.5">
-                  <Zap className="w-3 h-3 text-[#F5C842]" />
-                  <span className="text-xs text-muted-foreground capitalize">{user?.plan || "free"} Plan</span>
-                </div>
+                <div className="text-xs text-muted-foreground">Mi cuenta</div>
               </div>
             </div>
           )}

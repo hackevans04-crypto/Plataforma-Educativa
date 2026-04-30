@@ -1,9 +1,13 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+export const dynamic = "force-dynamic"
+export const fetchCache = "force-no-store"
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import {
+  ArrowLeft,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -50,7 +54,9 @@ function shuffleArray<T>(array: T[]) {
 
 export default function SimuladorPage() {
   const params = useParams()
+  const router = useRouter()
   const simuladorId = Array.isArray(params.id) ? params.id[0] : params.id
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const [simulador, setSimulador] = useState<SimuladorBuilder | null>(null)
   const [loading, setLoading] = useState(true)
   const [started, setStarted] = useState(false)
@@ -66,6 +72,7 @@ export default function SimuladorPage() {
   const [mineducLoading, setMineducLoading] = useState(false)
   const [intentos, setIntentos] = useState<ResultadoSimulador[]>([])
   const [now, setNow] = useState(() => Date.now())
+  const [iframeHeight, setIframeHeight] = useState(980)
 
   useEffect(() => {
     if (!simuladorId || typeof window === "undefined") return
@@ -111,6 +118,32 @@ export default function SimuladorPage() {
     const interval = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(interval)
   }, [simulador?.id, intentos.length])
+
+  const recalcIframeHeight = useCallback(() => {
+    const frame = iframeRef.current
+    if (!frame) return
+
+    try {
+      const doc = frame.contentDocument || frame.contentWindow?.document
+      if (!doc) return
+      const bodyHeight = doc.body?.scrollHeight || 0
+      const docHeight = doc.documentElement?.scrollHeight || 0
+      const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 900
+      // Use the larger of the content height or viewport so page scrolls naturally
+      // without producing a second scroll inside the iframe.
+      setIframeHeight(Math.max(bodyHeight, docHeight, viewportHeight))
+    } catch {
+      if (typeof window !== "undefined") {
+        setIframeHeight(window.innerHeight)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (simulador?.contentMode !== "html") return
+    window.addEventListener("resize", recalcIframeHeight)
+    return () => window.removeEventListener("resize", recalcIframeHeight)
+  }, [recalcIframeHeight, simulador?.contentMode])
 
   const intentosMax = simulador?.config?.intentosMax ?? 3
   const cooldownMinutos = simulador?.config?.cooldownMinutos ?? 30
@@ -261,6 +294,63 @@ export default function SimuladorPage() {
         <Link href="/dashboard" className="text-sm text-primary hover:underline">
           Volver al dashboard
         </Link>
+      </div>
+    )
+  }
+
+  const htmlImportado = simulador.contentMode === "html" ? String(simulador.htmlContent || "") : ""
+
+  if (simulador.contentMode === "html") {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <div className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-border bg-background/95 px-4 py-2.5 backdrop-blur-md md:px-6">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (window.history.length > 1) router.back()
+                else router.push("/dashboard/simuladores")
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-all hover:border-primary/40 hover:bg-secondary/40 hover:text-primary"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Volver
+            </button>
+            <div className="hidden h-5 w-px bg-border sm:block" />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-bold text-foreground">{simulador.titulo}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">Hack Evans</div>
+            </div>
+          </div>
+          <div className="hidden items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground sm:flex">
+            <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+            HTML completo
+          </div>
+        </div>
+
+        {!htmlImportado.trim() ? (
+          <div className="mx-auto max-w-3xl px-4 py-12">
+            <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">
+              Este simulador aún no tiene HTML importado.
+            </div>
+          </div>
+        ) : (
+          <iframe
+            ref={iframeRef}
+            title={simulador.titulo || simulador.id}
+            srcDoc={htmlImportado}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            onLoad={() => {
+              recalcIframeHeight()
+              window.setTimeout(recalcIframeHeight, 120)
+              window.setTimeout(recalcIframeHeight, 500)
+              window.setTimeout(recalcIframeHeight, 1200)
+            }}
+            style={{ height: `${iframeHeight}px`, display: "block" }}
+            className="w-full border-0"
+            scrolling="no"
+          />
+        )}
       </div>
     )
   }

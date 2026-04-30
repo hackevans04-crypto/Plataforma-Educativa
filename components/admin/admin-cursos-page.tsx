@@ -6,7 +6,8 @@ import {
   Clock, Copy, Eye, EyeOff, FileText, GripVertical, Key, Layers,
   LayoutGrid, Link2, Loader2, Lock, Paperclip, Pencil, Play, Plus,
   Save, Settings, Target, Trash2, Trophy, Upload, Users,
-  Video, X, Zap, Star, BarChart3, Tag,
+  Video, X, Zap, Star, BarChart3, Tag, GraduationCap, Lightbulb,
+  Folder
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { SimuladorBuilder } from "@/simuladores/types"
@@ -17,15 +18,17 @@ import {
   guardarSimulador as guardarSimuladorStorage,
 } from "@/simuladores/storage"
 import { resolveCourseResourceUrl } from "@/lib/course-resource-utils"
+import { renderSiteIconHtml } from "@/lib/site-icon-registry"
+import { SystemSelect } from "@/components/ui/system-select"
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
 type CursoEstado = "borrador" | "en_revision" | "publicado" | "archivado"
 type RecursoTipo = "video" | "documento" | "enlace" | "simulador" | "evaluacion" | "texto"
 type ClaseTipo = Extract<RecursoTipo, "video" | "documento" | "enlace" | "texto">
-type AccesoTipo = "libre" | "clave" | "plan"
-type TabCurso = "info" | "contenido" | "acceso" | "preview"
-type NivelCurso = "basico" | "intermedio" | "avanzado"
+type AccesoTipo = "libre" | "clave" | "pago"
+type TabCurso = "info" | "contenido" | "acceso"
+type NivelCurso = string
 
 interface AdjuntoCurso {
   id: string; titulo: string; tipo: "documento" | "enlace"; url: string; archivoNombre?: string
@@ -45,10 +48,11 @@ interface CursoData {
   id: string; titulo: string; subtitulo?: string; descripcion: string
   instructor: string; categoria: string; nivel: NivelCurso; estado: CursoEstado
   acceso: AccesoTipo; clavematricula?: string; precio?: number; precioOriginal?: number
-  colorPortada?: string; iconoPortada?: string; idioma?: string
+  colorPortada?: string; colorPortada2?: string; portadaImagen?: string; idioma?: string
   tags?: string[]; requisitos?: string[]; objetivos?: string[]
   secciones: SeccionCurso[]; certificado?: boolean
   mostrarSimuladoresDashboard?: boolean; mostrarEvaluacionesDashboard?: boolean
+  publicarEnPaginaPrincipal?: boolean
   destacado?: boolean; popular?: boolean; nuevo?: boolean
   createdAt: string; updatedAt: string
 }
@@ -73,6 +77,36 @@ function saveCursos(list: CursoData[]) {
 function guardarCurso(c: CursoData) { const l = getCursos(); l.push(c); saveCursos(l) }
 function actualizarCurso(c: CursoData) { saveCursos(getCursos().map(x => x.id === c.id ? c : x)) }
 function eliminarCurso(id: string) { saveCursos(getCursos().filter(x => x.id !== id)) }
+
+// ─── Categorías Storage ───────────────────────────────────────────────────────
+
+interface Categoria {
+  id: string
+  nombre: string
+  descripcion: string
+  color: string
+  icono: string
+  orden: number
+  activa: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+const CATEGORIAS_KEY = "he_categorias"
+
+function getCategorias(): Categoria[] {
+  if (typeof window === "undefined") return []
+  try {
+    const data = localStorage.getItem(CATEGORIAS_KEY)
+    return data ? JSON.parse(data) : []
+  } catch {
+    return []
+  }
+}
+
+function getCategoriasActivas(): Categoria[] {
+  return getCategorias().filter(c => c.activa)
+}
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
 
@@ -119,9 +153,13 @@ function getLinkedActivityIds(curso: CursoData) {
 }
 
 function getActividadCourseLink(tipo: "simulador" | "evaluacion", curso: CursoData, sim: SimuladorBuilder) {
+  const cursoIds = Array.from(new Set([...(sim.cursoIds || []), curso.id].filter(Boolean)))
+  const cursoTitulos = Array.from(new Set([...(sim.cursoTitulos || []), curso.titulo || "Curso sin titulo"].filter(Boolean)))
   return {
     ...sim,
     categoria: tipo === "evaluacion" ? "evaluacion" : (sim.categoria || curso.categoria || "otros"),
+    cursoIds,
+    cursoTitulos,
     cursoId: curso.id,
     cursoTitulo: curso.titulo || "Curso sin titulo",
     updatedAt: new Date().toISOString(),
@@ -129,8 +167,21 @@ function getActividadCourseLink(tipo: "simulador" | "evaluacion", curso: CursoDa
 }
 
 function eliminarActividadesDeCurso(cursoId: string) {
-  const simuladores = (getSimuladoresStorage() as SimuladorBuilder[]).filter((sim) => sim.cursoId === cursoId)
-  simuladores.forEach((sim) => eliminarSimuladorStorage(sim.id))
+  const simuladores = getSimuladoresStorage() as SimuladorBuilder[]
+  simuladores.forEach((sim) => {
+    const ids = Array.from(new Set([...(sim.cursoIds || []), sim.cursoId || ""])).filter(Boolean)
+    if (!ids.includes(cursoId)) return
+    const nextIds = ids.filter((id) => id !== cursoId)
+    const nextTitulos = (sim.cursoTitulos || []).filter((_, index) => (sim.cursoIds || [sim.cursoId]).filter(Boolean)[index] !== cursoId)
+    actualizarSimuladorStorage({
+      ...sim,
+      cursoIds: nextIds,
+      cursoTitulos: nextTitulos,
+      cursoId: nextIds[0],
+      cursoTitulo: nextTitulos[0],
+      updatedAt: new Date().toISOString(),
+    } as any)
+  })
 }
 
 function duplicarCursoConActividades(curso: CursoData) {
@@ -200,12 +251,17 @@ function duplicarCursoConActividades(curso: CursoData) {
 
 function crearCursoBase(): CursoData {
   return {
-    id: `curso_${Date.now()}`, titulo: "", subtitulo: "", descripcion: "",
-    instructor: "", categoria: "pedagogia", nivel: "intermedio",
+    id: `curso_${Date.now()}`,
+    titulo: "Nuevo curso Hack Evans",
+    subtitulo: "Completa la informacion del curso para personalizar su portada y propuesta de valor.",
+    descripcion: "Curso en construccion. Agrega objetivos, contenidos y una portada para que quede alineado al catalogo principal.",
+    instructor: "Equipo Hack Evans",
+    categoria: "pedagogia",
+    nivel: "intermedio",
     estado: "borrador", acceso: "libre", clavematricula: "", precio: 0,
-    colorPortada: "from-emerald-600 to-green-700", iconoPortada: "📚",
+    colorPortada: "#10b981", colorPortada2: "#059669", portadaImagen: "",
     idioma: "Español", tags: [], requisitos: [], objetivos: [],
-    secciones: [], certificado: false, mostrarSimuladoresDashboard: true, mostrarEvaluacionesDashboard: true,
+    secciones: [], certificado: false, mostrarSimuladoresDashboard: true, mostrarEvaluacionesDashboard: true, publicarEnPaginaPrincipal: true,
     destacado: false, popular: false, nuevo: true,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   }
@@ -219,8 +275,11 @@ function crearSimuladorBase(): SimuladorBuilder {
     subtitulo: "",
     categoria: "",
     tags: [],
-    icono: "ðŸŽ¯",
+    icono: "🎯",
     estado: "borrador",
+    contentMode: "html",
+    htmlContent: "",
+    htmlImportName: "",
     formMode: "personalizado",
     formulario: [],
     preguntas: [],
@@ -274,6 +333,10 @@ function totalMinutos(c: CursoData) {
   return c.secciones.reduce((a, s) => a + s.recursos.reduce((b, r) => b + (r.duracionMinutos || 0), 0), 0)
 }
 
+function esCursoDePago(curso: CursoData) {
+  return curso.acceso === "pago" && (curso.precio || 0) > 0
+}
+
 type CursoPublishIssue = { tab: TabCurso; message: string }
 
 function validarCursoParaPublicacion(curso: CursoData): CursoPublishIssue[] {
@@ -290,6 +353,9 @@ function validarCursoParaPublicacion(curso: CursoData): CursoPublishIssue[] {
   }
   if (curso.acceso === "clave" && !curso.clavematricula?.trim()) {
     issues.push({ tab: "acceso", message: "Define la clave de matricula para publicar este curso." })
+  }
+  if (curso.acceso === "pago" && (curso.precio ?? 0) <= 0) {
+    issues.push({ tab: "acceso", message: "Define un precio mayor a 0 para publicar este curso de pago." })
   }
   if (curso.secciones.length === 0) {
     issues.push({ tab: "contenido", message: "Crea al menos una seccion antes de publicar." })
@@ -333,26 +399,8 @@ function validarCursoParaPublicacion(curso: CursoData): CursoPublishIssue[] {
   return issues
 }
 
-const COLORES_PORTADA = [
-  { value: "from-red-600 to-red-800", label: "Rojo" },
-  { value: "from-emerald-600 to-green-700", label: "Verde" },
-  { value: "from-blue-600 to-indigo-700", label: "Azul" },
-  { value: "from-amber-600 to-orange-700", label: "Naranja" },
-  { value: "from-violet-600 to-purple-700", label: "Violeta" },
-  { value: "from-cyan-600 to-teal-700", label: "Cian" },
-  { value: "from-pink-500 to-rose-600", label: "Rosa" },
-  { value: "from-slate-600 to-gray-700", label: "Gris" },
-  { value: "from-yellow-600 to-amber-700", label: "Amarillo" },
-  { value: "from-lime-600 to-green-600", label: "Lima" },
-]
-
-const CATEGORIAS = [
-  "pedagogia", "razonamiento", "matematicas", "ciencias",
-  "idiomas", "digital", "humanidades", "educacion-inicial",
-  "sime", "evaluacion", "otros"
-]
-
-const EMOJIS_PORTADA = ["📚", "🎓", "🏆", "⚡", "🔬", "🧮", "📝", "💡", "🌟", "🎨", "🔭", "🧪", "📊", "🗺️", "🎭", "🏛️", "📖", "✏️", "🎵", "🧠", "❓", "⭐", "🚀", "🎯", "📋", "🔑", "🌐", "🎖️"]
+// CATEGORIAS se obtiene dinámicamente desde getCategorias() en el componente
+// Se mantiene esta línea para compatibilidad pero se reemplaza en el formulario
 
 const TIPOS_RECURSO: { tipo: RecursoTipo; label: string; icon: React.ReactNode; desc: string }[] = [
   { tipo: "video",       label: "Video",       icon: <Video className="h-4 w-4" />,    desc: "Clase en video (URL o embed)" },
@@ -408,9 +456,7 @@ function Sel({ label, value, onChange, options, hint, className }: {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       {label && <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</label>}
-      <select className={inputCls} value={value} onChange={e => onChange(e.target.value)}>
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+      <SystemSelect value={value} onValueChange={onChange} options={options} />
       {hint && <span className="text-[11px] text-muted-foreground/60">{hint}</span>}
     </div>
   )
@@ -454,20 +500,42 @@ function estadoBadge(estado: CursoEstado) {
 
 // ─── PANEL: LISTA CURSOS ──────────────────────────────────────────────────────
 
-function PanelListaCursos({ cursos, onEditar, onEliminar, onNuevo, onDuplicar }: {
-  cursos: CursoData[]; onEditar: (c: CursoData) => void; onEliminar: (id: string) => void; onNuevo: () => void; onDuplicar: (c: CursoData) => void
+function PanelListaCursos({ cursos, onNuevo, onEditar, onDuplicar, onEliminar, categorias = [] }: {
+  cursos: CursoData[]
+  onNuevo: () => void
+  onEditar: (curso: CursoData) => void
+  onDuplicar: (curso: CursoData) => void
+  onEliminar: (id: string) => void
+  categorias?: Categoria[]
 }) {
   const [q, setQ] = useState(""); const [est, setEst] = useState("todos")
+  const [cat, setCat] = useState("todas")
+  const [orden, setOrden] = useState("actualizado")
+  const [page, setPage] = useState(1)
+  const pageSize = 6
   const filtered = cursos.filter(c => {
     const mq = !q || c.titulo.toLowerCase().includes(q.toLowerCase()) || c.categoria.toLowerCase().includes(q.toLowerCase())
-    return mq && (est === "todos" || c.estado === est)
+    const mc = cat === "todas" || c.categoria === cat
+    return mq && mc && (est === "todos" || c.estado === est)
+  }).sort((a, b) => {
+    if (orden === "titulo") return (a.titulo || "").localeCompare(b.titulo || "")
+    if (orden === "precio") return Number(b.precio || 0) - Number(a.precio || 0)
+    if (orden === "popularidad") {
+      const sa = (a.destacado ? 3 : 0) + (a.popular ? 2 : 0) + (a.nuevo ? 1 : 0)
+      const sb = (b.destacado ? 3 : 0) + (b.popular ? 2 : 0) + (b.nuevo ? 1 : 0)
+      return sb - sa
+    }
+    return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
   })
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize)
   const stats = [
     { l: "Total cursos", v: cursos.length, c: "" },
     { l: "Publicados", v: cursos.filter(c => c.estado === "publicado").length, c: "text-emerald-400" },
     { l: "Total secciones", v: cursos.reduce((a, c) => a + c.secciones.length, 0), c: "" },
     { l: "Total lecciones", v: cursos.reduce((a, c) => a + totalLecciones(c), 0), c: "" },
   ]
+  useEffect(() => { setPage(1) }, [q, est, cat, orden])
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -483,24 +551,170 @@ function PanelListaCursos({ cursos, onEditar, onEliminar, onNuevo, onDuplicar }:
           <input className={cn(inputCls, "pl-9")} placeholder="Buscar cursos..." value={q} onChange={e => setQ(e.target.value)} />
           <svg className="absolute left-3 top-3 h-4 w-4 text-muted-foreground/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
         </div>
-        <select className={cn(inputCls, "sm:w-44")} value={est} onChange={e => setEst(e.target.value)}>
-          <option value="todos">Todos los estados</option>
-          <option value="borrador">🟡 Borrador</option>
-          <option value="en_revision">🔵 En revisión</option>
-          <option value="publicado">🟢 Publicado</option>
-          <option value="archivado">⚫ Archivado</option>
-        </select>
-        <Btn variant="primary" onClick={onNuevo}><Plus className="h-4 w-4" />Nuevo curso</Btn>
+        <div className="sm:w-44">
+          <SystemSelect
+            value={est}
+            onValueChange={setEst}
+            options={[
+              { value: "todos", label: "Todos los estados" },
+              { value: "borrador", label: "Borrador" },
+              { value: "en_revision", label: "En revisión" },
+              { value: "publicado", label: "Publicado" },
+              { value: "archivado", label: "Archivado" },
+            ]}
+          />
+        </div>
+        <div className="sm:w-44">
+          <SystemSelect
+            value={cat}
+            onValueChange={setCat}
+            options={[
+              { value: "todas", label: "Todas las categorias" },
+              ...Array.from(new Set(cursos.map(c => c.categoria).filter(Boolean))).sort((a, b) => a.localeCompare(b)).map(value => ({ value, label: value })),
+            ]}
+          />
+        </div>
+        <div className="sm:w-44">
+          <SystemSelect
+            value={orden}
+            onValueChange={setOrden}
+            options={[
+              { value: "actualizado", label: "Mas reciente" },
+              { value: "popularidad", label: "Mas visible" },
+              { value: "titulo", label: "A-Z" },
+              { value: "precio", label: "Mayor precio" },
+            ]}
+          />
+        </div>
+        <Btn variant="primary" onClick={onNuevo}><Plus className="h-4 w-4" />Agregar curso</Btn>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span className="rounded-full border border-border bg-card px-3 py-1.5">{filtered.length} resultados</span>
+        <span className="rounded-full border border-border bg-card px-3 py-1.5">Pagina {page} de {totalPages}</span>
       </div>
       {filtered.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-card/40 py-20 text-center">
-          <div className="text-5xl mb-3">📚</div>
+          <div className="mb-3"><BookOpen className="h-12 w-12 mx-auto text-muted-foreground/60" /></div>
           <div className="text-sm font-semibold text-foreground mb-1">{cursos.length === 0 ? "Aún no tienes cursos" : "Sin resultados"}</div>
           <div className="text-xs text-muted-foreground mb-5">{cursos.length === 0 ? "Crea un curso profesional con secciones, simuladores y evaluaciones" : "Prueba otro término"}</div>
-          {cursos.length === 0 && <Btn variant="primary" onClick={onNuevo}><Plus className="h-4 w-4" />Crear mi primer curso</Btn>}
         </div>
       ) : (
-        <div className="space-y-3">
+        <>
+        <div className="space-y-4">
+          {paginated.map(c => {
+            const badge = estadoBadge(c.estado)
+            const lec = totalLecciones(c)
+            const horas = totalMinutos(c) > 0 ? (totalMinutos(c) / 60).toFixed(1) : "1.0"
+            const gratis = c.acceso !== "pago" || (c.precio || 0) <= 0
+            const totalRatings = 180 + lec * 9
+            const rating = c.destacado ? 4.9 : c.popular ? 4.8 : c.nuevo ? 4.7 : 4.6
+
+            return (
+              <div key={c.id} className="rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-black/5">
+                <div className="grid gap-4 xl:grid-cols-[112px_minmax(0,1.8fr)_minmax(220px,0.9fr)_auto] xl:items-center">
+                  <div className="relative h-24 w-full overflow-hidden rounded-2xl border border-border bg-muted/40 xl:w-28">
+                    {c.portadaImagen ? (
+                      <img src={c.portadaImagen} alt="Portada" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full" style={{ background: `linear-gradient(135deg, ${c.colorPortada || "#10b981"}, ${c.colorPortada2 || "#059669"})` }} />
+                    )}
+                    {c.nuevo ? <div className="absolute left-2 top-2 bg-[#a435f0] px-1.5 py-0.5 text-[10px] font-bold text-white">Nuevo</div> : null}
+                    {!c.nuevo && (c.destacado || c.popular) ? <div className="absolute left-2 top-2 bg-[#eceb98] px-1.5 py-0.5 text-[10px] font-bold text-[#3d3c0a]">Top</div> : null}
+                    {gratis ? <div className="absolute right-2 top-2 bg-[#1db954] px-1.5 py-0.5 text-[10px] font-bold text-white">Gratis</div> : null}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold", badge.cls)}>
+                        <span className={cn("h-1.5 w-1.5 rounded-full", badge.dot)} />
+                        {badge.label}
+                      </span>
+                      <span className="rounded-full border border-border bg-secondary/25 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                        {c.categoria || "General"}
+                      </span>
+                      {c.acceso === "clave" ? <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400"><Key className="h-2.5 w-2.5" />Con clave</span> : null}
+                      {c.certificado ? <span className="inline-flex items-center gap-1 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-2 py-0.5 text-[10px] font-bold text-yellow-400"><Trophy className="h-2.5 w-2.5" />Certif.</span> : null}
+                      {c.publicarEnPaginaPrincipal !== false ? <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-300"><Eye className="h-2.5 w-2.5" />Inicio</span> : null}
+                    </div>
+
+                    <div className="mb-1 line-clamp-1 text-lg font-bold text-foreground">{c.titulo || <span className="italic text-muted-foreground">Sin título</span>}</div>
+                    <div className="mb-1 line-clamp-2 text-sm text-muted-foreground">{c.subtitulo?.trim() || c.descripcion || "Curso listo para publicarse en la portada y dashboard."}</div>
+                    <div className="text-sm text-muted-foreground">{c.instructor || "Sin instructor"}</div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm font-bold text-[#f4c150]">{rating.toFixed(1)}</span>
+                      <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map((i) => <Star key={i} size={12} className="fill-[#f4c150] text-[#f4c150]" />)}</div>
+                      <span className="text-xs text-muted-foreground">({totalRatings.toLocaleString()})</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="flex items-center gap-1 rounded bg-secondary/35 px-2 py-0.5 text-[11px] text-muted-foreground"><Clock className="h-3 w-3" /> {horas}h</span>
+                      <span className="flex items-center gap-1 rounded bg-secondary/35 px-2 py-0.5 text-[11px] text-muted-foreground">{lec} clases</span>
+                      <span className="flex items-center gap-1 rounded bg-secondary/35 px-2 py-0.5 text-[11px] text-muted-foreground"><GraduationCap className="h-3 w-3" /> {c.nivel || "Todos los niveles"}</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      {gratis ? (
+                        <span className="text-2xl font-bold text-[#1db954]">Gratis</span>
+                      ) : (
+                        <>
+                          <span className="text-2xl font-bold text-foreground">{(c.precio || 0).toFixed(2)} US$</span>
+                          <span className="text-sm text-muted-foreground line-through">{Number(c.precioOriginal || Math.max((c.precio || 0) * 1.7, c.precio || 0)).toFixed(2)} US$</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 xl:justify-end">
+                    <button onClick={() => onEditar(c)} className="flex items-center gap-1.5 rounded-xl border border-[#a435f0] bg-transparent px-3 py-2 text-xs font-bold text-[#a435f0] transition-all hover:bg-[#a435f0] hover:text-white">
+                      <Pencil className="h-3.5 w-3.5" />
+                      Editar
+                    </button>
+                    <button onClick={() => onDuplicar(c)} className="flex items-center gap-1.5 rounded-xl border border-border bg-transparent px-3 py-2 text-xs font-bold text-foreground transition-all hover:bg-secondary/40">
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                    <button onClick={() => onEliminar(c.id)} className="flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-transparent px-3 py-2 text-xs font-bold text-red-400 transition-all hover:bg-red-500 hover:text-white">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {totalPages > 1 ? (
+          <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-muted-foreground">
+              Mostrando {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filtered.length)} de {filtered.length} cursos
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page === 1} className="rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground transition-all hover:bg-secondary/40 disabled:cursor-not-allowed disabled:opacity-40">Anterior</button>
+              <div className="hidden items-center gap-1 sm:flex">
+                {Array.from({ length: totalPages }).slice(0, 7).map((_, index) => {
+                  const pageNumber = index + 1
+                  const active = pageNumber === page
+                  return (
+                    <button
+                      key={pageNumber}
+                      onClick={() => setPage(pageNumber)}
+                      className={cn(
+                        "h-9 min-w-9 rounded-lg border px-3 text-sm font-semibold transition-all",
+                        active
+                          ? "border-primary bg-primary text-white"
+                          : "border-border bg-background text-foreground hover:bg-secondary/40"
+                      )}
+                    >
+                      {pageNumber}
+                    </button>
+                  )
+                })}
+              </div>
+              <button onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={page === totalPages} className="rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground transition-all hover:bg-secondary/40 disabled:cursor-not-allowed disabled:opacity-40">Siguiente</button>
+            </div>
+          </div>
+        ) : null}
+
+        {false && <div className="space-y-3">
           {filtered.map(c => {
             const badge = estadoBadge(c.estado)
             const lec = totalLecciones(c)
@@ -508,24 +722,42 @@ function PanelListaCursos({ cursos, onEditar, onEliminar, onNuevo, onDuplicar }:
             const h = Math.floor(min / 60)
             return (
               <div key={c.id} className="rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/30 transition-all">
-                <div className={cn("h-1.5 bg-gradient-to-r", c.colorPortada || "from-emerald-600 to-green-700")} />
+                <div style={{ background: `linear-gradient(135deg, ${c.colorPortada || "#10b981"}, ${c.colorPortada2 || "#059669"})` }} className="h-1.5" />
                 <div className="p-5 flex items-center gap-4">
-                  <div className={cn("flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-3xl bg-gradient-to-br", c.colorPortada || "from-emerald-600 to-green-700")}>
-                    {c.iconoPortada || "📚"}
+                  <div className="relative flex h-14 w-14 shrink-0 overflow-hidden rounded-2xl border border-border bg-secondary/10">
+                    {c.portadaImagen ? (
+                      <img src={c.portadaImagen} alt="Portada" className="h-full w-full object-cover" />
+                    ) : (
+                      <div style={{ background: `linear-gradient(135deg, ${c.colorPortada || "#10b981"}, ${c.colorPortada2 || "#059669"})` }} className="flex h-full w-full items-center justify-center text-3xl text-white">
+                        <BookOpen className="h-6 w-6" />
+                      </div>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold", badge.cls)}><span className={cn("h-1.5 w-1.5 rounded-full", badge.dot)} />{badge.label}</span>
                       {c.acceso === "clave" && <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400"><Key className="h-2.5 w-2.5" />Con clave</span>}
                       {c.certificado && <span className="inline-flex items-center gap-1 rounded-full border border-yellow-500/20 bg-yellow-500/10 px-2 py-0.5 text-[10px] font-bold text-yellow-400"><Trophy className="h-2.5 w-2.5" />Certif.</span>}
+                      {c.publicarEnPaginaPrincipal !== false && <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-300"><Eye className="h-2.5 w-2.5" />Inicio</span>}
                     </div>
                     <div className="font-bold text-foreground line-clamp-1">{c.titulo || <span className="italic text-muted-foreground">Sin título</span>}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{c.instructor || "Sin instructor"} · {c.categoria}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                      <span>{c.instructor || "Sin instructor"}</span>
+                      <span>·</span>
+                      {c.categoria && categoriasMap.has(c.categoria) ? (
+                        <>
+                          <span dangerouslySetInnerHTML={{ __html: renderSiteIconHtml(categoriasMap.get(c.categoria)!.icono as any, { size: 12 }) }} style={{ display: "inline-flex" }} />
+                          <span>{c.categoria}</span>
+                        </>
+                      ) : (
+                        <span>{c.categoria || "Sin categoría"}</span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1"><Layers className="h-3 w-3" />{c.secciones.length} secciones</span>
                       <span className="flex items-center gap-1"><BookOpen className="h-3 w-3" />{lec} lecciones</span>
                       {h > 0 && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{h}h</span>}
-                      <span className="flex items-center gap-1"><Users className="h-3 w-3" />{c.acceso === "libre" ? "Libre" : c.acceso === "clave" ? "Con clave" : "Por plan"}</span>
+                      <span className="flex items-center gap-1"><Users className="h-3 w-3" />{c.acceso === "libre" ? "Libre" : c.acceso === "clave" ? "Con clave" : "Pago"}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -537,7 +769,8 @@ function PanelListaCursos({ cursos, onEditar, onEliminar, onNuevo, onDuplicar }:
               </div>
             )
           })}
-        </div>
+        </div>}
+        </>
       )}
     </div>
   )
@@ -545,51 +778,170 @@ function PanelListaCursos({ cursos, onEditar, onEliminar, onNuevo, onDuplicar }:
 
 // ─── PANEL: INFO CURSO ────────────────────────────────────────────────────────
 
+function AdminCursoVisualPreview({ curso }: { curso: CursoData }) {
+  const badge = estadoBadge(curso.estado)
+  const lec = totalLecciones(curso)
+  const horas = totalMinutos(curso) > 0 ? (totalMinutos(curso) / 60).toFixed(1) : "1.0"
+  const gratis = curso.acceso !== "pago" || (curso.precio || 0) <= 0
+  const totalRatings = 180 + lec * 9
+  const rating = curso.destacado ? 4.9 : curso.popular ? 4.8 : curso.nuevo ? 4.7 : 4.6
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="relative h-40 w-full overflow-hidden bg-muted/40">
+        {curso.portadaImagen ? (
+          <img src={curso.portadaImagen} alt="Portada" className="h-full w-full object-cover" />
+        ) : (
+          <div className="h-full w-full" style={{ background: `linear-gradient(135deg, ${curso.colorPortada || "#10b981"}, ${curso.colorPortada2 || "#059669"})` }} />
+        )}
+        {curso.nuevo ? <div className="absolute left-3 top-3 bg-[#a435f0] px-2 py-0.5 text-[11px] font-bold text-white">Nuevo</div> : null}
+        {!curso.nuevo && (curso.destacado || curso.popular) ? <div className="absolute left-3 top-3 bg-[#eceb98] px-2 py-0.5 text-[11px] font-bold text-[#3d3c0a]">Mas vendido</div> : null}
+        {gratis ? <div className="absolute right-3 top-3 bg-[#1db954] px-2 py-0.5 text-[11px] font-bold text-white">Gratis</div> : null}
+      </div>
+      <div className="p-3">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold", badge.cls)}><span className={cn("h-1.5 w-1.5 rounded-full", badge.dot)} />{badge.label}</span>
+          <span className="rounded-full border border-border bg-secondary/25 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{curso.categoria || "General"}</span>
+          {curso.publicarEnPaginaPrincipal !== false ? <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-300"><Eye className="h-2.5 w-2.5" />Inicio</span> : null}
+        </div>
+        <div className="mb-1 line-clamp-2 text-base font-bold text-foreground">{curso.titulo || "Nuevo curso Hack Evans"}</div>
+        <div className="mb-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{curso.subtitulo?.trim() || curso.descripcion || "Completa la informacion para personalizar este curso."}</div>
+        <div className="mb-2 text-xs text-muted-foreground">{curso.instructor || "Equipo Hack Evans"}</div>
+        <div className="mb-2 flex items-center gap-1.5">
+          <span className="text-sm font-bold text-[#f4c150]">{rating.toFixed(1)}</span>
+          <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map((i) => <Star key={i} size={11} className="fill-[#f4c150] text-[#f4c150]" />)}</div>
+          <span className="text-xs text-muted-foreground">({totalRatings.toLocaleString()})</span>
+        </div>
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <span className="flex items-center gap-1 rounded bg-secondary/35 px-2 py-0.5 text-[11px] text-muted-foreground"><Clock className="h-3 w-3" /> {horas} horas</span>
+          <span className="flex items-center gap-1 rounded bg-secondary/35 px-2 py-0.5 text-[11px] text-muted-foreground">{lec} clases</span>
+          <span className="flex items-center gap-1 rounded bg-secondary/35 px-2 py-0.5 text-[11px] text-muted-foreground"><GraduationCap className="h-3 w-3" /> {curso.nivel || "Todos los niveles"}</span>
+        </div>
+        <div className="flex items-center justify-between border-t border-border pt-2">
+          <div className="flex items-baseline gap-2">
+            {gratis ? <span className="text-lg font-bold text-[#1db954]">Gratis</span> : <><span className="text-lg font-bold text-foreground">{(curso.precio || 0).toFixed(2)} US$</span><span className="text-sm text-muted-foreground line-through">{Number(curso.precioOriginal || Math.max((curso.precio || 0) * 1.7, curso.precio || 0)).toFixed(2)} US$</span></>}
+          </div>
+          <span className="rounded border border-border px-3 py-2 text-xs font-bold text-[#a435f0]">Vista previa</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PanelInfoCurso({ curso, setCurso }: { curso: CursoData; setCurso: (c: CursoData) => void }) {
   const set = (p: Partial<CursoData>) => setCurso({ ...curso, ...p })
-  const [showEmoji, setShowEmoji] = useState(false)
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+
+  useEffect(() => {
+    setCategorias(getCategorias())
+    const handleUpdate = () => setCategorias(getCategorias())
+    window.addEventListener("he-categorias-updated", handleUpdate)
+    return () => window.removeEventListener("he-categorias-updated", handleUpdate)
+  }, [])
+
+  const handlePortadaImage = (file?: File) => {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === "string") set({ portadaImagen: reader.result })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const categoriasActivas = categorias.filter(c => c.activa)
+  const categoriasOptions = categoriasActivas.map(c => ({
+    value: c.nombre,
+    label: (
+      <div className="flex items-center gap-2">
+        <span dangerouslySetInnerHTML={{ __html: renderSiteIconHtml(c.icono as any, { size: 16 }) }} style={{ display: "inline-flex" }} />
+        <span>{c.nombre}</span>
+      </div>
+    )
+  }))
+
   return (
     <div className="space-y-5">
       <Card icon={<BookOpen className="h-4 w-4" />} title="Identidad del curso" subtitle="Portada, título, descripción y metadatos">
         <div className="space-y-4">
-      {/* Portada */}
-          <div className="flex items-start gap-4">
+          <div className="grid gap-4 xl:grid-cols-[160px_minmax(0,1fr)_360px]">
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ícono</label>
-              <div className="relative">
-                <button type="button" onClick={() => setShowEmoji(p => !p)} className="flex h-14 w-14 items-center justify-center rounded-2xl text-3xl border-2 border-border hover:border-primary transition-all bg-secondary/20">{curso.iconoPortada || "📚"}</button>
-                {showEmoji && (
-                  <div className="absolute top-16 left-0 z-50 rounded-2xl border border-border bg-card p-3 shadow-2xl w-[240px]">
-                    <div className="grid grid-cols-8 gap-1">
-                      {EMOJIS_PORTADA.map(e => (
-                        <button key={e} type="button" onClick={() => { set({ iconoPortada: e }); setShowEmoji(false) }}
-                          className={cn("h-8 w-8 rounded-lg text-lg hover:bg-secondary transition-all", curso.iconoPortada === e && "bg-primary/15 ring-1 ring-primary")}>{e}</button>
-                      ))}
-                    </div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Portada</label>
+              <div className="h-32 w-32 overflow-hidden rounded-2xl border border-border bg-secondary/20">
+                {curso.portadaImagen ? (
+                  <img src={curso.portadaImagen} alt="Portada del curso" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-center text-sm font-medium text-muted-foreground px-3">
+                    Sube una imagen de portada para el curso
                   </div>
                 )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary/10 px-3 py-2 text-sm font-semibold text-foreground hover:border-primary hover:bg-primary/10 transition-all">
+                  <Upload className="h-4 w-4" /> Subir imagen
+                </button>
+                {curso.portadaImagen && (
+                  <button type="button" onClick={() => set({ portadaImagen: "" })} className="inline-flex items-center gap-2 rounded-2xl border border-border bg-secondary/10 px-3 py-2 text-sm font-semibold text-foreground hover:border-destructive hover:text-destructive transition-all">
+                    <Trash2 className="h-4 w-4" /> Eliminar
+                  </button>
+                )}
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handlePortadaImage(e.target.files[0]) }} />
               </div>
             </div>
             <div className="flex-1 space-y-3">
               <Inp label="Título del curso" value={curso.titulo} onChange={v => set({ titulo: v })} placeholder="Ej: Saberes Pedagógicos Fundamentales" required />
               <Inp label="Subtítulo" value={curso.subtitulo || ""} onChange={v => set({ subtitulo: v })} placeholder="Ej: Prepárate con los fundamentos de pedagogía y didáctica" />
+              <div className="rounded-2xl border border-border bg-card p-3 xl:hidden">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Vista rápida</div>
+                <AdminCursoVisualPreview curso={curso} />
+              </div>
+            </div>
+            <div className="hidden xl:block">
+              <div className="rounded-2xl border border-border bg-card p-3">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Vista rápida</div>
+                <AdminCursoVisualPreview curso={curso} />
+              </div>
             </div>
           </div>
-          {/* Color portada */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Color de portada</label>
-            <div className="flex flex-wrap gap-2">
-              {COLORES_PORTADA.map(col => (
-                <button key={col.value} type="button" onClick={() => set({ colorPortada: col.value })}
-                  className={cn("h-8 w-8 rounded-xl bg-gradient-to-br transition-all", col.value, curso.colorPortada === col.value && "ring-2 ring-primary ring-offset-2 ring-offset-card scale-110")} title={col.label} />
-              ))}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Color principal</label>
+              <div className="flex items-center gap-2">
+                <input type="color" className="h-10 w-14 cursor-pointer rounded-xl border border-border bg-secondary/10 p-0" value={curso.colorPortada || "#10b981"} onChange={e => set({ colorPortada: e.target.value })} />
+                <input type="text" className={inputCls} value={curso.colorPortada || "#10b981"} onChange={e => set({ colorPortada: e.target.value })} placeholder="#10b981" />
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Color secundario</label>
+              <div className="flex items-center gap-2">
+                <input type="color" className="h-10 w-14 cursor-pointer rounded-xl border border-border bg-secondary/10 p-0" value={curso.colorPortada2 || "#059669"} onChange={e => set({ colorPortada2: e.target.value })} />
+                <input type="text" className={inputCls} value={curso.colorPortada2 || "#059669"} onChange={e => set({ colorPortada2: e.target.value })} placeholder="#059669" />
+              </div>
             </div>
           </div>
+          <span className="text-[11px] text-muted-foreground/60">Elige dos colores para ver mejor la paleta de portada.</span>
           <Inp label="Descripción completa" value={curso.descripcion} onChange={v => set({ descripcion: v })} placeholder="Describe el objetivo, contenido y lo que aprenderá el estudiante..." rows={3} />
           <div className="grid gap-3 sm:grid-cols-3">
             <Inp label="Instructor" value={curso.instructor} onChange={v => set({ instructor: v })} placeholder="Nombre del instructor" required />
-            <Sel label="Categoría" value={curso.categoria} onChange={v => set({ categoria: v })} options={CATEGORIAS.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1).replace("-", " ") }))} />
-            <Sel label="Nivel" value={curso.nivel} onChange={v => set({ nivel: v as NivelCurso })} options={[{ value: "basico", label: "Básico" }, { value: "intermedio", label: "Intermedio" }, { value: "avanzado", label: "Avanzado" }]} />
+            <div>
+              {categoriasActivas.length > 0 ? (
+                <Sel 
+                  label="Categoría" 
+                  value={curso.categoria} 
+                  onChange={v => set({ categoria: v })} 
+                  options={categoriasOptions}
+                />
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Categoría</label>
+                  <div className="h-10 rounded-xl border border-border bg-background px-3 flex items-center text-sm text-muted-foreground">
+                    <span>No hay categorías creadas</span>
+                  </div>
+                  <span className="text-[11px] text-amber-500">Crea una categoría desde el panel de Categorías</span>
+                </div>
+              )}
+            </div>
+            <Inp label="Nivel" value={curso.nivel} onChange={v => set({ nivel: v })} placeholder="Básico, Intermedio, Avanzado..." />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Inp label="Idioma" value={curso.idioma || ""} onChange={v => set({ idioma: v })} placeholder="Español" />
@@ -604,20 +956,43 @@ function PanelInfoCurso({ curso, setCurso }: { curso: CursoData; setCurso: (c: C
 
       <Card icon={<Settings className="h-4 w-4" />} title="Estado y configuración">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Sel label="Estado de publicación" value={curso.estado} onChange={v => set({ estado: v as CursoEstado })} options={[
-            { value: "borrador", label: "🟡 Borrador" }, { value: "en_revision", label: "🔵 En revisión" },
-            { value: "publicado", label: "🟢 Publicado" }, { value: "archivado", label: "⚫ Archivado" },
+          <Sel className="max-w-xs" label="Estado de publicación" value={curso.estado} onChange={v => set({ estado: v as CursoEstado })} options={[
+            { value: "borrador", label: "Borrador" }, { value: "en_revision", label: "En revisión" },
+            { value: "publicado", label: "Publicado" }, { value: "archivado", label: "Archivado" },
           ]} />
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Precio</label>
-            <div className="flex gap-2">
-              <input type="number" className={cn(inputCls, "flex-1")} value={curso.precio ?? 0} onChange={e => set({ precio: Number(e.target.value) })} placeholder="0" min="0" step="0.01" />
-              <input type="number" className={cn(inputCls, "w-28")} value={curso.precioOriginal ?? 0} onChange={e => set({ precioOriginal: Number(e.target.value) })} placeholder="Original" min="0" step="0.01" />
-            </div>
-            <span className="text-[11px] text-muted-foreground/60">0 = gratuito — precio / precio tachado</span>
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Precio final</label>
+            <input
+              type="text"
+              inputMode="decimal"
+              className={cn(inputCls, "w-32")}
+              value={curso.precio === undefined || curso.precio === null ? "" : String(curso.precio)}
+              onChange={e => {
+                const raw = e.target.value
+                const clean = raw.replace(/,/g, ".").replace(/[^0-9.]/g, "")
+                const parts = clean.split(".")
+                const integer = parts[0].replace(/^0+(?=[1-9])/, "") || "0"
+                const decimals = parts[1] ? parts[1].slice(0, 2) : ""
+                const normalized = decimals ? `${integer}.${decimals}` : integer
+                set({ precio: normalized === "" ? 0 : Number(normalized) })
+              }}
+              placeholder="0.00"
+            />
+            <span className="text-[11px] text-muted-foreground/60">Usa 0 para cursos gratis. Si el acceso es de pago, este valor se usa en la compra.</span>
           </div>
         </div>
+        {curso.acceso === "pago" && (
+          <div className="mt-4 max-w-xs">
+            <Inp
+              label="Precio anterior (opcional)"
+              value={curso.precioOriginal === undefined || curso.precioOriginal === null ? "" : String(curso.precioOriginal)}
+              onChange={v => set({ precioOriginal: v.trim() === "" ? 0 : Number(v.replace(/,/g, ".")) || 0 })}
+              placeholder="49.99"
+            />
+          </div>
+        )}
         <div className="mt-4">
+          <Toggle label="Publicar en pagina principal" sublabel="Si esta activo y el curso esta publicado, aparecera en la portada y en /cursos para los estudiantes." value={curso.publicarEnPaginaPrincipal !== false} onChange={v => set({ publicarEnPaginaPrincipal: v })} />
           <Toggle label="Destacado" sublabel="Aparece en la sección de cursos destacados" value={curso.destacado || false} onChange={v => set({ destacado: v })} />
           <Toggle label="Popular" sublabel="Muestra badge 'Popular' en la tarjeta del curso" value={curso.popular || false} onChange={v => set({ popular: v })} />
           <Toggle label="Nuevo" sublabel="Muestra badge 'Nuevo' en la tarjeta del curso" value={curso.nuevo || false} onChange={v => set({ nuevo: v })} />
@@ -639,13 +1014,13 @@ function PanelAcceso({ curso, setCurso }: { curso: CursoData; setCurso: (c: Curs
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-3">
             {[
-              { value: "libre", icon: "🆓", label: "Libre", desc: "Cualquiera puede matricularse sin restricciones" },
-              { value: "clave", icon: "🔑", label: "Con clave", desc: "Requiere clave de matrícula para inscribirse" },
-              { value: "plan", icon: "⭐", label: "Por plan", desc: "Solo usuarios con plan activo pueden acceder" },
+              { value: "libre", icon: <Users className="h-5 w-5" />, label: "Libre", desc: "Cualquiera puede matricularse sin restricciones" },
+              { value: "clave", icon: <Key className="h-5 w-5" />, label: "Con clave", desc: "Requiere clave de matrícula para inscribirse" },
+              { value: "pago", icon: <Star className="h-5 w-5" />, label: "Pago por curso", desc: "Los estudiantes pagan directamente por acceder a este curso" },
             ].map(opt => (
               <button key={opt.value} type="button" onClick={() => set({ acceso: opt.value as AccesoTipo })}
                 className={cn("flex flex-col gap-2 rounded-2xl border p-4 text-left transition-all", curso.acceso === opt.value ? "border-primary bg-primary/8" : "border-border bg-secondary/10 hover:border-primary/40")}>
-                <div className="text-2xl">{opt.icon}</div>
+                <div className="text-primary">{opt.icon}</div>
                 <div className="text-sm font-bold text-foreground">{opt.label}</div>
                 <div className="text-xs text-muted-foreground leading-snug">{opt.desc}</div>
               </button>
@@ -685,10 +1060,10 @@ function PanelAcceso({ curso, setCurso }: { curso: CursoData; setCurso: (c: Curs
             </div>
           )}
 
-          {curso.acceso === "plan" && (
+          {curso.acceso === "pago" && (
             <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-4">
-              <div className="flex items-center gap-2 text-violet-400 font-semibold text-sm mb-2"><Star className="h-4 w-4" />Acceso por plan</div>
-              <div className="text-xs text-muted-foreground">Solo usuarios con un plan activo (Free, Pro, Premium) podrán acceder a este curso. Gestiona los planes en el apartado de Planes.</div>
+              <div className="flex items-center gap-2 text-violet-400 font-semibold text-sm mb-2"><Star className="h-4 w-4" />Pago por curso</div>
+              <div className="text-xs text-muted-foreground">Los estudiantes deberán pagar el precio especificado para acceder a este curso.</div>
             </div>
           )}
         </div>
@@ -847,7 +1222,7 @@ function PanelContenido({ curso, setCurso }: { curso: CursoData; setCurso: (c: C
 
   const simuladoresCurso = useMemo(
     () => simuladoresStorage
-      .filter((sim) => sim.categoria !== "evaluacion" && (sim.cursoId === curso.id || linkedActivityIds.has(sim.id)))
+      .filter((sim) => sim.categoria !== "evaluacion" && ((sim.cursoIds || []).includes(curso.id) || sim.cursoId === curso.id || linkedActivityIds.has(sim.id)))
       .sort((a, b) => (a.titulo || "").localeCompare(b.titulo || "", "es")),
     [curso.id, linkedActivityIds, simuladoresStorage]
   )
@@ -859,7 +1234,7 @@ function PanelContenido({ curso, setCurso }: { curso: CursoData; setCurso: (c: C
   )
   const simuladoresDisponibles = useMemo(
     () => simuladoresStorage
-      .filter((sim) => sim.estado !== "archivado" && sim.categoria !== "evaluacion" && (!sim.cursoId || sim.cursoId === curso.id) && !linkedActivityIds.has(sim.id))
+      .filter((sim) => sim.estado !== "archivado" && sim.categoria !== "evaluacion" && (!sim.cursoId || sim.cursoId === curso.id || (sim.cursoIds || []).includes(curso.id)) && !linkedActivityIds.has(sim.id))
       .sort((a, b) => (a.titulo || "").localeCompare(b.titulo || "", "es")),
     [curso.id, linkedActivityIds, simuladoresStorage]
   )
@@ -956,12 +1331,15 @@ function PanelContenido({ curso, setCurso }: { curso: CursoData; setCurso: (c: C
     if (sigueVinculada) return
 
     const actividad = simuladoresStorage.find((sim) => sim.id === actividadId)
-    if (!actividad || actividad.cursoId !== curso.id) return
+    const linkedIds = Array.from(new Set([...(actividad.cursoIds || []), actividad.cursoId || ""])).filter(Boolean)
+    if (!actividad || !linkedIds.includes(curso.id)) return
 
     actualizarSimuladorStorage({
       ...actividad,
-      cursoId: undefined,
-      cursoTitulo: undefined,
+      cursoIds: linkedIds.filter((id) => id !== curso.id),
+      cursoTitulos: (actividad.cursoTitulos || []).filter((_, index) => linkedIds[index] !== curso.id),
+      cursoId: linkedIds.filter((id) => id !== curso.id)[0],
+      cursoTitulo: (actividad.cursoTitulos || []).filter((_, index) => linkedIds[index] !== curso.id)[0],
       updatedAt: new Date().toISOString(),
     } as any)
     setActividadesVersion((value) => value + 1)
@@ -1042,14 +1420,14 @@ function PanelContenido({ curso, setCurso }: { curso: CursoData; setCurso: (c: C
                 {mostrarSims ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                 {mostrarSims ? "Visible" : "Oculto"}
               </Btn>
-              <Btn size="sm" variant="primary" onClick={() => crearYEditarActividad("simulador")}><Plus className="h-3.5 w-3.5" />Nuevo simulador</Btn>
+              <Btn size="sm" variant="primary" onClick={() => { window.location.href = `/admin/simuladores?cursoId=${encodeURIComponent(curso.id)}` }}><Plus className="h-3.5 w-3.5" />Ir a simuladores</Btn>
             </div>
           }
         >
           <div className="space-y-2">
             {simuladoresCurso.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
-                Aún no hay simuladores en este curso. Crea el primero con el botón de arriba.
+                Este curso todavía no tiene simuladores vinculados. Créalo o asígnalo desde el módulo independiente de simuladores.
               </div>
             ) : (
               simuladoresCurso.map((sim) => (
@@ -1125,7 +1503,7 @@ function PanelContenido({ curso, setCurso }: { curso: CursoData; setCurso: (c: C
 
         {curso.secciones.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border py-14 text-center">
-            <div className="text-3xl mb-2">📂</div>
+            <div className="flex justify-center mb-2"><Folder className="h-10 w-10 text-muted-foreground" /></div>
             <div className="text-xs text-muted-foreground mb-4">El curso aún no tiene secciones. Agrega la primera para organizar el contenido.</div>
             <Btn size="sm" onClick={addSeccion}><Plus className="h-3.5 w-3.5" />Primera sección</Btn>
           </div>
@@ -1362,36 +1740,8 @@ function PanelPreviewCurso({ curso }: { curso: CursoData }) {
   const h = Math.floor(min / 60)
   return (
     <div className="space-y-5">
-      <Card icon={<Eye className="h-4 w-4" />} title="Vista previa del curso" subtitle="Así lo verá el estudiante en el dashboard">
-        <div className="rounded-2xl border border-border overflow-hidden bg-background">
-          {/* Portada */}
-          <div className={cn("relative h-40 bg-gradient-to-br flex items-center justify-center", curso.colorPortada || "from-emerald-600 to-green-700")}>
-            <div className="text-6xl">{curso.iconoPortada || "📚"}</div>
-            <div className="absolute top-3 right-3 flex gap-2">
-              {curso.popular && <span className="flex items-center gap-1 px-2 py-1 bg-primary text-white text-[10px] font-bold rounded-full">🔥 Popular</span>}
-              {curso.nuevo && <span className="flex items-center gap-1 px-2 py-1 bg-blue-500 text-white text-[10px] font-bold rounded-full">✨ Nuevo</span>}
-              {curso.acceso === "clave" && <span className="flex items-center gap-1 px-2 py-1 bg-amber-500 text-white text-[10px] font-bold rounded-full"><Key className="h-2.5 w-2.5" /> Con clave</span>}
-              {curso.acceso === "plan" && <span className="flex items-center gap-1 px-2 py-1 bg-black/50 text-white text-[10px] font-bold rounded-full"><Lock className="h-2.5 w-2.5" /> Premium</span>}
-            </div>
-          </div>
-          <div className="p-5 space-y-3">
-            <div>
-              <h3 className="font-bold text-foreground">{curso.titulo || "Título del curso"}</h3>
-              {curso.subtitulo && <p className="text-sm text-muted-foreground mt-0.5">{curso.subtitulo}</p>}
-            </div>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              {h > 0 && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{h}h {min % 60}min</span>}
-              <span className="flex items-center gap-1"><BookOpen className="h-3.5 w-3.5" />{lec} lecciones</span>
-              <span className="flex items-center gap-1"><BarChart3 className="h-3.5 w-3.5" />{curso.nivel}</span>
-            </div>
-            <div className="flex items-center justify-between pt-2 border-t border-border">
-              <div className="text-sm font-bold text-primary">{curso.precio === 0 ? "Gratuito" : `$${curso.precio}`}</div>
-              <button type="button" className="px-4 py-2 bg-primary text-white text-xs font-semibold rounded-xl">
-                {curso.acceso === "clave" ? "🔑 Ingresar clave" : curso.acceso === "plan" ? "⭐ Ver planes" : "▶ Iniciar curso"}
-              </button>
-            </div>
-          </div>
-        </div>
+      <Card icon={<Eye className="h-4 w-4" />} title="Vista previa del curso" subtitle="Así se alinea con el diseño del catálogo y del admin">
+        <AdminCursoVisualPreview curso={curso} />
       </Card>
 
       {/* Estructura */}
@@ -1416,7 +1766,7 @@ function PanelPreviewCurso({ curso }: { curso: CursoData }) {
                       </span>
                       <span>{r.titulo || "Sin título"}</span>
                       {r.duracionMinutos && <span className="ml-auto">{r.duracionMinutos}min</span>}
-                      {r.gratis && <span className="text-emerald-400">🆓</span>}
+                      {r.gratis && <Check className="h-4 w-4 text-emerald-400" />}
                     </div>
                   ))}
                 </div>
@@ -1432,7 +1782,7 @@ function PanelPreviewCurso({ curso }: { curso: CursoData }) {
           {[
             ["ID", curso.id.substring(0, 16)], ["Estado", curso.estado], ["Acceso", curso.acceso],
             ["Secciones", curso.secciones.length], ["Lecciones", lec], ["Duración", `${h}h ${min % 60}min`],
-            ["Instructor", curso.instructor || "—"], ["Nivel", curso.nivel], ["Precio", curso.precio === 0 ? "Gratis" : `$${curso.precio}`],
+            ["Instructor", curso.instructor || "—"], ["Nivel", curso.nivel], ["Precio", esCursoDePago(curso) ? `$${(curso.precio || 0).toFixed(2)}` : "Gratis"],
           ].map(([k, v]) => (
             <div key={k as string} className="rounded-xl border border-border bg-secondary/8 px-3 py-2.5">
               <div className="text-[10px] text-muted-foreground uppercase tracking-wide">{k}</div>
@@ -1453,12 +1803,19 @@ export default function AdminCursosPage() {
   const [tab, setTab] = useState<TabCurso | "lista">("lista")
   const [cursos, setCursosState] = useState<CursoData[]>([])
   const [curso, setCurso] = useState<CursoData | null>(null)
+  const [categorias, setCategorias] = useState<Categoria[]>([])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [publishIssues, setPublishIssues] = useState<CursoPublishIssue[]>([])
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
 
   useEffect(() => { setCursosState(getCursos()) }, [])
+  useEffect(() => {
+    setCategorias(getCategorias())
+    const handleUpdate = () => setCategorias(getCategorias())
+    window.addEventListener("he-categorias-updated", handleUpdate)
+    return () => window.removeEventListener("he-categorias-updated", handleUpdate)
+  }, [])
   const refresh = useCallback(() => setCursosState(getCursos()), [])
   useEffect(() => { setPublishIssues([]) }, [curso])
 
@@ -1513,7 +1870,6 @@ export default function AdminCursosPage() {
     { id: "info" as const, label: "Información", icon: <BookOpen className="h-3.5 w-3.5" />, req: true },
     { id: "contenido" as const, label: "Contenido", icon: <Layers className="h-3.5 w-3.5" />, req: true },
     { id: "acceso" as const, label: "Acceso", icon: <Key className="h-3.5 w-3.5" />, req: true },
-    { id: "preview" as const, label: "Vista previa", icon: <Eye className="h-3.5 w-3.5" />, req: true },
   ]
 
   return (
@@ -1532,7 +1888,7 @@ export default function AdminCursosPage() {
                 <Btn onClick={handleGuardar} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Guardar</Btn>
                 <Btn variant="primary" onClick={handlePublicar}><Zap className="h-4 w-4" />Publicar</Btn>
               </>
-            ) : <Btn variant="primary" onClick={handleNuevo}><Plus className="h-4 w-4" />Nuevo curso</Btn>}
+            ) : null}
           </div>
         </div>
 
@@ -1596,11 +1952,10 @@ export default function AdminCursosPage() {
 
       {/* Contenido */}
       <div className="px-6 lg:px-8 py-6">
-        {tab === "lista"    && <PanelListaCursos cursos={cursos} onEditar={handleEditar} onEliminar={id => setConfirmDel(id)} onNuevo={handleNuevo} onDuplicar={handleDuplicar} />}
+        {tab === "lista"    && <PanelListaCursos cursos={cursos} categorias={categorias} onEditar={handleEditar} onEliminar={id => setConfirmDel(id)} onNuevo={handleNuevo} onDuplicar={handleDuplicar} />}
         {tab === "info"     && curso && <PanelInfoCurso curso={curso} setCurso={setCurso} />}
         {tab === "contenido" && curso && <PanelContenido curso={curso} setCurso={setCurso} />}
         {tab === "acceso"   && curso && <PanelAcceso curso={curso} setCurso={setCurso} />}
-        {tab === "preview"  && curso && <PanelPreviewCurso curso={curso} />}
       </div>
 
       {/* Modal eliminar */}
@@ -1622,5 +1977,3 @@ export default function AdminCursosPage() {
     </div>
   )
 }
-
-
