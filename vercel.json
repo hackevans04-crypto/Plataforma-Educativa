@@ -1,0 +1,6 @@
+{
+  "buildCommand": "pnpm install --no-frozen-lockfile && next build",
+  "env": {
+    "PNPM_HOME": ".pnpm"
+  }
+}
