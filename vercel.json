@@ -1,7 +1,9 @@
 {
   "buildCommand": "bash build.sh",
-  "installCommand": "pnpm install --no-frozen-lockfile",
+  "installCommand": "pnpm install --no-frozen-lockfile --shamefully-hoist",
   "env": {
     "PNPM_HOME": ".pnpm"
-  }
+  },
+  "envPrefix": ".",
+  "regions": ["iad1"]
 }
