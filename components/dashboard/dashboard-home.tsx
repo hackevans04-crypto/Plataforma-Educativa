@@ -357,7 +357,7 @@ export default function DashboardHome() {
           <div className="mt-1 flex flex-wrap items-center gap-3 text-sm">
             <span className="text-muted-foreground">{profession}</span>
             <Link
-              href="/dashboard/perfil?tab=configuracion"
+              href="/dashboard/perfil?tab=perfil"
               className="inline-flex items-center gap-1 font-bold text-primary hover:text-primary/80"
             >
               <Pencil className="h-3 w-3" />

@@ -3,10 +3,10 @@
 export const dynamic = "force-dynamic"
 export const fetchCache = "force-no-store"
 
-import { Suspense, useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ClipboardCheck, Clock, Play, Search, Star, Target, Zap } from "lucide-react"
+import { CheckCircle2, ClipboardCheck, Clock, Play, Search, Star, Target, Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { isCourseActivityVisibleInDashboard } from "@/lib/course-dashboard-visibility"
 import type { SimuladorBuilder } from "@/simuladores/types"
@@ -95,105 +95,143 @@ const getIsNew = (id: string) => {
 }
 
 function DashboardSimulatorCard({ sim }: { sim: SimuladorCard }) {
+  const [hovered, setHovered] = useState(false)
+  const [side, setSide] = useState<"right" | "left">("right")
+  const cardRef = useRef<HTMLDivElement>(null)
+  const enterTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const onEnter = () => {
+    if (leaveTimer.current) { clearTimeout(leaveTimer.current); leaveTimer.current = null }
+    if (enterTimer.current) clearTimeout(enterTimer.current)
+    enterTimer.current = setTimeout(() => {
+      const node = cardRef.current
+      if (node) {
+        const rect = node.getBoundingClientRect()
+        setSide(window.innerWidth - rect.right < 360 ? "left" : "right")
+      }
+      setHovered(true)
+    }, 280)
+  }
+  const scheduleClose = () => {
+    if (enterTimer.current) { clearTimeout(enterTimer.current); enterTimer.current = null }
+    if (leaveTimer.current) clearTimeout(leaveTimer.current)
+    leaveTimer.current = setTimeout(() => setHovered(false), 180)
+  }
+  const cancelClose = () => {
+    if (leaveTimer.current) { clearTimeout(leaveTimer.current); leaveTimer.current = null }
+  }
+  useEffect(() => () => {
+    if (enterTimer.current) clearTimeout(enterTimer.current)
+    if (leaveTimer.current) clearTimeout(leaveTimer.current)
+  }, [])
+
+  const bullets = [
+    sim.questions > 0 ? `${sim.questions} preguntas` : "Simulador HTML completo",
+    `Duración estimada: ${sim.time}`,
+    `Nivel ${sim.difficulty.toLowerCase()}`,
+    sim.isPro ? "Asistencia con IA incluida" : "Práctica autoevaluada",
+  ]
+
   return (
-    <Link
-      href={`/simulador/${sim.id}`}
-      onClick={() => trackEntityClick("simulator", sim.id)}
-      className="group block"
+    <div
+      ref={cardRef}
+      className="group relative block"
+      onMouseEnter={onEnter}
+      onMouseLeave={scheduleClose}
     >
-      <div className="overflow-hidden rounded-[24px] border border-white/10 bg-card shadow-[0_18px_60px_rgba(0,0,0,0.12)] transition-all duration-300 hover:-translate-y-1 hover:border-primary/35 hover:shadow-[0_24px_80px_rgba(0,0,0,0.18)] dark:bg-[#0d0e13]/80">
-        <div className={cn("relative aspect-video overflow-hidden bg-gradient-to-br", sim.gradient)}>
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),transparent_55%)]" />
-          <div
-            className="absolute inset-0 opacity-20"
-            style={{
-              backgroundImage:
-                "linear-gradient(rgba(255,255,255,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.12) 1px, transparent 1px)",
-              backgroundSize: "34px 34px",
-            }}
-          />
-
-          <div className="absolute left-4 top-4 flex flex-wrap gap-2">
-            {sim.isNew ? (
-              <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-[#E8392A]">
-                Nuevo
+      <Link
+        href={`/simulador/${sim.id}`}
+        onClick={() => trackEntityClick("simulator", sim.id)}
+        className="block"
+      >
+        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_10px_30px_rgba(0,0,0,0.1)] transition-all duration-300 hover:border-primary/35">
+          <div className={cn("relative aspect-video overflow-hidden bg-gradient-to-br", sim.gradient)}>
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.14),transparent_55%)]" />
+            <div className="absolute left-2 top-2 flex flex-wrap gap-1">
+              {sim.isNew ? (
+                <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-[#E8392A]">Nuevo</span>
+              ) : null}
+              <span className="rounded-full border border-white/20 bg-black/30 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/90">
+                {sim.categoryLabel}
               </span>
-            ) : null}
-            <span className="rounded-full border border-white/20 bg-black/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/90">
-              {sim.categoryLabel}
-            </span>
+            </div>
+            <div className="absolute right-2 top-2 rounded-full border border-white/20 bg-black/30 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
+              {sim.difficulty}
+            </div>
+            <div className="absolute left-3 bottom-3 right-3">
+              <h3 className="line-clamp-2 text-base font-black leading-tight text-white">{sim.title}</h3>
+            </div>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-white/10 text-white backdrop-blur">
+              <Play size={14} fill="currentColor" />
+            </div>
           </div>
 
-          <div className="absolute right-4 top-4 rounded-full border border-white/18 bg-black/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur">
-            {sim.difficulty}
-          </div>
+          <div className="p-2.5">
+            <p className="mb-1.5 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{sim.description}</p>
 
-          <div className="absolute left-5 top-20 max-w-[72%]">
-            <h3 className="line-clamp-3 text-3xl font-black leading-[1.02] text-white">{sim.title}</h3>
-          </div>
+            <div className="mb-1.5 flex items-center gap-1">
+              <span className="text-xs font-bold text-[#fbbf24]">{sim.rating !== null ? sim.rating.toFixed(1) : "4.6"}</span>
+              <div className="flex gap-0.5">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <Star
+                    key={i}
+                    size={10}
+                    className={i <= Math.round(sim.rating || 4.6) ? "fill-[#fbbf24] text-[#fbbf24]" : "fill-muted text-muted"}
+                  />
+                ))}
+              </div>
+              <span className="text-[10px] text-muted-foreground">({sim.completions})</span>
+            </div>
 
-          <div className="absolute bottom-5 right-5 flex h-14 w-14 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur">
-            <Play size={18} className="ml-0.5" fill="currentColor" />
+            <div className="flex flex-wrap gap-1">
+              <span className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                <ClipboardCheck className="h-2.5 w-2.5" />
+                {sim.questions > 0 ? `${sim.questions}` : "HTML"}
+              </span>
+              <span className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                <Clock className="h-2.5 w-2.5" />
+                {sim.time}
+              </span>
+              {sim.progress > 0 ? (
+                <span className="flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-500">
+                  {sim.progress}%
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
+      </Link>
 
-        <div className="p-4">
-          <p className="mb-4 line-clamp-2 text-sm leading-relaxed text-muted-foreground">{sim.description}</p>
-
-          <div className="mb-3 flex items-center gap-1.5">
-            <span className="text-sm font-bold text-[#fbbf24]">{sim.rating !== null ? sim.rating.toFixed(1) : "4.6"}</span>
-            <div className="flex gap-0.5">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Star
-                  key={i}
-                  size={12}
-                  className={i <= Math.round(sim.rating || 4.6) ? "fill-[#fbbf24] text-[#fbbf24]" : "fill-muted text-muted"}
-                />
-              ))}
-            </div>
-            <span className="text-xs text-muted-foreground">({sim.completions.toLocaleString()} completados)</span>
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-2">
-            <span className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-[11px] text-muted-foreground">
-              <ClipboardCheck className="h-3 w-3" />
-              {sim.questions > 0 ? `${sim.questions} preguntas` : "HTML completo"}
-            </span>
-            <span className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-[11px] text-muted-foreground">
-              <Clock className="h-3 w-3" />
-              {sim.time}
-            </span>
-            <span className="flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2 py-0.5 text-[11px] text-muted-foreground">
-              <Zap className="h-3 w-3" />
-              {sim.isPro ? "IA" : sim.difficulty}
-            </span>
-          </div>
-
-          {sim.progress > 0 ? (
-            <div className="mb-3 rounded border border-emerald-500/20 bg-emerald-500/8 px-3 py-2">
-              <div className="mb-1 flex items-center justify-between text-[11px]">
-                <span className="font-semibold text-emerald-400">Tu progreso</span>
-                <span className="font-bold text-emerald-400">{sim.progress}%</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-emerald-950/35">
-                <div className="h-full rounded-full bg-emerald-400" style={{ width: `${sim.progress}%` }} />
-              </div>
-            </div>
-          ) : null}
-
-          <div className="flex items-center justify-between border-t border-border pt-3">
-            <div>
-              <p className="text-xl font-bold text-foreground">Practicar</p>
-              <p className="text-xs text-muted-foreground">Mismo estilo del catalogo</p>
-            </div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-bold text-primary transition-all group-hover:bg-primary group-hover:text-white">
-              {sim.progress > 0 ? "Continuar" : "Abrir simulador"}
-              <Play size={11} />
-            </span>
-          </div>
+      {hovered ? (
+        <div
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          className={`pointer-events-auto absolute top-0 z-50 hidden w-80 rounded-2xl border border-border bg-popover p-4 text-popover-foreground shadow-[0_24px_60px_rgba(0,0,0,0.35)] md:block ${side === "right" ? "left-full ml-3" : "right-full mr-3"}`}
+        >
+          <h4 className="text-sm font-black leading-snug text-foreground">{sim.title}</h4>
+          <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-emerald-500">
+            {sim.categoryLabel} · {sim.difficulty}
+          </p>
+          <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-muted-foreground">{sim.description}</p>
+          <ul className="mt-3 space-y-1.5">
+            {bullets.map((b) => (
+              <li key={b} className="flex items-start gap-2 text-[12px] leading-snug text-foreground/90">
+                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                {b}
+              </li>
+            ))}
+          </ul>
+          <Link
+            href={`/simulador/${sim.id}`}
+            className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-white shadow-[0_8px_22px_rgba(232,57,42,0.32)]"
+          >
+            <Play size={14} fill="currentColor" />
+            {sim.progress > 0 ? "Continuar simulador" : "Abrir simulador"}
+          </Link>
         </div>
-      </div>
-    </Link>
+      ) : null}
+    </div>
   )
 }
 
@@ -376,7 +414,7 @@ function SimuladoresPageContent() {
       </div>
 
       {filteredSimuladores.length > 0 ? (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {filteredSimuladores.map((sim) => (
             <DashboardSimulatorCard key={sim.id} sim={sim} />
           ))}

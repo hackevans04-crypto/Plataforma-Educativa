@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -119,12 +119,7 @@ export default function UdemyHeader() {
             >
               Simuladores
             </Link>
-            <Link
-              href="/dashboard/cursos?vista=mis-cursos"
-              className="rounded-lg px-3 py-2 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Mi aprendizaje
-            </Link>
+            <MiAprendizajeMenu />
           </nav>
 
           {/* Search */}
@@ -160,12 +155,7 @@ export default function UdemyHeader() {
                 </span>
               ) : null}
             </button>
-            <button
-              aria-label="Notificaciones"
-              className="relative hidden rounded-full p-2.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground md:inline-flex"
-            >
-              <Bell className="h-5 w-5" />
-            </button>
+            <NotificationsBell />
 
             {/* Avatar / dropdown */}
             <div className="relative ml-1">
@@ -227,7 +217,6 @@ export default function UdemyHeader() {
                         { icon: User, label: "Editar perfil", href: "/dashboard/perfil?tab=perfil" },
                         { icon: Receipt, label: "Historial de compras", href: "/dashboard/perfil?tab=compras" },
                         { icon: CreditCard, label: "Metodos de pago", href: "/dashboard/perfil?tab=metodos" },
-                        { icon: Headphones, label: "Soporte", href: "/dashboard/soporte" },
                         { icon: Settings, label: "Configuracion", href: "/dashboard/perfil?tab=configuracion" },
                       ].map((row) => (
                         <Link
@@ -368,5 +357,261 @@ export default function UdemyHeader() {
         onClear={() => clearCart()}
       />
     </>
+  )
+}
+
+function NotificationsBell() {
+  const { user } = useAuth()
+  const [open, setOpen] = useState(false)
+  const [items, setItems] = useState<{ id: string; kind: string; title: string; body: string; href?: string; createdAt: string; read: boolean }[]>([])
+
+  useEffect(() => {
+    if (!user) return
+    const sync = async () => {
+      const { getUserNotifications, USER_NOTIF_EVENT, PROMO_EVENT } = await import("@/lib/user-notifications")
+      const enrolled = (() => {
+        try {
+          if (typeof window === "undefined") return new Set<string>()
+          const list = JSON.parse(window.localStorage.getItem("he_matriculas") || "[]") as Array<{ userId: string; cursoId: string }>
+          return new Set(list.filter((e) => e.userId === user.id).map((e) => e.cursoId))
+        } catch {
+          return new Set<string>()
+        }
+      })()
+      setItems(getUserNotifications(user.id, enrolled))
+      void USER_NOTIF_EVENT
+      void PROMO_EVENT
+    }
+    sync()
+    if (typeof window === "undefined") return
+    const handler = () => sync()
+    window.addEventListener("he-user-notifs-updated", handler)
+    window.addEventListener("he-promo-updated", handler)
+    window.addEventListener("he-support-updated", handler)
+    window.addEventListener("he-course-feedback-updated", handler)
+    window.addEventListener("storage", handler)
+    return () => {
+      window.removeEventListener("he-user-notifs-updated", handler)
+      window.removeEventListener("he-promo-updated", handler)
+      window.removeEventListener("he-support-updated", handler)
+      window.removeEventListener("he-course-feedback-updated", handler)
+      window.removeEventListener("storage", handler)
+    }
+  }, [user])
+
+  if (!user) return null
+  const unread = items.filter((i) => !i.read).length
+
+  const handleOpen = () => setOpen((v) => !v)
+  const handleClick = async (id: string, href?: string) => {
+    if (!user) return
+    const { markUserNotificationRead } = await import("@/lib/user-notifications")
+    markUserNotificationRead(user.id, id)
+    setOpen(false)
+    if (href) window.location.href = href
+  }
+  const markAll = async () => {
+    if (!user) return
+    const { markAllUserNotificationsRead } = await import("@/lib/user-notifications")
+    markAllUserNotificationsRead(
+      user.id,
+      items.map((i) => i.id),
+    )
+  }
+
+  return (
+    <div className="relative hidden md:inline-block">
+      <button
+        onClick={handleOpen}
+        aria-label="Notificaciones"
+        className="relative rounded-full p-2.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+      >
+        <Bell className="h-5 w-5" />
+        {unread > 0 ? (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-black text-white">
+            {unread > 9 ? "9+" : unread}
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-50 mt-2 w-96 max-h-[28rem] overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <div>
+                <p className="text-sm font-bold text-foreground">Notificaciones</p>
+                <p className="text-[11px] text-muted-foreground">{unread === 0 ? "Sin novedades" : `${unread} sin leer`}</p>
+              </div>
+              {unread > 0 ? (
+                <button
+                  onClick={markAll}
+                  className="rounded-full border border-border bg-secondary/40 px-2.5 py-1 text-[11px] font-bold text-foreground hover:border-primary/40"
+                >
+                  Marcar todas
+                </button>
+              ) : null}
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {items.length === 0 ? (
+                <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  Aún no tienes notificaciones.
+                </div>
+              ) : (
+                items.map((entry) => (
+                  <button
+                    key={entry.id}
+                    onClick={() => handleClick(entry.id, entry.href)}
+                    className={`block w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-secondary/40 ${
+                      !entry.read ? "bg-primary/5" : ""
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {!entry.read ? (
+                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                      ) : (
+                        <span className="mt-1.5 h-2 w-2 shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-foreground">{entry.title}</p>
+                        <p className="line-clamp-2 text-xs text-muted-foreground">{entry.body}</p>
+                        <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                          {entry.kind === "support_reply" ? "Soporte" : entry.kind === "announcement" ? "Curso" : "Oferta"}
+                          {" · "}
+                          {new Date(entry.createdAt).toLocaleString("es-EC")}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+type MiAprendizajeCourse = {
+  id: string
+  titulo: string
+  imagen: string
+  progreso: number
+}
+
+function MiAprendizajeMenu() {
+  const { user } = useAuth()
+  const [open, setOpen] = useState(false)
+  const [courses, setCourses] = useState<MiAprendizajeCourse[]>([])
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const sync = () => {
+      if (typeof window === "undefined" || !user) return setCourses([])
+      try {
+        const allCourses = JSON.parse(window.localStorage.getItem("he_cursos") || "[]") as Array<{
+          id: string
+          titulo: string
+          portadaImagen?: string
+        }>
+        const enrollments = JSON.parse(window.localStorage.getItem("he_matriculas") || "[]") as Array<{
+          userId: string
+          cursoId: string
+          progreso?: number
+        }>
+        const mine = enrollments
+          .filter((entry) => entry.userId === user.id)
+          .map((entry) => {
+            const course = allCourses.find((c) => c.id === entry.cursoId)
+            if (!course) return null
+            return {
+              id: course.id,
+              titulo: course.titulo,
+              imagen: course.portadaImagen || "/placeholder.jpg",
+              progreso: Number(entry.progreso || 0),
+            }
+          })
+          .filter(Boolean) as MiAprendizajeCourse[]
+        setCourses(mine.slice(0, 6))
+      } catch {
+        setCourses([])
+      }
+    }
+    sync()
+    window.addEventListener("storage", sync)
+    window.addEventListener("focus", sync)
+    return () => {
+      window.removeEventListener("storage", sync)
+      window.removeEventListener("focus", sync)
+    }
+  }, [user])
+
+  const handleEnter = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    setOpen(true)
+  }
+  const handleLeave = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    closeTimer.current = setTimeout(() => setOpen(false), 180)
+  }
+
+  return (
+    <div className="relative" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
+      <Link
+        href="/dashboard/cursos?vista=mis-cursos"
+        className="rounded-lg px-3 py-2 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        Mi aprendizaje
+      </Link>
+      {open ? (
+        <div className="absolute right-0 top-full z-50 w-80 overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+          {courses.length === 0 ? (
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+              Aun no tienes cursos en tu aprendizaje.
+              <Link
+                href="/dashboard/cursos"
+                className="mt-3 block rounded-full bg-primary px-4 py-2 text-xs font-bold text-white"
+              >
+                Explorar cursos
+              </Link>
+            </div>
+          ) : (
+            <>
+              <div className="max-h-80 overflow-y-auto py-1">
+                {courses.map((course) => (
+                  <Link
+                    key={course.id}
+                    href={`/dashboard/cursos?course=${encodeURIComponent(course.id)}`}
+                    className="flex items-start gap-3 px-3 py-2.5 transition-colors hover:bg-secondary/40"
+                  >
+                    <div className="relative h-12 w-16 shrink-0 overflow-hidden rounded-md bg-secondary">
+                      <Image src={course.imagen} alt={course.titulo} fill className="object-cover" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 text-xs font-bold leading-snug text-foreground">{course.titulo}</p>
+                      <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-primary">
+                        {course.progreso > 0 ? `Continuar · ${course.progreso}%` : "Empieza a aprender"}
+                      </p>
+                      <div className="mt-1 h-1 overflow-hidden rounded-full bg-secondary">
+                        <div
+                          className="h-full rounded-full bg-primary"
+                          style={{ width: `${Math.max(2, Math.min(course.progreso, 100))}%` }}
+                        />
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+              <Link
+                href="/dashboard/cursos?vista=mis-cursos"
+                className="block border-t border-border bg-secondary/15 px-4 py-3 text-center text-xs font-black uppercase tracking-[0.14em] text-primary hover:bg-secondary/30"
+              >
+                Ir a mi aprendizaje
+              </Link>
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
   )
 }

@@ -7,8 +7,15 @@ import {
   LayoutGrid, Link2, Loader2, Lock, Paperclip, Pencil, Play, Plus,
   Save, Settings, Target, Trash2, Trophy, Upload, Users,
   Video, X, Zap, Star, BarChart3, Tag, GraduationCap, Lightbulb,
-  Folder
+  Folder, Megaphone, Send
 } from "lucide-react"
+import {
+  COURSE_FEEDBACK_EVENT,
+  deleteAnnouncement,
+  getAnnouncementsForCourse,
+  postAnnouncement,
+  type Announcement,
+} from "@/lib/course-feedback"
 import { cn } from "@/lib/utils"
 import type { SimuladorBuilder } from "@/simuladores/types"
 import {
@@ -27,7 +34,7 @@ type CursoEstado = "borrador" | "en_revision" | "publicado" | "archivado"
 type RecursoTipo = "video" | "documento" | "enlace" | "simulador" | "evaluacion" | "texto"
 type ClaseTipo = Extract<RecursoTipo, "video" | "documento" | "enlace" | "texto">
 type AccesoTipo = "libre" | "clave" | "pago"
-type TabCurso = "info" | "contenido" | "acceso"
+type TabCurso = "info" | "contenido" | "acceso" | "anuncios"
 type NivelCurso = string
 
 interface AdjuntoCurso {
@@ -1870,6 +1877,7 @@ export default function AdminCursosPage() {
     { id: "info" as const, label: "Información", icon: <BookOpen className="h-3.5 w-3.5" />, req: true },
     { id: "contenido" as const, label: "Contenido", icon: <Layers className="h-3.5 w-3.5" />, req: true },
     { id: "acceso" as const, label: "Acceso", icon: <Key className="h-3.5 w-3.5" />, req: true },
+    { id: "anuncios" as const, label: "Anuncios", icon: <Megaphone className="h-3.5 w-3.5" />, req: true },
   ]
 
   return (
@@ -1956,6 +1964,7 @@ export default function AdminCursosPage() {
         {tab === "info"     && curso && <PanelInfoCurso curso={curso} setCurso={setCurso} />}
         {tab === "contenido" && curso && <PanelContenido curso={curso} setCurso={setCurso} />}
         {tab === "acceso"   && curso && <PanelAcceso curso={curso} setCurso={setCurso} />}
+        {tab === "anuncios" && curso && <PanelAnuncios cursoId={curso.id} />}
       </div>
 
       {/* Modal eliminar */}
@@ -1974,6 +1983,102 @@ export default function AdminCursosPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function PanelAnuncios({ cursoId }: { cursoId: string }) {
+  const [items, setItems] = useState<Announcement[]>([])
+  const [title, setTitle] = useState("")
+  const [body, setBody] = useState("")
+
+  useEffect(() => {
+    const sync = () => setItems(getAnnouncementsForCourse(cursoId))
+    sync()
+    if (typeof window === "undefined") return
+    window.addEventListener(COURSE_FEEDBACK_EVENT, sync)
+    window.addEventListener("storage", sync)
+    return () => {
+      window.removeEventListener(COURSE_FEEDBACK_EVENT, sync)
+      window.removeEventListener("storage", sync)
+    }
+  }, [cursoId])
+
+  const submit = () => {
+    if (!title.trim() || !body.trim()) return
+    postAnnouncement({
+      courseId: cursoId,
+      authorName: "Equipo Hack Evans",
+      title: title.trim(),
+      body: body.trim(),
+    })
+    setTitle("")
+    setBody("")
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-border bg-card p-5">
+        <div className="mb-3 flex items-center gap-2">
+          <Megaphone className="h-4 w-4 text-primary" />
+          <h2 className="text-sm font-black text-foreground">Publicar anuncio para los estudiantes de este curso</h2>
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Los anuncios aparecen en la pestaña "Anuncios" del curso para los matriculados, en el dropdown de la campana de notificaciones del usuario y disparan eventos en tiempo real.
+        </p>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Título del anuncio"
+          className="mb-2 h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary"
+        />
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={4}
+          placeholder="Mensaje del anuncio..."
+          className="w-full resize-y rounded-xl border border-border bg-background p-3 text-sm outline-none focus:border-primary"
+        />
+        <button
+          onClick={submit}
+          disabled={!title.trim() || !body.trim()}
+          className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-black text-white disabled:opacity-50"
+        >
+          <Send className="h-3.5 w-3.5" />
+          Publicar anuncio
+        </button>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card p-5">
+        <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          Anuncios publicados ({items.length})
+        </p>
+        {items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-secondary/10 p-8 text-center text-xs text-muted-foreground">
+            Aún no has publicado anuncios para este curso.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {items.map((a) => (
+              <div key={a.id} className="flex items-start justify-between gap-3 rounded-xl border border-border bg-secondary/15 p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-primary">
+                    {a.authorName} · {new Date(a.createdAt).toLocaleString("es-EC")}
+                  </p>
+                  <p className="mt-1 text-sm font-black text-foreground">{a.title}</p>
+                  <p className="mt-1 whitespace-pre-line text-xs text-muted-foreground">{a.body}</p>
+                </div>
+                <button
+                  onClick={() => deleteAnnouncement(a.id)}
+                  className="rounded-full p-1.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -13595,6 +13595,12 @@ function StudioLayout({ config, onChange }: { config: CMSConfig; onChange: CMSCh
                   Ver sitio
                 </a>
                 <a
+                  href="/studio/ofertas"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 text-sm font-bold text-amber-200 transition-all hover:border-amber-400/50 hover:bg-amber-400/15"
+                >
+                  ✨ Ofertas
+                </a>
+                <a
                   href="/admin"
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] text-sm font-medium text-white/70 transition-all hover:border-white/20 hover:text-white"
                 >

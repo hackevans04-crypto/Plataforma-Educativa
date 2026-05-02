@@ -6,6 +6,8 @@ export const fetchCache = "force-no-store"
 import { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import UdemyHeader from "@/components/dashboard/udemy-header"
+import SupportWidget from "@/components/dashboard/support-widget"
+import PromoBannerBar from "@/components/promo-banner-bar"
 import { useAuth } from "@/contexts/auth-context"
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -35,8 +37,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-background">
+      <PromoBannerBar scope="dashboard" />
       <UdemyHeader />
       <main className="mx-auto w-full max-w-[1500px] px-4 py-8 lg:px-6 lg:py-10">{children}</main>
+      <SupportWidget />
     </div>
   )
 }

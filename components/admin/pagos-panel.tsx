@@ -27,28 +27,38 @@ import {
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import {
+  type AuditEntry,
   type BankConfig,
   type PaymentRecord,
   type PaymentStatus,
+  type RefundRequest,
+  getAuditEventName,
+  getAuditLog,
   getBankConfig,
   getBankConfigEventName,
   getPayments,
   getPaymentsEventName,
+  getRefundRequests,
+  getRefundRequestsEventName,
   refundPayment,
   rejectPayment,
+  resolveRefundRequest,
   saveBankConfig,
   setPaymentNote,
   verifyPayment,
 } from "@/lib/payments"
+import { Calendar, Download, FileSpreadsheet } from "lucide-react"
 
-type TabKey = "todas" | "pending" | "verified" | "rejected" | "config"
+type TabKey = "todas" | "pending" | "verified" | "rejected" | "refunds" | "audit" | "config"
 
 const TAB_LABELS: Record<TabKey, string> = {
   todas: "Todos",
   pending: "Pendientes",
   verified: "Aprobados",
   rejected: "Rechazados",
-  config: "Configuracion",
+  refunds: "Reembolsos",
+  audit: "Contabilidad",
+  config: "Configuración",
 }
 
 const STATUS_LABEL: Record<PaymentStatus, string> = {
@@ -198,6 +208,38 @@ function PaymentDetailDialog({
                       </span>
                     </div>
                   </div>
+                  {payment.transfer.proofDataUrl ? (
+                    <div className="mt-3 overflow-hidden rounded-xl border border-border bg-secondary/10">
+                      {payment.transfer.proofMimeType?.startsWith("image/") ? (
+                        <a
+                          href={payment.transfer.proofDataUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block"
+                        >
+                          <img
+                            src={payment.transfer.proofDataUrl}
+                            alt={payment.transfer.proofName}
+                            className="max-h-80 w-full object-contain bg-black/40"
+                          />
+                          <div className="px-3 py-2 text-[11px] text-muted-foreground hover:text-primary">
+                            Click para abrir en tamaño completo · {payment.transfer.proofName}
+                          </div>
+                        </a>
+                      ) : (
+                        <a
+                          href={payment.transfer.proofDataUrl}
+                          download={payment.transfer.proofName}
+                          className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-foreground hover:bg-secondary/30"
+                        >
+                          <span className="truncate">{payment.transfer.proofName}</span>
+                          <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold text-primary">
+                            Descargar
+                          </span>
+                        </a>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -497,6 +539,231 @@ function BankConfigForm() {
   )
 }
 
+function monthKey(iso: string) {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
+function monthLabel(key: string) {
+  const [y, m] = key.split("-")
+  const date = new Date(Number(y), Number(m) - 1, 1)
+  return date.toLocaleDateString("es-EC", { month: "long", year: "numeric" })
+}
+
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return ""
+  const str = String(value).replace(/"/g, '""')
+  return /[",\n;]/.test(str) ? `"${str}"` : str
+}
+
+function downloadCSV(filename: string, rows: (string | number)[][]) {
+  const csv = "﻿" + rows.map((row) => row.map(csvCell).join(";")).join("\r\n")
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+type ReportSection = {
+  title: string
+  headers?: string[]
+  rows: (string | number)[][]
+  highlight?: boolean
+}
+
+type ReportPayload = {
+  title: string
+  subtitle: string
+  generatedAt: string
+  brand: { name: string; tagline: string; logo: string; logoUrl?: string }
+  summary: { label: string; value: string; accent?: string }[]
+  sections: ReportSection[]
+}
+
+async function fetchLogoDataUrl(): Promise<string> {
+  try {
+    const res = await fetch("/images/logo.png")
+    if (!res.ok) return ""
+    const blob = await res.blob()
+    return await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(typeof reader.result === "string" ? reader.result : "")
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return ""
+  }
+}
+
+function escapeHtml(value: string | number) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+function buildReportHtml(payload: ReportPayload, mode: "excel" | "pdf") {
+  const sectionsHtml = payload.sections
+    .map((section) => {
+      const head = section.headers
+        ? `<thead><tr>${section.headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`
+        : ""
+      const body = section.rows
+        .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`)
+        .join("")
+      return `
+        <h3 class="${section.highlight ? "section-h highlight" : "section-h"}">${escapeHtml(section.title)}</h3>
+        <table class="report-table">${head}<tbody>${body || `<tr><td colspan="${section.headers?.length || 1}" class="empty">Sin registros.</td></tr>`}</tbody></table>
+      `
+    })
+    .join("")
+
+  const summaryHtml = payload.summary
+    .map(
+      (s) => `
+        <div class="summary-card">
+          <div class="summary-label">${escapeHtml(s.label)}</div>
+          <div class="summary-value" style="color:${s.accent || "#0f172a"}">${escapeHtml(s.value)}</div>
+        </div>`,
+    )
+    .join("")
+
+  const toolbar =
+    mode === "pdf"
+      ? `<div class="toolbar no-print">
+          <button onclick="window.print()" class="tb-btn primary">🖨️ Imprimir / Guardar PDF</button>
+          <button onclick="window.close()" class="tb-btn">✕ Cerrar</button>
+        </div>`
+      : ""
+
+  const printScript =
+    mode === "pdf"
+      ? `<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400);});</script>`
+      : ""
+
+  const logoNode =
+    mode === "pdf" && payload.brand.logoUrl
+      ? `<img src="${payload.brand.logoUrl}" alt="${escapeHtml(payload.brand.name)}" class="brand-logo-img" />`
+      : `<div class="brand-logo">${escapeHtml(payload.brand.logo)}</div>`
+
+  const sheetName = "Reporte"
+  const excelHead = mode === "excel"
+    ? `<!--[if gte mso 9]><xml>
+<x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+<x:Name>${escapeHtml(sheetName)}</x:Name>
+<x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook>
+</xml><![endif]-->`
+    : ""
+  const htmlOpen = mode === "excel"
+    ? `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">`
+    : `<html lang="es">`
+  const metaContent = mode === "excel"
+    ? `<meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8" />`
+    : `<meta charset="utf-8" />`
+
+  return `<!DOCTYPE html>
+${htmlOpen}<head>
+${metaContent}
+<title>${escapeHtml(payload.title)}</title>
+${excelHead}
+<style>
+  * { box-sizing:border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color:#0f172a; margin:0; padding:32px; background:#f8fafc; }
+  .page { max-width:1100px; margin:0 auto; background:#fff; border-radius:14px; padding:36px; box-shadow:0 12px 40px rgba(15,23,42,0.08); }
+  .toolbar { position:sticky; top:12px; z-index:50; display:flex; justify-content:flex-end; gap:8px; max-width:1100px; margin:0 auto 16px; }
+  .tb-btn { background:#fff; border:1px solid #e2e8f0; border-radius:999px; padding:8px 16px; font-weight:700; font-size:13px; cursor:pointer; box-shadow:0 4px 12px rgba(15,23,42,0.08); color:#0f172a; }
+  .tb-btn.primary { background:#E8392A; color:#fff; border-color:#E8392A; }
+  .tb-btn:hover { transform:translateY(-1px); }
+  .header { display:flex; align-items:center; justify-content:space-between; gap:24px; border-bottom:3px solid #E8392A; padding-bottom:18px; margin-bottom:24px; }
+  .brand { display:flex; align-items:center; gap:14px; }
+  .brand-logo { width:60px; height:60px; border-radius:14px; background:#E8392A; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:24px; letter-spacing:0.05em; box-shadow:0 8px 20px rgba(232,57,42,0.3); }
+  .brand-logo-img { width:60px; height:60px; border-radius:14px; object-fit:cover; box-shadow:0 8px 20px rgba(232,57,42,0.25); }
+  .brand-name { font-size:22px; font-weight:900; color:#0f172a; letter-spacing:-0.02em; }
+  .brand-tag { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.18em; margin-top:2px; }
+  .doc-meta { text-align:right; font-size:12px; color:#475569; line-height:1.6; }
+  .doc-title { font-size:26px; font-weight:900; margin:0 0 6px; color:#0f172a; letter-spacing:-0.02em; }
+  .doc-subtitle { font-size:13px; color:#475569; margin:0 0 22px; }
+  .summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:26px; }
+  .summary-card { border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; background:linear-gradient(180deg, #ffffff, #f8fafc); }
+  .summary-label { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.14em; }
+  .summary-value { font-size:22px; font-weight:900; margin-top:8px; }
+  .section-h { font-size:13px; font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:0.16em; margin:24px 0 10px; padding-bottom:6px; border-bottom:2px solid #f1f5f9; }
+  .section-h.highlight { color:#E8392A; border-bottom-color:#E8392A; }
+  .report-table { width:100%; border-collapse:collapse; font-size:12px; border-radius:10px; overflow:hidden; box-shadow:0 1px 3px rgba(15,23,42,0.05); }
+  .report-table th { background:linear-gradient(180deg, #1e293b, #0f172a); color:#fff; text-align:left; padding:10px 12px; font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; }
+  .report-table td { border:1px solid #e2e8f0; padding:8px 12px; vertical-align:top; }
+  .report-table tr:nth-child(even) td { background:#f8fafc; }
+  .empty { text-align:center; color:#94a3b8; font-style:italic; }
+  .footer { margin-top:34px; padding-top:16px; border-top:1px solid #e2e8f0; font-size:11px; color:#64748b; text-align:center; }
+  @media print {
+    body { padding:0; background:#fff; }
+    .page { box-shadow:none; border-radius:0; padding:18px; max-width:none; }
+    .no-print { display:none !important; }
+    .summary-grid { grid-template-columns:repeat(4,1fr); }
+    @page { size:A4; margin:14mm; }
+  }
+</style>
+</head><body>
+  ${toolbar}
+  <div class="page">
+    <div class="header">
+      <div class="brand">
+        ${logoNode}
+        <div>
+          <div class="brand-name">${escapeHtml(payload.brand.name)}</div>
+          <div class="brand-tag">${escapeHtml(payload.brand.tagline)}</div>
+        </div>
+      </div>
+      <div class="doc-meta">
+        Generado: ${escapeHtml(payload.generatedAt)}<br/>
+        Documento contable interno
+      </div>
+    </div>
+    <h1 class="doc-title">${escapeHtml(payload.title)}</h1>
+    <p class="doc-subtitle">${escapeHtml(payload.subtitle)}</p>
+    <div class="summary-grid">${summaryHtml}</div>
+    ${sectionsHtml}
+    <div class="footer">© Hack Evans · Reporte contable confidencial · No distribuir.</div>
+  </div>
+${printScript}
+</body></html>`
+}
+
+async function downloadExcel(filename: string, payload: ReportPayload) {
+  if (!payload.brand.logoUrl) payload.brand.logoUrl = await fetchLogoDataUrl()
+  const html = buildReportHtml(payload, "excel")
+  const blob = new Blob(["﻿" + html], { type: "application/vnd.ms-excel;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename.endsWith(".xls") ? filename : `${filename}.xls`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+async function openPdf(payload: ReportPayload) {
+  if (!payload.brand.logoUrl) payload.brand.logoUrl = await fetchLogoDataUrl()
+  const html = buildReportHtml(payload, "pdf")
+  const win = window.open("", "_blank")
+  if (!win) {
+    alert("Permite ventanas emergentes para descargar el PDF.")
+    return
+  }
+  win.document.open()
+  win.document.write(html)
+  win.document.close()
+}
+
 export default function PagosPanel() {
   const { user } = useAuth()
   const [tab, setTab] = useState<TabKey>("pending")
@@ -504,17 +771,185 @@ export default function PagosPanel() {
   const [search, setSearch] = useState("")
   const [methodFilter, setMethodFilter] = useState<"all" | "card" | "transfer">("all")
   const [openPayment, setOpenPayment] = useState<PaymentRecord | null>(null)
+  const [refundReqs, setRefundReqs] = useState<RefundRequest[]>([])
+  const [audit, setAudit] = useState<AuditEntry[]>([])
+  const [auditMonth, setAuditMonth] = useState<string>("")
 
   useEffect(() => {
-    const sync = () => setPayments(getPayments())
-    sync()
-    window.addEventListener(getPaymentsEventName(), sync as EventListener)
-    window.addEventListener("storage", sync)
+    const syncPayments = () => setPayments(getPayments())
+    const syncRefunds = () => setRefundReqs(getRefundRequests())
+    const syncAudit = () => setAudit(getAuditLog())
+    syncPayments()
+    syncRefunds()
+    syncAudit()
+    window.addEventListener(getPaymentsEventName(), syncPayments as EventListener)
+    window.addEventListener(getRefundRequestsEventName(), syncRefunds as EventListener)
+    window.addEventListener(getAuditEventName(), syncAudit as EventListener)
+    window.addEventListener("storage", syncPayments)
+    window.addEventListener("storage", syncRefunds)
+    window.addEventListener("storage", syncAudit)
     return () => {
-      window.removeEventListener(getPaymentsEventName(), sync as EventListener)
-      window.removeEventListener("storage", sync)
+      window.removeEventListener(getPaymentsEventName(), syncPayments as EventListener)
+      window.removeEventListener(getRefundRequestsEventName(), syncRefunds as EventListener)
+      window.removeEventListener(getAuditEventName(), syncAudit as EventListener)
+      window.removeEventListener("storage", syncPayments)
+      window.removeEventListener("storage", syncRefunds)
+      window.removeEventListener("storage", syncAudit)
     }
   }, [])
+
+  const pendingRefundCount = refundReqs.filter((r) => r.status === "pending").length
+
+  const auditMonths = useMemo(() => {
+    const set = new Set<string>()
+    audit.forEach((entry) => set.add(monthKey(entry.createdAt)))
+    payments.forEach((entry) => set.add(monthKey(entry.createdAt)))
+    return Array.from(set).sort().reverse()
+  }, [audit, payments])
+
+  const activeMonth = auditMonth || auditMonths[0] || monthKey(new Date().toISOString())
+
+  const auditByMonth = useMemo(
+    () => audit.filter((entry) => monthKey(entry.createdAt) === activeMonth),
+    [audit, activeMonth],
+  )
+
+  const paymentsByMonth = useMemo(
+    () => payments.filter((entry) => monthKey(entry.createdAt) === activeMonth),
+    [payments, activeMonth],
+  )
+
+  const monthSummary = useMemo(() => {
+    const verified = paymentsByMonth.filter((p) => p.status === "verified")
+    const refunded = paymentsByMonth.filter((p) => p.status === "refunded")
+    const pending = paymentsByMonth.filter((p) => p.status === "pending")
+    return {
+      total: paymentsByMonth.length,
+      ingresos: verified.reduce((s, p) => s + p.amount, 0),
+      reembolsado: refunded.reduce((s, p) => s + p.amount, 0),
+      pendientes: pending.length,
+    }
+  }, [paymentsByMonth])
+
+  const buildMonthPayload = (): ReportPayload => ({
+    title: `Reporte contable · ${monthLabel(activeMonth)}`,
+    subtitle: "Detalle de operaciones, reembolsos y bitácora del periodo seleccionado.",
+    generatedAt: new Date().toLocaleString("es-EC"),
+    brand: { name: "Hack Evans", tagline: "Consultoría educativa", logo: "HE" },
+    summary: [
+      { label: "Operaciones", value: String(monthSummary.total), accent: "#0f172a" },
+      { label: "Ingresos verificados", value: `$${monthSummary.ingresos.toFixed(2)}`, accent: "#16a34a" },
+      { label: "Reembolsado", value: `$${monthSummary.reembolsado.toFixed(2)}`, accent: "#9333ea" },
+      { label: "Pendientes", value: String(monthSummary.pendientes), accent: "#d97706" },
+    ],
+    sections: [
+      {
+        title: "Pagos del mes",
+        highlight: true,
+        headers: ["ID", "Fecha", "Cliente", "Email", "Método", "Monto", "Estado", "Referencia", "Cursos"],
+        rows: paymentsByMonth.map((p) => [
+          p.id,
+          new Date(p.createdAt).toLocaleString("es-EC"),
+          p.userName || "",
+          p.userEmail || "",
+          p.method === "card" ? "Tarjeta" : "Transferencia",
+          `$${p.amount.toFixed(2)}`,
+          p.status === "verified" ? "Aprobado" : p.status === "pending" ? "Pendiente" : p.status === "refunded" ? "Reembolsado" : "Rechazado",
+          p.method === "card" ? `**** ${p.card?.last4 || ""}` : p.transfer?.reference || "",
+          p.items.map((i) => i.titulo).join(" | "),
+        ]),
+      },
+      {
+        title: "Bitácora contable del mes",
+        headers: ["Fecha", "Acción", "Actor", "Monto", "Pago ID", "Descripción"],
+        rows: auditByMonth.map((a) => [
+          new Date(a.createdAt).toLocaleString("es-EC"),
+          a.action.replace(/_/g, " "),
+          a.actorName || a.actorId,
+          a.amount ? `$${a.amount.toFixed(2)}` : "",
+          a.paymentId || "",
+          a.description,
+        ]),
+      },
+    ],
+  })
+
+  const buildYearPayload = (): ReportPayload => {
+    const year = activeMonth.slice(0, 4)
+    const yearPayments = payments.filter((p) => monthKey(p.createdAt).startsWith(year))
+    const yearAudit = audit.filter((a) => monthKey(a.createdAt).startsWith(year))
+    const monthMap = new Map<string, { count: number; ingresos: number; reembolsos: number }>()
+    yearPayments.forEach((p) => {
+      const k = monthKey(p.createdAt)
+      const cur = monthMap.get(k) || { count: 0, ingresos: 0, reembolsos: 0 }
+      cur.count += 1
+      if (p.status === "verified") cur.ingresos += p.amount
+      if (p.status === "refunded") cur.reembolsos += p.amount
+      monthMap.set(k, cur)
+    })
+    const totalIngresos = yearPayments.filter((p) => p.status === "verified").reduce((s, p) => s + p.amount, 0)
+    const totalReembolsado = yearPayments.filter((p) => p.status === "refunded").reduce((s, p) => s + p.amount, 0)
+
+    return {
+      title: `Reporte contable anual · ${year}`,
+      subtitle: "Resumen mensual, detalle de pagos y bitácora consolidada del año fiscal.",
+      generatedAt: new Date().toLocaleString("es-EC"),
+      brand: { name: "Hack Evans", tagline: "Consultoría educativa", logo: "HE" },
+      summary: [
+        { label: "Operaciones del año", value: String(yearPayments.length), accent: "#0f172a" },
+        { label: "Ingresos verificados", value: `$${totalIngresos.toFixed(2)}`, accent: "#16a34a" },
+        { label: "Total reembolsado", value: `$${totalReembolsado.toFixed(2)}`, accent: "#9333ea" },
+        { label: "Neto del año", value: `$${(totalIngresos - totalReembolsado).toFixed(2)}`, accent: "#E8392A" },
+      ],
+      sections: [
+        {
+          title: "Resumen mensual",
+          highlight: true,
+          headers: ["Mes", "Operaciones", "Ingresos USD", "Reembolsos USD", "Neto USD"],
+          rows: Array.from(monthMap.entries())
+            .sort()
+            .map(([k, v]) => [
+              monthLabel(k),
+              v.count,
+              `$${v.ingresos.toFixed(2)}`,
+              `$${v.reembolsos.toFixed(2)}`,
+              `$${(v.ingresos - v.reembolsos).toFixed(2)}`,
+            ]),
+        },
+        {
+          title: "Detalle de pagos",
+          headers: ["ID", "Fecha", "Cliente", "Email", "Método", "Monto", "Estado", "Cursos"],
+          rows: yearPayments.map((p) => [
+            p.id,
+            new Date(p.createdAt).toLocaleString("es-EC"),
+            p.userName || "",
+            p.userEmail || "",
+            p.method === "card" ? "Tarjeta" : "Transferencia",
+            `$${p.amount.toFixed(2)}`,
+            p.status === "verified" ? "Aprobado" : p.status === "pending" ? "Pendiente" : p.status === "refunded" ? "Reembolsado" : "Rechazado",
+            p.items.map((i) => i.titulo).join(" | "),
+          ]),
+        },
+        {
+          title: "Bitácora contable del año",
+          headers: ["Fecha", "Acción", "Actor", "Monto", "Pago ID", "Descripción"],
+          rows: yearAudit.map((a) => [
+            new Date(a.createdAt).toLocaleString("es-EC"),
+            a.action.replace(/_/g, " "),
+            a.actorName || a.actorId,
+            a.amount ? `$${a.amount.toFixed(2)}` : "",
+            a.paymentId || "",
+            a.description,
+          ]),
+        },
+      ],
+    }
+  }
+
+  const handleExportMonthExcel = () => downloadExcel(`hackevans-contabilidad-${activeMonth}.xls`, buildMonthPayload())
+  const handleExportMonthPdf = () => openPdf(buildMonthPayload())
+  const handleExportYearExcel = () => downloadExcel(`hackevans-contabilidad-${activeMonth.slice(0, 4)}.xls`, buildYearPayload())
+  const handleExportYearPdf = () => openPdf(buildYearPayload())
 
   const stats = useMemo(() => {
     const pending = payments.filter((payment) => payment.status === "pending").length
@@ -622,7 +1057,9 @@ export default function PagosPanel() {
                   ? stats.rejected
                   : key === "todas"
                     ? stats.total
-                    : null
+                    : key === "refunds"
+                      ? pendingRefundCount
+                      : null
           return (
             <button
               key={key}
@@ -633,7 +1070,7 @@ export default function PagosPanel() {
                   : "text-muted-foreground hover:bg-secondary hover:text-foreground"
               }`}
             >
-              {key === "config" ? <Settings2 className="h-4 w-4" /> : null}
+              {key === "config" ? <Settings2 className="h-4 w-4" /> : key === "refunds" ? <Undo2 className="h-4 w-4" /> : key === "audit" ? <FileSpreadsheet className="h-4 w-4" /> : null}
               {TAB_LABELS[key]}
               {count !== null && count > 0 ? (
                 <span
@@ -649,6 +1086,25 @@ export default function PagosPanel() {
 
       {tab === "config" ? (
         <BankConfigForm />
+      ) : tab === "refunds" ? (
+        <RefundRequestsView
+          requests={refundReqs}
+          onResolve={(id, decision, note) => user && resolveRefundRequest(id, user.id, decision, note)}
+        />
+      ) : tab === "audit" ? (
+        <AuditView
+          months={auditMonths}
+          activeMonth={activeMonth}
+          onMonthChange={setAuditMonth}
+          summary={monthSummary}
+          activeLabel={monthLabel(activeMonth)}
+          payments={paymentsByMonth}
+          audit={auditByMonth}
+          onExportMonthExcel={handleExportMonthExcel}
+          onExportMonthPdf={handleExportMonthPdf}
+          onExportYearExcel={handleExportYearExcel}
+          onExportYearPdf={handleExportYearPdf}
+        />
       ) : (
         <>
           {/* Filters */}
@@ -787,6 +1243,255 @@ export default function PagosPanel() {
         onRefund={(reason) => openPayment && handleRefund(openPayment, reason)}
         onNote={(note) => openPayment && handleNote(openPayment, note)}
       />
+    </div>
+  )
+}
+
+function RefundRequestsView({
+  requests,
+  onResolve,
+}: {
+  requests: RefundRequest[]
+  onResolve: (id: string, decision: "approved" | "rejected", note?: string) => void
+}) {
+  const [activeNote, setActiveNote] = useState<Record<string, string>>({})
+  const sorted = [...requests].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  if (sorted.length === 0) {
+    return (
+      <div className="rounded-2xl border border-border bg-card p-12 text-center">
+        <Undo2 className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+        <p className="text-base font-bold text-foreground">No hay solicitudes de reembolso</p>
+        <p className="mt-1 text-sm text-muted-foreground">Cuando un usuario pida reembolso aparecera aqui.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {sorted.map((req) => (
+        <div key={req.id} className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" />
+                {formatDate(req.createdAt)}
+              </div>
+              <h3 className="mt-1 text-base font-black text-foreground">
+                ${req.amount.toFixed(2)} · {req.userName || req.userEmail}
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Pago {req.paymentId} · Motivo: <span className="text-foreground">{req.reason}</span>
+              </p>
+              {req.details ? (
+                <p className="mt-2 rounded-xl border border-border bg-secondary/15 p-3 text-xs text-muted-foreground">
+                  {req.details}
+                </p>
+              ) : null}
+              {req.status !== "pending" ? (
+                <p
+                  className={`mt-2 text-xs font-bold ${req.status === "approved" ? "text-emerald-500" : "text-red-400"}`}
+                >
+                  {req.status === "approved" ? "Aprobado" : "Rechazado"}
+                  {req.resolvedAt ? ` · ${formatDate(req.resolvedAt)}` : ""}
+                  {req.resolutionNote ? ` · ${req.resolutionNote}` : ""}
+                </p>
+              ) : null}
+            </div>
+            {req.status === "pending" ? (
+              <div className="flex flex-col gap-2 sm:min-w-[260px]">
+                <input
+                  value={activeNote[req.id] || ""}
+                  onChange={(event) => setActiveNote((cur) => ({ ...cur, [req.id]: event.target.value }))}
+                  placeholder="Nota (opcional)"
+                  className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onResolve(req.id, "rejected", activeNote[req.id])}
+                    className="flex-1 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-500/15"
+                  >
+                    <XCircle className="mr-1 inline h-3.5 w-3.5" />
+                    Rechazar
+                  </button>
+                  <button
+                    onClick={() => onResolve(req.id, "approved", activeNote[req.id])}
+                    className="flex-1 rounded-xl bg-emerald-500 px-3 py-2 text-xs font-black text-white hover:bg-emerald-400"
+                  >
+                    <CheckCircle2 className="mr-1 inline h-3.5 w-3.5" />
+                    Aprobar y reembolsar
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AuditView({
+  months,
+  activeMonth,
+  onMonthChange,
+  summary,
+  activeLabel,
+  payments,
+  audit,
+  onExportMonthExcel,
+  onExportMonthPdf,
+  onExportYearExcel,
+  onExportYearPdf,
+}: {
+  months: string[]
+  activeMonth: string
+  onMonthChange: (key: string) => void
+  summary: { total: number; ingresos: number; reembolsado: number; pendientes: number }
+  activeLabel: string
+  payments: PaymentRecord[]
+  audit: AuditEntry[]
+  onExportMonthExcel: () => void
+  onExportMonthPdf: () => void
+  onExportYearExcel: () => void
+  onExportYearPdf: () => void
+}) {
+  const monthOptions = months.length > 0 ? months : [activeMonth]
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Calendar className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Periodo</p>
+            <p className="text-lg font-black text-foreground capitalize">{activeLabel}</p>
+          </div>
+          <select
+            value={activeMonth}
+            onChange={(event) => onMonthChange(event.target.value)}
+            className="h-10 rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+          >
+            {monthOptions.map((m) => (
+              <option key={m} value={m}>
+                {monthLabel(m)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <div className="rounded-full border border-border bg-card p-1 flex items-center gap-1">
+            <span className="px-2 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">Mes</span>
+            <button
+              onClick={onExportMonthExcel}
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-3 py-1.5 text-[11px] font-black text-white hover:bg-emerald-400"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Excel
+            </button>
+            <button
+              onClick={onExportMonthPdf}
+              className="inline-flex items-center gap-1.5 rounded-full bg-red-500 px-3 py-1.5 text-[11px] font-black text-white hover:bg-red-400"
+            >
+              <Download className="h-3.5 w-3.5" />
+              PDF
+            </button>
+          </div>
+          <div className="rounded-full border border-border bg-card p-1 flex items-center gap-1">
+            <span className="px-2 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">Año</span>
+            <button
+              onClick={onExportYearExcel}
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[11px] font-black text-white shadow-[0_8px_22px_rgba(232,57,42,0.32)]"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Excel
+            </button>
+            <button
+              onClick={onExportYearPdf}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/30 px-3 py-1.5 text-[11px] font-bold text-foreground hover:border-primary/40"
+            >
+              <Download className="h-3.5 w-3.5" />
+              PDF
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {[
+          { label: "Operaciones", value: summary.total, accent: "text-foreground" },
+          { label: "Ingresos verificados", value: `$${summary.ingresos.toFixed(2)}`, accent: "text-emerald-500" },
+          { label: "Reembolsado", value: `$${summary.reembolsado.toFixed(2)}`, accent: "text-purple-400" },
+          { label: "Pendientes", value: summary.pendientes, accent: "text-amber-400" },
+        ].map((card) => (
+          <div key={card.label} className="rounded-2xl border border-border bg-card p-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">{card.label}</p>
+            <div className={`mt-3 text-2xl font-black ${card.accent}`}>{card.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card">
+        <div className="border-b border-border bg-secondary/15 px-5 py-3 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+          Pagos del periodo ({payments.length})
+        </div>
+        {payments.length === 0 ? (
+          <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+            Sin pagos registrados en este mes.
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {payments.map((p) => (
+              <div key={p.id} className="grid grid-cols-1 gap-2 px-5 py-3 sm:grid-cols-[1.5fr_1fr_1fr_1fr_auto]">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-foreground">{p.userName || p.userId}</p>
+                  <p className="text-[10px] text-muted-foreground">{formatDate(p.createdAt)}</p>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {p.method === "card" ? "Tarjeta" : "Transferencia"}
+                </div>
+                <div className="text-sm font-bold text-foreground">${p.amount.toFixed(2)}</div>
+                <StatusBadge status={p.status} />
+                <div className="line-clamp-1 text-[11px] text-muted-foreground">
+                  {p.items.map((i) => i.titulo).join(", ")}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card">
+        <div className="border-b border-border bg-secondary/15 px-5 py-3 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+          Bitacora de auditoria ({audit.length})
+        </div>
+        {audit.length === 0 ? (
+          <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+            Sin actividad registrada.
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {audit.map((entry) => (
+              <div key={entry.id} className="px-5 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-primary">
+                    {entry.action.replace(/_/g, " ")}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">{formatDate(entry.createdAt)}</span>
+                </div>
+                <p className="mt-1 text-sm text-foreground">{entry.description}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {entry.actorName || entry.actorId}
+                  {entry.amount ? ` · $${entry.amount.toFixed(2)}` : ""}
+                  {entry.paymentId ? ` · ${entry.paymentId}` : ""}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

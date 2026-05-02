@@ -23,12 +23,36 @@ import {
   type SupportTicket,
   type SupportTicketStatus,
   createTicket,
+  getBankConfig,
   getMessages,
   getSupportEventName,
   getTicketsForUser,
   markTicketRead,
   postTicketMessage,
+  type SupportAttachment,
 } from "@/lib/payments"
+import { MessageCircle, Paperclip, X as XIcon } from "lucide-react"
+import { playNotificationSound } from "@/lib/notification-sound"
+
+const MAX_ATTACH_BYTES = 4 * 1024 * 1024
+async function readSupportAttachments(files: FileList | null): Promise<SupportAttachment[]> {
+  if (!files || files.length === 0) return []
+  const arr: SupportAttachment[] = []
+  for (const file of Array.from(files)) {
+    if (file.size > MAX_ATTACH_BYTES) {
+      alert(`"${file.name}" supera 4MB.`)
+      continue
+    }
+    const dataUrl: string = await new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(typeof reader.result === "string" ? reader.result : "")
+      reader.readAsDataURL(file)
+    })
+    if (!dataUrl) continue
+    arr.push({ name: file.name, type: file.type, size: file.size, dataUrl })
+  }
+  return arr
+}
 
 const STATUS_LABEL: Record<SupportTicketStatus, string> = {
   open: "Abierto",
@@ -206,9 +230,17 @@ function ConversationView({
   const [messages, setMessages] = useState<SupportMessage[]>(() => getMessages(ticket.id))
   const [reply, setReply] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const lastAdminIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    const sync = () => setMessages(getMessages(ticket.id))
+    const sync = () => {
+      const next = getMessages(ticket.id)
+      const lastAdmin = [...next].reverse().find((m) => m.authorRole === "admin")
+      if (lastAdmin) lastAdminIdRef.current = lastAdmin.id
+      setMessages(next)
+      // user is actively viewing — mark read so no sound spam
+      markTicketRead(ticket.id, "user")
+    }
     sync()
     markTicketRead(ticket.id, "user")
     window.addEventListener(getSupportEventName(), sync as EventListener)
@@ -223,16 +255,21 @@ function ConversationView({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages.length])
 
+  const [attach, setAttach] = useState<SupportAttachment[]>([])
+
   const handleSend = () => {
-    if (!user || !reply.trim()) return
+    if (!user) return
+    if (!reply.trim() && attach.length === 0) return
     postTicketMessage({
       ticketId: ticket.id,
       authorId: user.id,
       authorName: user.name || "Usuario",
       authorRole: "user",
       body: reply.trim(),
+      attachments: attach.length > 0 ? attach : undefined,
     })
     setReply("")
+    setAttach([])
     setMessages(getMessages(ticket.id))
     onChange()
   }
@@ -284,13 +321,34 @@ function ConversationView({
             <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className="max-w-[80%]">
                 <div
-                  className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                  className={`space-y-2 rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                     mine
                       ? "bg-gradient-to-br from-[#E8392A] to-[#ff6b4d] text-white shadow-[0_8px_22px_rgba(232,57,42,0.25)]"
                       : "border border-border bg-secondary/30 text-foreground"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{message.body}</p>
+                  {message.body ? <p className="whitespace-pre-wrap">{message.body}</p> : null}
+                  {message.attachments && message.attachments.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {message.attachments.map((att, idx) =>
+                        att.type.startsWith("image/") ? (
+                          <a key={idx} href={att.dataUrl} target="_blank" rel="noreferrer">
+                            <img src={att.dataUrl} alt={att.name} className="max-h-40 rounded-lg border border-white/20" />
+                          </a>
+                        ) : (
+                          <a
+                            key={idx}
+                            href={att.dataUrl}
+                            download={att.name}
+                            className="flex items-center gap-1.5 rounded-lg bg-black/20 px-2 py-1 text-[11px] font-bold underline"
+                          >
+                            <Paperclip className="h-3 w-3" />
+                            {att.name}
+                          </a>
+                        ),
+                      )}
+                    </div>
+                  ) : null}
                 </div>
                 <div
                   className={`mt-1 flex items-center gap-1 text-[10px] text-muted-foreground ${
@@ -309,8 +367,42 @@ function ConversationView({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t border-border p-4">
+      <div className="space-y-2 border-t border-border p-4">
+        {attach.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {attach.map((a, idx) => (
+              <div key={idx} className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 px-2 py-1 text-[11px]">
+                {a.type.startsWith("image/") ? (
+                  <img src={a.dataUrl} alt={a.name} className="h-8 w-8 rounded object-cover" />
+                ) : (
+                  <Paperclip className="h-3.5 w-3.5 text-primary" />
+                )}
+                <span className="max-w-[150px] truncate text-foreground">{a.name}</span>
+                <button
+                  onClick={() => setAttach((cur) => cur.filter((_, i) => i !== idx))}
+                  className="text-muted-foreground hover:text-red-500"
+                >
+                  <XIcon className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="flex gap-2">
+          <label className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-primary">
+            <Paperclip className="h-4 w-4" />
+            <input
+              type="file"
+              multiple
+              accept="image/*,.pdf,.doc,.docx,.txt"
+              className="hidden"
+              onChange={async (e) => {
+                const files = await readSupportAttachments(e.target.files)
+                setAttach((cur) => [...cur, ...files])
+                e.target.value = ""
+              }}
+            />
+          </label>
           <textarea
             value={reply}
             onChange={(event) => setReply(event.target.value)}
@@ -326,7 +418,7 @@ function ConversationView({
           />
           <button
             onClick={handleSend}
-            disabled={!reply.trim()}
+            disabled={!reply.trim() && attach.length === 0}
             className="flex items-center justify-center rounded-xl bg-gradient-to-r from-[#E8392A] to-[#ff6b4d] px-5 text-white shadow-[0_10px_24px_rgba(232,57,42,0.3)] disabled:opacity-50"
           >
             <Send className="h-5 w-5" />
@@ -377,15 +469,32 @@ function SoporteContent() {
             Reporta problemas de pago, accesos o cualquier consulta. Te respondemos en menos de 24h.
           </p>
         </div>
-        {!showNew ? (
-          <button
-            onClick={() => setShowNew(true)}
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#E8392A] to-[#ff6b4d] px-5 py-2.5 text-sm font-bold text-white shadow-[0_10px_24px_rgba(232,57,42,0.32)]"
-          >
-            <Plus className="h-4 w-4" />
-            Nuevo ticket
-          </button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {(() => {
+            const wp = getBankConfig().whatsapp
+            if (!wp) return null
+            return (
+              <a
+                href={`https://wa.me/${wp.replace(/[^0-9]/g, "")}?text=${encodeURIComponent("Hola Hack Evans, necesito ayuda con: ")}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-2.5 text-sm font-bold text-emerald-500 hover:bg-emerald-500/20"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Chatear por WhatsApp
+              </a>
+            )
+          })()}
+          {!showNew ? (
+            <button
+              onClick={() => setShowNew(true)}
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#E8392A] to-[#ff6b4d] px-5 py-2.5 text-sm font-bold text-white shadow-[0_10px_24px_rgba(232,57,42,0.32)]"
+            >
+              <Plus className="h-4 w-4" />
+              Nuevo ticket
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {showNew ? (

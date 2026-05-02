@@ -6,7 +6,17 @@ export const fetchCache = "force-no-store"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Award, BookOpen, CheckCircle, Key, Search, Target } from "lucide-react"
+import { Award, BookOpen, CheckCircle, Clock, Key, Search, Target, Undo2 } from "lucide-react"
+import CourseLearnView from "@/components/dashboard/course-learn-view"
+import {
+  REFUND_WINDOW_DAYS,
+  createRefundRequest,
+  getPaymentsForUser,
+  getRefundEligibility,
+  getRefundRequestsForUser,
+  type PaymentRecord,
+  type RefundRequest,
+} from "@/lib/payments"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
 import { CategoryFilter } from "@/components/courses"
@@ -278,8 +288,25 @@ export default function DashboardCursosPage() {
   const [selectedCategory, setSelectedCategory] = useState(() => searchParams.get("categoria") || "")
   const [modalCurso, setModalCurso] = useState<CursoData | null>(null)
   const [successId, setSuccessId] = useState<string | null>(null)
+  const [refundOpen, setRefundOpen] = useState(false)
+  const [refundReason, setRefundReason] = useState("")
+  const [refundDetails, setRefundDetails] = useState("")
+  const [refundSent, setRefundSent] = useState(false)
+  const [userPayments, setUserPayments] = useState<PaymentRecord[]>([])
+  const [userRefunds, setUserRefunds] = useState<RefundRequest[]>([])
 
   const userId = user?.id || ""
+
+  useEffect(() => {
+    if (!userId) return
+    const sync = () => {
+      setUserPayments(getPaymentsForUser(userId))
+      setUserRefunds(getRefundRequestsForUser(userId))
+    }
+    sync()
+    window.addEventListener("storage", sync)
+    return () => window.removeEventListener("storage", sync)
+  }, [userId])
   const requestedCourseId = searchParams.get("course") || ""
 
   useEffect(() => {
@@ -512,58 +539,161 @@ export default function DashboardCursosPage() {
         </p>
       </div>
 
-      {selectedCourse ? (
-        <div className="mb-8 rounded-2xl border border-border bg-card p-5">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-primary">Curso seleccionado</div>
-              <h2 className="text-2xl font-bold text-foreground">{selectedCourse.titulo}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">
-                {selectedCourse.subtitulo?.trim() || selectedCourse.descripcion || "Accede a los recursos y actividades de este curso."}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-xl border border-border bg-secondary/20 px-4 py-3 text-center">
-                <div className="text-lg font-bold text-foreground">{totalLecciones(selectedCourse)}</div>
-                <div className="text-[11px] text-muted-foreground">Lecciones</div>
-              </div>
-              <div className="rounded-xl border border-border bg-secondary/20 px-4 py-3 text-center">
-                <div className="text-lg font-bold text-foreground">{selectedCourseSimulatorCount}</div>
-                <div className="text-[11px] text-muted-foreground">Simuladores</div>
-              </div>
-              <div className="rounded-xl border border-border bg-secondary/20 px-4 py-3 text-center">
-                <div className="text-lg font-bold text-foreground">{selectedCourseEvaluationCount}</div>
-                <div className="text-[11px] text-muted-foreground">Evaluaciones</div>
-              </div>
-              <div className="rounded-xl border border-border bg-secondary/20 px-4 py-3 text-center">
-                <div className="text-lg font-bold text-foreground">{getProgreso(userId, selectedCourse.id)}%</div>
-                <div className="text-[11px] text-muted-foreground">Progreso</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => router.push(`/dashboard/simuladores?cursoId=${encodeURIComponent(selectedCourse.id)}`)}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-primary/90"
-            >
-              <Target className="h-4 w-4" />
-              Ver simuladores
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push(`/dashboard/evaluaciones?cursoId=${encodeURIComponent(selectedCourse.id)}`)}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-secondary/20 px-4 py-2.5 text-sm font-semibold text-foreground transition-all hover:border-primary/30 hover:text-primary"
-            >
-              <Award className="h-4 w-4" />
-              Ver evaluaciones
-            </button>
-          </div>
+      {selectedCourse && enrolledCourseIds.has(selectedCourse.id) ? (
+        <div className="mb-8">
+          <CourseLearnView
+            course={{
+              id: selectedCourse.id,
+              titulo: selectedCourse.titulo,
+              subtitulo: selectedCourse.subtitulo,
+              descripcion: selectedCourse.descripcion || "",
+              instructor: selectedCourse.instructor || "Hack Evans Academy",
+              nivel: selectedCourse.nivel || "Todos los niveles",
+              categoria: selectedCourse.categoria || "General",
+              portadaImagen: selectedCourse.portadaImagen,
+              secciones: (selectedCourse.secciones || []).map((s) => ({
+                id: s.id,
+                titulo: s.titulo,
+                recursos: s.recursos.map((r) => ({
+                  id: r.id,
+                  tipo: r.tipo,
+                  titulo: r.titulo,
+                  duracionMinutos: r.duracionMinutos,
+                })),
+              })),
+              totalLecciones: totalLecciones(selectedCourse),
+              totalHoras: ((totalMinutos(selectedCourse) || 1) / 60).toFixed(1).replace(/\.0$/, ""),
+              rating: selectedCourse.destacado ? 4.9 : selectedCourse.popular ? 4.8 : selectedCourse.nuevo ? 4.7 : 4.6,
+              totalRatings: 180 + totalLecciones(selectedCourse) * 9,
+              estudiantes: 320 + totalLecciones(selectedCourse) * 14,
+              ultimaActualizacion: new Date(selectedCourse.createdAt).toLocaleDateString("es-EC", { month: "long", year: "numeric" }),
+              progreso: getProgreso(userId, selectedCourse.id),
+              certificado: true,
+            }}
+            simulatorCount={selectedCourseSimulatorCount}
+            evaluationCount={selectedCourseEvaluationCount}
+            onOpenSimuladores={() => router.push(`/dashboard/simuladores?cursoId=${encodeURIComponent(selectedCourse.id)}`)}
+            onOpenEvaluaciones={() => router.push(`/dashboard/evaluaciones?cursoId=${encodeURIComponent(selectedCourse.id)}`)}
+            refundSlot={(() => {
+              const payment = userPayments.find(
+                (p) => p.status === "verified" && p.items.some((item) => item.id === selectedCourse.id),
+              )
+              if (!payment) return null
+              const reqStatus = userRefunds.find((r) => r.paymentId === payment.id)?.status
+              if (reqStatus === "pending") {
+                return (
+                  <span className="inline-flex items-center gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm font-bold text-amber-500">
+                    <Clock className="h-4 w-4" />
+                    Reembolso en revisión
+                  </span>
+                )
+              }
+              const elig = getRefundEligibility(payment)
+              if (!elig.eligible) {
+                return (
+                  <span className="inline-flex items-center gap-2 rounded-xl border border-border bg-secondary/30 px-4 py-2.5 text-xs font-semibold text-muted-foreground">
+                    Plazo de reembolso vencido ({REFUND_WINDOW_DAYS} días)
+                  </span>
+                )
+              }
+              return (
+                <button
+                  type="button"
+                  onClick={() => setRefundOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-secondary/20 px-4 py-2.5 text-sm font-semibold text-foreground transition-all hover:border-primary/30 hover:text-primary"
+                >
+                  <Undo2 className="h-4 w-4" />
+                  Solicitar reembolso · {elig.daysLeft} días restantes
+                </button>
+              )
+            })()}
+          />
         </div>
       ) : null}
 
+      {refundOpen && selectedCourse ? (() => {
+        const payment = userPayments.find(
+          (p) => p.status === "verified" && p.items.some((item) => item.id === selectedCourse.id),
+        )
+        if (!payment) return null
+        const elig = getRefundEligibility(payment)
+        const close = () => {
+          if (refundSent) return
+          setRefundOpen(false)
+          setRefundReason("")
+          setRefundDetails("")
+        }
+        const submit = () => {
+          if (!refundReason.trim()) return
+          createRefundRequest({ paymentId: payment.id, reason: refundReason.trim(), details: refundDetails.trim() || undefined })
+          setUserRefunds(getRefundRequestsForUser(userId))
+          setRefundSent(true)
+          setTimeout(() => {
+            setRefundSent(false)
+            setRefundOpen(false)
+            setRefundReason("")
+            setRefundDetails("")
+          }, 1500)
+        }
+        return (
+          <>
+            <div className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm" onClick={close} />
+            <div className="fixed inset-0 z-[151] flex items-center justify-center p-4">
+              <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-border bg-card shadow-[0_30px_100px_rgba(0,0,0,0.45)]">
+                <div className="border-b border-border bg-gradient-to-r from-primary/8 to-transparent px-6 py-5">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Solicitar reembolso</p>
+                  <h2 className="mt-1 text-xl font-black text-foreground">{selectedCourse.titulo}</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">${payment.amount.toFixed(2)} · pagado el {new Date(payment.createdAt).toLocaleDateString("es-EC")}</p>
+                </div>
+                {refundSent ? (
+                  <div className="px-6 py-10 text-center">
+                    <CheckCircle className="mx-auto mb-3 h-10 w-10 text-emerald-500" />
+                    <p className="text-base font-bold text-foreground">Solicitud enviada</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Te avisaremos por email en cuanto el equipo decida.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4 px-6 py-5">
+                    <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-600">
+                      Política: aprobamos reembolsos dentro de {REFUND_WINDOW_DAYS} días posteriores a la compra. Te quedan <strong>{elig.daysLeft} días</strong>. El monto se acreditará como saldo en tu cuenta.
+                    </p>
+                    <div>
+                      <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Motivo principal</label>
+                      <select
+                        value={refundReason}
+                        onChange={(event) => setRefundReason(event.target.value)}
+                        className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+                      >
+                        <option value="">Selecciona un motivo</option>
+                        <option value="No es lo que esperaba">No es lo que esperaba</option>
+                        <option value="Compré por error">Compré por error</option>
+                        <option value="Problema técnico">Problema técnico</option>
+                        <option value="Calidad insuficiente">Calidad insuficiente</option>
+                        <option value="Otro">Otro</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Detalles (opcional)</label>
+                      <textarea
+                        value={refundDetails}
+                        onChange={(event) => setRefundDetails(event.target.value)}
+                        rows={3}
+                        placeholder="Cuéntanos qué pasó para procesar más rápido..."
+                        className="w-full resize-none rounded-xl border border-border bg-background p-3 text-sm text-foreground outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={close} className="flex-1 rounded-xl border border-border bg-secondary/20 px-4 py-3 text-sm font-bold text-foreground hover:border-primary/40">Cancelar</button>
+                      <button onClick={submit} disabled={!refundReason} className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-black text-white shadow-[0_8px_22px_rgba(232,57,42,0.32)] disabled:opacity-50">Enviar solicitud</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )
+      })() : null}
+
+      {selectedCourse && enrolledCourseIds.has(selectedCourse.id) ? null : (
       <div className="mb-8 flex flex-col gap-4 md:flex-row">
         <div className="relative flex-1">
           <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
@@ -576,7 +706,9 @@ export default function DashboardCursosPage() {
           />
         </div>
       </div>
+      )}
 
+      {selectedCourse && enrolledCourseIds.has(selectedCourse.id) ? null : (<>
       {categories.length > 0 ? (
         <div className="mb-8">
           <CategoryFilter
@@ -622,7 +754,7 @@ export default function DashboardCursosPage() {
           </div>
 
             {visibleEnrolledCourses.length > 0 ? (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {visibleEnrolledCourses.map((course) => renderCourseCard(course, "enrolled"))}
               </div>
             ) : (
@@ -655,7 +787,7 @@ export default function DashboardCursosPage() {
             </div>
 
             {visibleDiscoverCourses.length > 0 ? (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {visibleDiscoverCourses.map((course) => renderCourseCard(course, "discover"))}
               </div>
             ) : (
@@ -670,6 +802,7 @@ export default function DashboardCursosPage() {
           </section>
         </>
       )}
+      </>)}
 
       {modalCurso ? (
         <ModalMatricula

@@ -22,6 +22,7 @@ import {
   type SupportPriority,
   type SupportTicket,
   type SupportTicketStatus,
+  getBankConfig,
   getMessages,
   getSupportEventName,
   getTickets,
@@ -29,7 +30,30 @@ import {
   postTicketMessage,
   setTicketPriority,
   setTicketStatus,
+  type SupportAttachment,
 } from "@/lib/payments"
+import { Paperclip, Trash2, X as XIcon } from "lucide-react"
+import { playNotificationSound } from "@/lib/notification-sound"
+
+const MAX_ADMIN_ATTACH = 4 * 1024 * 1024
+async function readAdminAttachments(files: FileList | null): Promise<SupportAttachment[]> {
+  if (!files || files.length === 0) return []
+  const arr: SupportAttachment[] = []
+  for (const file of Array.from(files)) {
+    if (file.size > MAX_ADMIN_ATTACH) {
+      alert(`"${file.name}" supera 4MB.`)
+      continue
+    }
+    const dataUrl: string = await new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(typeof reader.result === "string" ? reader.result : "")
+      reader.readAsDataURL(file)
+    })
+    if (!dataUrl) continue
+    arr.push({ name: file.name, type: file.type, size: file.size, dataUrl })
+  }
+  return arr
+}
 
 const STATUS_LABEL: Record<SupportTicketStatus, string> = {
   open: "Abierto",
@@ -81,18 +105,34 @@ function formatDate(iso: string) {
 export default function SoportePanel() {
   const { user } = useAuth()
   const [tickets, setTickets] = useState<SupportTicket[]>([])
+
   const [messages, setMessages] = useState<SupportMessage[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [filter, setFilter] = useState<"all" | SupportTicketStatus>("all")
   const [search, setSearch] = useState("")
   const [reply, setReply] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const lastUserMsgRef = useRef<string | null>(null)
+  const lastUnreadCountRef = useRef<number>(-1)
 
   useEffect(() => {
     const sync = () => {
       const all = getTickets()
+      const unread = all.reduce((sum, t) => sum + (t.unreadByAdmin ? 1 : 0), 0)
+      // play only if increase came from a ticket different than the active one
+      if (lastUnreadCountRef.current >= 0 && unread > lastUnreadCountRef.current) {
+        const newOne = all.find((t) => t.unreadByAdmin && t.id !== activeId)
+        if (newOne) playNotificationSound()
+      }
+      lastUnreadCountRef.current = unread
       setTickets(all)
-      if (activeId) setMessages(getMessages(activeId))
+      if (activeId) {
+        const msgs = getMessages(activeId)
+        const lastUser = [...msgs].reverse().find((m) => m.authorRole === "user")
+        if (lastUser) lastUserMsgRef.current = lastUser.id
+        setMessages(msgs)
+        markTicketRead(activeId, "admin")
+      }
     }
     sync()
     window.addEventListener(getSupportEventName(), sync as EventListener)
@@ -139,16 +179,21 @@ export default function SoportePanel() {
     }
   }, [tickets])
 
+  const [adminAttach, setAdminAttach] = useState<SupportAttachment[]>([])
+
   const handleSend = () => {
-    if (!user || !active || !reply.trim()) return
+    if (!user || !active) return
+    if (!reply.trim() && adminAttach.length === 0) return
     postTicketMessage({
       ticketId: active.id,
       authorId: user.id,
       authorName: user.name || "Soporte",
       authorRole: "admin",
       body: reply.trim(),
+      attachments: adminAttach.length > 0 ? adminAttach : undefined,
     })
     setReply("")
+    setAdminAttach([])
     setMessages(getMessages(active.id))
   }
 
@@ -171,10 +216,29 @@ export default function SoportePanel() {
           <Headphones className="h-3.5 w-3.5" />
           Soporte
         </p>
-        <h1 className="font-display text-3xl text-foreground md:text-4xl">Centro de soporte</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Resuelve consultas, problemas de pago y activaciones manuales.
-        </p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="font-display text-3xl text-foreground md:text-4xl">Centro de soporte</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Resuelve consultas, problemas de pago y activaciones manuales.
+            </p>
+          </div>
+          {(() => {
+            const wp = getBankConfig().whatsapp
+            if (!wp) return null
+            return (
+              <a
+                href={`https://wa.me/${wp.replace(/[^0-9]/g, "")}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-black text-emerald-500 hover:bg-emerald-500/20"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Abrir WhatsApp del equipo
+              </a>
+            )
+          })()}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -299,6 +363,22 @@ export default function SoportePanel() {
                         Pago vinculado: {active.paymentId}
                       </div>
                     ) : null}
+                    {(() => {
+                      const wp = getBankConfig().whatsapp
+                      if (!wp) return null
+                      const text = encodeURIComponent(`Hola ${active.userName}, te escribimos del equipo Hack Evans sobre tu ticket "${active.subject}". `)
+                      return (
+                        <a
+                          href={`https://wa.me/${wp.replace(/[^0-9]/g, "")}?text=${text}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ml-2 mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-[11px] font-black text-emerald-500 hover:bg-emerald-500/20"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          Responder por WhatsApp
+                        </a>
+                      )
+                    })()}
                   </div>
                   <div className="flex flex-col gap-2">
                     <select
@@ -334,13 +414,34 @@ export default function SoportePanel() {
                     <div key={message.id} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
                       <div className="max-w-[80%]">
                         <div
-                          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                          className={`space-y-2 rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                             isAdmin
                               ? "bg-gradient-to-br from-[#E8392A] to-[#ff6b4d] text-white shadow-[0_8px_22px_rgba(232,57,42,0.25)]"
                               : "border border-border bg-secondary/30 text-foreground"
                           }`}
                         >
-                          <p className="whitespace-pre-wrap">{message.body}</p>
+                          {message.body ? <p className="whitespace-pre-wrap">{message.body}</p> : null}
+                          {message.attachments && message.attachments.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {message.attachments.map((att, idx) =>
+                                att.type.startsWith("image/") ? (
+                                  <a key={idx} href={att.dataUrl} target="_blank" rel="noreferrer">
+                                    <img src={att.dataUrl} alt={att.name} className="max-h-40 rounded-lg border border-white/20" />
+                                  </a>
+                                ) : (
+                                  <a
+                                    key={idx}
+                                    href={att.dataUrl}
+                                    download={att.name}
+                                    className="flex items-center gap-1.5 rounded-lg bg-black/20 px-2 py-1 text-[11px] font-bold underline"
+                                  >
+                                    <Paperclip className="h-3 w-3" />
+                                    {att.name}
+                                  </a>
+                                ),
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                         <div
                           className={`mt-1 flex items-center gap-1 text-[10px] text-muted-foreground ${
@@ -359,8 +460,42 @@ export default function SoportePanel() {
                 <div ref={messagesEndRef} />
               </div>
 
-              <div className="border-t border-border p-4">
+              <div className="space-y-2 border-t border-border p-4">
+                {adminAttach.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {adminAttach.map((a, idx) => (
+                      <div key={idx} className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 px-2 py-1 text-[11px]">
+                        {a.type.startsWith("image/") ? (
+                          <img src={a.dataUrl} alt={a.name} className="h-8 w-8 rounded object-cover" />
+                        ) : (
+                          <Paperclip className="h-3.5 w-3.5 text-primary" />
+                        )}
+                        <span className="max-w-[150px] truncate text-foreground">{a.name}</span>
+                        <button
+                          onClick={() => setAdminAttach((cur) => cur.filter((_, i) => i !== idx))}
+                          className="text-muted-foreground hover:text-red-500"
+                        >
+                          <XIcon className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="flex gap-2">
+                  <label className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-border bg-secondary/30 text-muted-foreground hover:border-primary/40 hover:text-primary">
+                    <Paperclip className="h-4 w-4" />
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf,.doc,.docx,.txt"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const files = await readAdminAttachments(e.target.files)
+                        setAdminAttach((cur) => [...cur, ...files])
+                        e.target.value = ""
+                      }}
+                    />
+                  </label>
                   <textarea
                     value={reply}
                     onChange={(event) => setReply(event.target.value)}
@@ -376,7 +511,7 @@ export default function SoportePanel() {
                   />
                   <button
                     onClick={handleSend}
-                    disabled={!reply.trim()}
+                    disabled={!reply.trim() && adminAttach.length === 0}
                     className="flex items-center justify-center rounded-xl bg-gradient-to-r from-[#E8392A] to-[#ff6b4d] px-5 text-white shadow-[0_10px_24px_rgba(232,57,42,0.3)] disabled:opacity-50"
                   >
                     <Send className="h-5 w-5" />

@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/auth-context"
 import {
   LayoutDashboard, Users, BookOpen,
   BarChart3, ChevronLeft, Menu, Shield, LayoutTemplate, Layers, Target,
-  CreditCard, Headphones,
+  CreditCard, Headphones, Sparkles,
 } from "lucide-react"
 
 const NAV_ITEMS = [
@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { icon: Layers, label: "Categorías", href: "/admin/categorias" },
   { icon: CreditCard, label: "Pagos", href: "/admin/pagos" },
   { icon: Headphones, label: "Soporte", href: "/admin/soporte" },
+  { icon: Sparkles, label: "Ofertas", href: "/admin/ofertas" },
   { icon: BarChart3, label: "Reportes", href: "/admin/reportes" },
   { icon: LayoutTemplate, label: "Landing Page", href: "/studio", external: true },
 ]

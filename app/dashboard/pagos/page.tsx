@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation"
 export default function PagosRedirect() {
   const router = useRouter()
   useEffect(() => {
-    router.replace("/dashboard/perfil?tab=pagos")
+    router.replace("/dashboard/perfil?tab=compras")
   }, [router])
   return null
 }

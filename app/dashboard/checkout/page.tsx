@@ -110,10 +110,18 @@ function DashboardCheckoutContent() {
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [bank, setBank] = useState<BankConfig>(() => getBankConfig())
   const [cardData, setCardData] = useState({ holder: "", number: "", expiry: "", cvv: "", saveCard: true })
-  const [transferData, setTransferData] = useState({
+  const [transferData, setTransferData] = useState<{
+    sender: string
+    reference: string
+    proofName: string
+    proofDataUrl: string
+    proofMimeType: string
+  }>({
     sender: "",
     reference: "",
     proofName: "",
+    proofDataUrl: "",
+    proofMimeType: "",
   })
 
   useEffect(() => {
@@ -205,6 +213,8 @@ function DashboardCheckoutContent() {
               reference: transferData.reference,
               proofName: transferData.proofName,
               proofUploadedAt: new Date().toISOString(),
+              proofDataUrl: transferData.proofDataUrl || undefined,
+              proofMimeType: transferData.proofMimeType || undefined,
             }
           : undefined,
     })
@@ -616,12 +626,28 @@ function DashboardCheckoutContent() {
                       type="file"
                       accept=".jpg,.jpeg,.png,.pdf"
                       className="hidden"
-                      onChange={(event) =>
-                        setTransferData((current) => ({
-                          ...current,
-                          proofName: event.target.files?.[0]?.name || "",
-                        }))
-                      }
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        if (!file) {
+                          setTransferData((current) => ({ ...current, proofName: "", proofDataUrl: "", proofMimeType: "" }))
+                          return
+                        }
+                        if (file.size > 6 * 1024 * 1024) {
+                          alert("El archivo supera 6MB. Comprime la imagen y vuelve a intentarlo.")
+                          return
+                        }
+                        const reader = new FileReader()
+                        reader.onload = () => {
+                          if (typeof reader.result !== "string") return
+                          setTransferData((current) => ({
+                            ...current,
+                            proofName: file.name,
+                            proofDataUrl: reader.result as string,
+                            proofMimeType: file.type,
+                          }))
+                        }
+                        reader.readAsDataURL(file)
+                      }}
                     />
                   </label>
                 </div>
