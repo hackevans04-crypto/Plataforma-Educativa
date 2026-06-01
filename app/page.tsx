@@ -1,11 +1,5 @@
-import HomePage from "@/components/home/HomePage"
-import PromoBannerBar from "@/components/promo-banner-bar"
+import { redirect } from "next/navigation"
 
 export default function Page() {
-  return (
-    <>
-      <PromoBannerBar scope="landing" />
-      <HomePage />
-    </>
-  )
+  redirect("/pedagogia.html")
 }
